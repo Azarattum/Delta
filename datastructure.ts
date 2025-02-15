@@ -1,7 +1,7 @@
 type Metadata<T> = number[] & {
-  [K in keyof T as T[K] extends any[] ? K : never]?: T[K] extends (infer U)[]
-    ? Metadata<U>[]
-    : never;
+  [K in keyof T as T[K] extends any[] ? K : never]?: T[K] extends (infer U)[] ?
+    Metadata<U>[]
+  : never;
 };
 
 type Wrapper<T> = [T[], Metadata<T>];
@@ -33,7 +33,7 @@ function add<T>(a: Wrapper<T>, b: Wrapper<T>) {
             } else {
               add(
                 [aData[i][key] as unknown[], (aMetadata as any)[key][i]],
-                [bData[j][key] as unknown[], bMetadata[key]?.[j] ?? []]
+                [bData[j][key] as unknown[], bMetadata[key]?.[j] ?? []],
               );
             }
           } else {
@@ -66,7 +66,7 @@ function multiply<A, B, K extends string>(
   keyA: keyof A,
   b: Wrapper<B>,
   keyB: keyof B,
-  relationship: K
+  relationship: K,
 ) {
   // TODO: this would go through a precision fetch, and no longer manual index be needed
   const rightIndex = new Map<A[keyof A] | B[keyof B], number[]>(); // TODO: Would be good to cache
