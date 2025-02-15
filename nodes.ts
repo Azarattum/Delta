@@ -1,12 +1,29 @@
-import { add, distinct, Wrapper, multiply, zero } from "./datastructure";
+import { add, distinct, Wrapper, multiply } from "./datastructure";
 import { Stream, stream } from "./stream";
 
 /** Stateful */
-function memory<T>(initialData: Wrapper<T>) {
-  const data = initialData;
+function memory<T>(initialData: T[]) {
+  const data = [initialData, Array(initialData.length).fill(1)] as Wrapper<T>;
+
   return stream({
-    pull: () => structuredClone(data),
-    push: (x?) => (distinct(add(data, x!)), x!),
+    pull: (options) => {
+      let scan =
+        options?.constraints ?
+          options.constraints.flatMap((constraint) => {
+            // This will be faster with a real DB
+            const index = data[0].findIndex((x) =>
+              Object.entries(constraint).every(([k, v]) => x[k] === v),
+            );
+            return index === -1 ? [] : structuredClone(data[0][index]);
+          })
+        : structuredClone(data[0]);
+
+      return [
+        scan,
+        options?.zero ? Array(scan.length).fill(0) : structuredClone(data[1]),
+      ] as Wrapper<T>;
+    },
+    push: (x?: Wrapper<T>) => (distinct(add(data, x!)), x!),
   })();
 }
 
@@ -22,7 +39,7 @@ function sink<T>(downstream: Stream<Wrapper<T>>) {
 /** Stateless */
 function filter<T>(
   downstream: Stream<Wrapper<T>>,
-  predicate: (x: T) => boolean
+  predicate: (x: T) => boolean,
 ) {
   return stream({
     push: (x: Wrapper<T>) => {
@@ -56,16 +73,20 @@ function join<A, B, const K extends string>(
   keyA: keyof A,
   downstreamB: Stream<Wrapper<B>>,
   keyB: keyof B,
-  relationship: K
+  relationship: K,
 ) {
   return stream({
     push(a: Wrapper<A>, b: Wrapper<B>) {
       return multiply(a, keyA, b, keyB, relationship);
     },
     fetch(a, b) {
-      // TODO: add more precision to the pulls (eg. ZQL's constraints)
-      a ??= zero(downstreamA.pull());
-      b ??= downstreamB.pull();
+      a ??= downstreamA.pull({
+        constraints: b![0].map((x) => ({ [keyA]: x[keyB] })),
+        zero: true,
+      });
+      b ??= downstreamB.pull({
+        constraints: a![0].map((x) => ({ [keyB]: x[keyA] })),
+      });
       return [a, b] as const;
     },
   })(downstreamA, downstreamB);

@@ -14,11 +14,8 @@ it("streams lazily", () => {
 
 it("performs basic CRUD", () => {
   const users = memory([
-    [
-      { id: 0, name: "Bob" },
-      { id: 1, name: "Alice" },
-    ],
-    [1, 1],
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
   ]);
   users.pull = mock(users.pull);
   const predicate = mock((x) => x.name.startsWith("A"));
@@ -62,11 +59,8 @@ it("updates children", () => {
   type User = { id: number; name: string; children?: User[] };
 
   const users = memory<User>([
-    [
-      { id: 0, name: "Bob" },
-      { id: 1, name: "Alice" },
-    ],
-    [1, 1],
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
   ]);
 
   // Create
@@ -182,20 +176,14 @@ it("updates children", () => {
 
 it("joins streams", () => {
   const users = memory([
-    [
-      { id: 0, name: "Bob" },
-      { id: 1, name: "Alice" },
-    ],
-    [1, 1],
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
   ]);
   const messages = memory([
-    [
-      { id: 0, text: "Hello", user: 0 },
-      { id: 1, text: "I'm Bob", user: 0 },
-      { id: 2, text: "And I'm Alice!", user: 1 },
-      { id: 3, text: "I'll be here!", user: 2 },
-    ],
-    [1, 1, 1, 1],
+    { id: 0, text: "Hello", user: 0 },
+    { id: 1, text: "I'm Bob", user: 0 },
+    { id: 2, text: "And I'm Alice!", user: 1 },
+    { id: 3, text: "I'll be here!", user: 2 },
   ]);
 
   const joined = sink(join(users, "id", messages, "user", "messages"));
@@ -367,42 +355,36 @@ it("joins streams", () => {
 
 it("processes full pipeline", () => {
   const users = memory([
-    [
-      { id: 0, name: "Bob" },
-      { id: 1, name: "Alice" },
-    ],
-    [1, 1],
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
   ]);
   const messages = memory([
-    [
-      { id: 0, text: "Hello", user: 0 },
-      { id: 1, text: "I'm Bob", user: 0 },
-      { id: 2, text: "And I'm Alice!", user: 1 },
-      { id: 3, text: "I'll be here!", user: 2 },
-    ],
-    [1, 1, 1, 1],
+    { id: 0, text: "Hello", user: 0 },
+    { id: 1, text: "I'm Bob", user: 0 },
+    { id: 2, text: "And I'm Alice!", user: 1 },
+    { id: 3, text: "I'll be here!", user: 2 },
   ]);
 
   const changes = map(
     join(
       map(
         filter(users, (x) => !x.name.startsWith("A")),
-        (x) => ((x.name = x.name.toUpperCase()), x)
+        (x) => ((x.name = x.name.toUpperCase()), x),
       ),
       "id",
       map(
         filter(messages, (x) => x.text.length > 5),
-        (x) => ((x.user = 0), x)
+        (x) => ((x.user = 0), x),
       ),
       "user",
-      "messages"
+      "messages",
     ),
     (x) => (
       x.messages.map((y) => delete (y as any).user),
       x as Omit<typeof x, "messages"> & {
         messages: Omit<(typeof x)["messages"][number], "user">[];
       }
-    )
+    ),
   );
   const view = sink(changes);
 
@@ -485,13 +467,7 @@ it("processes full pipeline", () => {
           },
         ],
       },
-      // TODO: precision fetch in join would avoid this!
-      {
-        id: 2,
-        name: "CLARA",
-        messages: [],
-      },
     ],
-    [0, 0],
+    [0],
   ]);
 });

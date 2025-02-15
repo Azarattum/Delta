@@ -2,7 +2,8 @@ function stream<T, D extends any[] = [T]>(options: StreamOptions<T, D>) {
   return (...downstreams: Streamify<D>): Stream<T, D> => {
     const push = options.push ?? ((...entity: D) => entity[0]);
     const pull =
-      options.pull ?? (() => push(...(downstreams.map((x) => x.pull()) as D))); // Should we use fetch here?
+      options.pull ??
+      ((options?) => push(...(downstreams.map((x) => x.pull(options)) as D))); // Should we use fetch here?
     const fetch =
       options.fetch ??
       ((...args) => downstreams.map((x, i) => args[i] ?? x.pull()) as D);
@@ -45,7 +46,7 @@ type Stream<T, D extends any[] = unknown[]> = {
   /** Pushes to the stream */
   push(...entities: D): void;
   /** Pulls from the stream */
-  pull(): T;
+  pull(options?: PullOptions<T>): T;
 };
 
 type StreamOptions<T, D extends any[]> = {
@@ -54,7 +55,15 @@ type StreamOptions<T, D extends any[]> = {
   /** Describes the behavior when somebody pushes to the stream */
   push?: (...entities: D) => T;
   /** Describes the behavior when somebody tries to pull from the stream */
-  pull?: () => T;
+  pull?: (options?: PullOptions<T>) => T;
+};
+
+/** TODO: these should be datatype specific */
+type PullOptions<T> = {
+  /** Lookup and order by provided keys */
+  constraints?: Record<string, unknown>[];
+  /** Return with 0 weight */
+  zero?: boolean;
 };
 
 export { stream };
