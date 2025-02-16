@@ -2,19 +2,23 @@ import { add, distinct, Wrapper, multiply } from "./datastructure";
 import { Stream, stream } from "./stream";
 
 /** Stateful */
-function memory<T>(initialData: T[]) {
-  const data = [initialData, Array(initialData.length).fill(1)] as Wrapper<T>;
+function memory<T>(initialData: T[], compare: (a: T, b: T) => number) {
+  const data = [
+    initialData.sort(compare),
+    Array(initialData.length).fill(1),
+  ] as Wrapper<T>;
 
   return stream({
     pull: (options) => {
       let scan =
         options?.constraints ?
           options.constraints.flatMap((constraint) => {
-            // This will be faster with a real DB
-            const index = data[0].findIndex((x) =>
-              Object.entries(constraint).every(([k, v]) => x[k] === v),
+            return structuredClone(
+              // This will be faster with a real DB
+              data[0].filter((x) =>
+                Object.entries(constraint).every(([k, v]) => x[k] === v),
+              ),
             );
-            return index === -1 ? [] : structuredClone(data[0][index]);
           })
         : structuredClone(data[0]);
 
@@ -23,15 +27,18 @@ function memory<T>(initialData: T[]) {
         options?.zero ? Array(scan.length).fill(0) : structuredClone(data[1]),
       ] as Wrapper<T>;
     },
-    push: (x?: Wrapper<T>) => (distinct(add(data, x!)), x!),
+    push: (x?: Wrapper<T>) => (distinct(add(data, x!, compare)), x!),
   })();
 }
 
 /** Stateful */
-function sink<T>(downstream: Stream<Wrapper<T>>) {
+function sink<T>(
+  downstream: Stream<Wrapper<T>>,
+  compare: (a: T, b: T) => number,
+) {
   let view: Wrapper<T>;
   return stream({
-    push: (x) => distinct(add(view, x)),
+    push: (x) => distinct(add(view, x, compare)),
     pull: () => (view ??= downstream.pull()),
   })(downstream);
 }
@@ -76,7 +83,16 @@ function join<A, B, const K extends string>(
   relationship: K,
 ) {
   return stream({
+    // TODO: try to unify this implementations, also adapt for future batching
     push(a: Wrapper<A>, b: Wrapper<B>) {
+      return multiply(a, keyA, b, keyB, relationship);
+    },
+    pull(options) {
+      const a = downstreamA.pull(options);
+      const b = downstreamB.pull({
+        ...options,
+        constraints: a![0].map((x) => ({ [keyB]: x[keyA] })),
+      });
       return multiply(a, keyA, b, keyB, relationship);
     },
     fetch(a, b) {

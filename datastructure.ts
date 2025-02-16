@@ -6,10 +6,11 @@ type Metadata<T> = number[] & {
 
 type Wrapper<T> = [T[], Metadata<T>];
 
-/** TODO: A hacky solution, would want to override */
-const compare = (a: any, b: any) => a.id - b.id;
-
-function add<T>(a: Wrapper<T>, b: Wrapper<T>) {
+function add<T>(
+  a: Wrapper<T>,
+  b: Wrapper<T>,
+  compare?: (a: T, b: T) => number,
+) {
   const [aData, aMetadata] = a;
   const [bData, bMetadata] = b;
 
@@ -17,7 +18,8 @@ function add<T>(a: Wrapper<T>, b: Wrapper<T>) {
   let j = 0;
 
   while (j < bData.length) {
-    const equality = i < aData.length ? compare(aData[i], bData[j]) : 1;
+    const equality =
+      i < aData.length && compare ? compare(aData[i], bData[j]) : 1;
     if (equality < 0) {
       i++;
       continue;
@@ -34,6 +36,7 @@ function add<T>(a: Wrapper<T>, b: Wrapper<T>) {
               add(
                 [aData[i][key] as unknown[], (aMetadata as any)[key][i]],
                 [bData[j][key] as unknown[], bMetadata[key]?.[j] ?? []],
+                compare as (a: unknown, b: unknown) => number, // TODO: this is wrong! children might have a different compare
               );
             }
           } else {

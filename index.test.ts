@@ -1,4 +1,5 @@
 import { expect, it, mock } from "bun:test";
+import { rm } from "node:fs/promises";
 import { stream } from "./stream";
 import { filter, join, map, memory, sink } from "./nodes";
 
@@ -13,13 +14,16 @@ it("streams lazily", () => {
 });
 
 it("performs basic CRUD", () => {
-  const users = memory([
-    { id: 0, name: "Bob" },
-    { id: 1, name: "Alice" },
-  ]);
+  const users = memory(
+    [
+      { id: 0, name: "Bob" },
+      { id: 1, name: "Alice" },
+    ],
+    (a, b) => a.id - b.id,
+  );
   users.pull = mock(users.pull);
   const predicate = mock((x) => x.name.startsWith("A"));
-  const view = sink(filter(users, predicate));
+  const view = sink(filter(users, predicate), (a, b) => a.id - b.id);
 
   // Read
   expect(predicate).not.toHaveBeenCalled();
@@ -58,10 +62,13 @@ it("performs basic CRUD", () => {
 it("updates children", () => {
   type User = { id: number; name: string; children?: User[] };
 
-  const users = memory<User>([
-    { id: 0, name: "Bob" },
-    { id: 1, name: "Alice" },
-  ]);
+  const users = memory<User>(
+    [
+      { id: 0, name: "Bob" },
+      { id: 1, name: "Alice" },
+    ],
+    (a, b) => a.id - b.id,
+  );
 
   // Create
   users.push([
@@ -175,18 +182,27 @@ it("updates children", () => {
 });
 
 it("joins streams", () => {
-  const users = memory([
-    { id: 0, name: "Bob" },
-    { id: 1, name: "Alice" },
-  ]);
-  const messages = memory([
-    { id: 0, text: "Hello", user: 0 },
-    { id: 1, text: "I'm Bob", user: 0 },
-    { id: 2, text: "And I'm Alice!", user: 1 },
-    { id: 3, text: "I'll be here!", user: 2 },
-  ]);
+  const users = memory(
+    [
+      { id: 0, name: "Bob" },
+      { id: 1, name: "Alice" },
+    ],
+    (a, b) => a.id - b.id,
+  );
+  const messages = memory(
+    [
+      { id: 0, text: "Hello", user: 0 },
+      { id: 1, text: "I'm Bob", user: 0 },
+      { id: 2, text: "And I'm Alice!", user: 1 },
+      { id: 3, text: "I'll be here!", user: 2 },
+    ],
+    (a, b) => a.id - b.id,
+  );
 
-  const joined = sink(join(users, "id", messages, "user", "messages"));
+  const joined = sink(
+    join(users, "id", messages, "user", "messages"),
+    (a, b) => a.id - b.id,
+  );
 
   {
     const [data, metadata] = joined.pull();
@@ -354,16 +370,22 @@ it("joins streams", () => {
 });
 
 it("processes full pipeline", () => {
-  const users = memory([
-    { id: 0, name: "Bob" },
-    { id: 1, name: "Alice" },
-  ]);
-  const messages = memory([
-    { id: 0, text: "Hello", user: 0 },
-    { id: 1, text: "I'm Bob", user: 0 },
-    { id: 2, text: "And I'm Alice!", user: 1 },
-    { id: 3, text: "I'll be here!", user: 2 },
-  ]);
+  const users = memory(
+    [
+      { id: 0, name: "Bob" },
+      { id: 1, name: "Alice" },
+    ],
+    (a, b) => a.id - b.id,
+  );
+  const messages = memory(
+    [
+      { id: 0, text: "Hello", user: 0 },
+      { id: 1, text: "I'm Bob", user: 0 },
+      { id: 2, text: "And I'm Alice!", user: 1 },
+      { id: 3, text: "I'll be here!", user: 2 },
+    ],
+    (a, b) => a.id - b.id,
+  );
 
   const changes = map(
     join(
@@ -374,7 +396,7 @@ it("processes full pipeline", () => {
       "id",
       map(
         filter(messages, (x) => x.text.length > 5),
-        (x) => ((x.user = 0), x),
+        (x) => ((x.text = x.text.toLowerCase()), x),
       ),
       "user",
       "messages",
@@ -386,7 +408,7 @@ it("processes full pipeline", () => {
       }
     ),
   );
-  const view = sink(changes);
+  const view = sink(changes, (a, b) => a.id - b.id);
 
   const flowing = mock();
   changes.subscribe(flowing);
@@ -397,16 +419,12 @@ it("processes full pipeline", () => {
       {
         id: 0,
         name: "BOB",
-        messages: [
-          { id: 1, text: "I'm Bob" },
-          { id: 2, text: "And I'm Alice!" },
-          { id: 3, text: "I'll be here!" },
-        ],
+        messages: [{ id: 1, text: "i'm bob" }],
       },
     ]);
     expect({ ...(metadata as any) }).toEqual({
       0: 1,
-      messages: [[1, 1, 1]],
+      messages: [[1]],
     });
   }
 
@@ -417,57 +435,84 @@ it("processes full pipeline", () => {
       {
         id: 0,
         name: "BOB",
-        messages: [
-          { id: 1, text: "I'm Bob" },
-          { id: 2, text: "And I'm Alice!" },
-          { id: 3, text: "I'll be here!" },
-        ],
+        messages: [{ id: 1, text: "i'm bob" }],
       },
-      { id: 2, name: "CLARA", messages: [] },
+      { id: 2, name: "CLARA", messages: [{ id: 3, text: "i'll be here!" }] },
     ]);
     expect({ ...(metadata as any) }).toEqual({
       0: 1,
       1: 1,
-      messages: [[1, 1, 1], []],
+      messages: [[1], [1]],
     });
   }
 
-  messages.push([[{ id: 4, text: "Bob steals all messages!", user: 2 }], [1]]);
+  messages.push([[{ id: 4, text: "Whatever message!", user: 2 }], [1]]);
   {
     const [data, metadata] = view.pull();
     expect(data).toEqual([
       {
         id: 0,
         name: "BOB",
+        messages: [{ id: 1, text: "i'm bob" }],
+      },
+      {
+        id: 2,
+        name: "CLARA",
         messages: [
-          { id: 1, text: "I'm Bob" },
-          { id: 2, text: "And I'm Alice!" },
-          { id: 3, text: "I'll be here!" },
-          { id: 4, text: "Bob steals all messages!" },
+          { id: 3, text: "i'll be here!" },
+          { id: 4, text: "whatever message!" },
         ],
       },
-      { id: 2, name: "CLARA", messages: [] },
     ]);
     expect({ ...(metadata as any) }).toEqual({
       0: 1,
       1: 1,
-      messages: [[1, 1, 1, 1], []],
+      messages: [[1], [1, 1]],
     });
   }
 
   expect(flowing).toHaveBeenLastCalledWith([
     [
       {
-        id: 0,
-        name: "BOB",
-        messages: [
-          {
-            id: 4,
-            text: "Bob steals all messages!",
-          },
-        ],
+        id: 2,
+        name: "CLARA",
+        messages: [{ id: 4, text: "whatever message!" }],
       },
     ],
     [0],
+  ]);
+});
+
+it("orders items", () => {
+  const users = memory(
+    [
+      { id: 0, name: "Bob", order: 3 },
+      { id: 1, name: "Alice", order: 1 },
+    ],
+    (a, b) => a.order - b.order || a.id - b.id,
+  );
+
+  const view = sink(users, (a, b) => a.order - b.order || a.id - b.id);
+  expect(view.pull()).toEqual(users.pull());
+  expect(view.pull()[0]).toEqual([
+    { id: 1, name: "Alice", order: 1 },
+    { id: 0, name: "Bob", order: 3 },
+  ]);
+
+  users.push([[{ id: -1, name: "Emily", order: 2 }], [1]]);
+  expect(view.pull()).toEqual(users.pull());
+  expect(view.pull()[0]).toEqual([
+    { id: 1, name: "Alice", order: 1 },
+    { id: -1, name: "Emily", order: 2 },
+    { id: 0, name: "Bob", order: 3 },
+  ]);
+
+  users.push([[{ id: 2, name: "Clara", order: 1 }], [1]]);
+  expect(view.pull()).toEqual(users.pull());
+  expect(view.pull()[0]).toEqual([
+    { id: 1, name: "Alice", order: 1 },
+    { id: 2, name: "Clara", order: 1 },
+    { id: -1, name: "Emily", order: 2 },
+    { id: 0, name: "Bob", order: 3 },
   ]);
 });
