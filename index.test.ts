@@ -1,5 +1,4 @@
 import { expect, it, mock } from "bun:test";
-import { rm } from "node:fs/promises";
 import { stream } from "./stream";
 import { filter, join, map, memory, sink } from "./nodes";
 

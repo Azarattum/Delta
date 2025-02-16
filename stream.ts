@@ -1,34 +1,36 @@
-function stream<T, D extends any[] = [T]>(options: StreamOptions<T, D>) {
-  return (...downstreams: Streamify<D>): Stream<T, D> => {
-    const push = options.push ?? ((...entity: D) => entity[0]);
+function stream<TOut, TIn extends any[] = [TOut]>(
+  options: StreamOptions<TOut, TIn>,
+) {
+  return (...downstreams: Streamify<TIn>): Stream<TOut, TIn> => {
+    const push = options.push ?? ((...entity: TIn) => entity[0]);
     const pull =
       options.pull ??
-      ((options?) => push(...(downstreams.map((x) => x.pull(options)) as D))); // Should we use fetch here?
+      ((options?) => push(...(downstreams.map((x) => x.pull(options)) as TIn))); // TODO: Should we use fetch here?
     const fetch =
       options.fetch ??
-      ((...args) => downstreams.map((x, i) => args[i] ?? x.pull()) as D);
+      ((...args) => downstreams.map((x, i) => args[i] ?? x.pull()) as TIn);
 
-    const upstream: Set<(entity: T) => void> = new Set();
-    const forward = (entity: T) => upstream.forEach((fn) => fn(entity));
+    const upstream: Set<(entity: TOut) => void> = new Set();
+    const forward = (entity: TOut) => upstream.forEach((fn) => fn(entity));
 
     downstreams.forEach((downstream, i) => {
-      downstream.connect((entity: T) => {
+      downstream.connect((entity: TOut) => {
         const all = new Array(downstreams.length);
         all[i] = entity;
-        forward(push(...fetch(...(all as D))));
+        forward(push(...fetch(...(all as TIn))));
       });
     });
 
-    function connect(fn: (entity: T) => void) {
+    function connect(fn: (entity: TOut) => void) {
       upstream.add(fn);
       return () => upstream.delete(fn);
     }
 
     return {
       pull,
-      push: (...entities: D) => forward(push(...entities)),
+      push: (...entities: TIn) => forward(push(...entities)),
       connect,
-      subscribe: (fn: (entity: T) => void) => {
+      subscribe: (fn: (entity: TOut) => void) => {
         fn(pull());
         return connect(fn);
       },
@@ -49,13 +51,13 @@ type Stream<T, D extends any[] = unknown[]> = {
   pull(options?: PullOptions<T>): T;
 };
 
-type StreamOptions<T, D extends any[]> = {
+type StreamOptions<TOut, TIn extends any[]> = {
   /** Describes the behavior when the stream need to fetch extra data from its downstreams */
-  fetch?: (...entities: { [K in keyof D]: D[K] | undefined }) => D;
+  fetch?: (...entities: { [K in keyof TIn]: TIn[K] | undefined }) => TIn;
   /** Describes the behavior when somebody pushes to the stream */
-  push?: (...entities: D) => T;
+  push?: (...entities: TIn) => TOut;
   /** Describes the behavior when somebody tries to pull from the stream */
-  pull?: (options?: PullOptions<T>) => T;
+  pull?: (options?: PullOptions<TOut>) => TOut;
 };
 
 /** TODO: these should be datatype specific */
