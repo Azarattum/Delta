@@ -13,6 +13,9 @@ function add<T>(
 ) {
   const [aData, aMetadata] = a;
   const [bData, bMetadata] = b;
+  const bMetadataKeys = Object.keys(bMetadata).filter(
+    (key) => !Number.isInteger(+key),
+  );
 
   let i = 0;
   let j = 0;
@@ -52,7 +55,7 @@ function add<T>(
       aMetadata.splice(i, 0, bMetadata[j]);
 
       // Copy metadata. TODO: Should be recursive?
-      Object.keys(bMetadata).forEach((key) => {
+      bMetadataKeys.forEach((key) => {
         if (Number.isInteger(+key)) return;
         aMetadata[key].splice(i, 0, bMetadata[key][j]);
       });

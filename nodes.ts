@@ -39,7 +39,7 @@ function sink<T>(
   let view: Wrapper<T>;
   return stream({
     push: (x) => distinct(add(view, x, compare)),
-    pull: () => (view ??= downstream.pull()),
+    pull: () => (view ??= distinct(downstream.pull())),
   })(downstream);
 }
 
