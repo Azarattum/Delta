@@ -18,15 +18,15 @@ it("performs basic CRUD", () => {
       { id: 0, name: "Bob" },
       { id: 1, name: "Alice" },
     ],
-    (a, b) => a.id - b.id,
+    ["id", "asc"],
   );
   users.pull = mock(users.pull);
   const predicate = mock((x) => x.name.startsWith("A"));
-  const view = sink(filter(users, predicate), (a, b) => a.id - b.id);
+  const view = sink(filter(users, predicate));
 
   // Read
   expect(predicate).not.toHaveBeenCalled();
-  expect(view.pull()).toEqual([[{ id: 1, name: "Alice" }], [1]]);
+  expect(view.pull()).toEqual([[{ id: 1, name: "Alice" }], [1], [0]]);
   expect(predicate).toHaveBeenCalled();
 
   // Create
@@ -38,15 +38,16 @@ it("performs basic CRUD", () => {
       { id: 2, name: "Alex" },
     ],
     [1, 1],
+    [0],
   ]);
 
   // Delete
   users.push([[{ id: 1, name: "Alice" }], [-1]]);
-  expect(view.pull()).toEqual([[{ id: 2, name: "Alex" }], [1]]);
+  expect(view.pull()).toEqual([[{ id: 2, name: "Alex" }], [1], [0]]);
 
   // Update
   users.push([[{ id: 2, name: "Alexandra" }], [0]]);
-  expect(view.pull()).toEqual([[{ id: 2, name: "Alexandra" }], [1]]);
+  expect(view.pull()).toEqual([[{ id: 2, name: "Alexandra" }], [1], [0]]);
 
   expect(users.pull).toHaveBeenCalledTimes(1);
   expect(users.pull()).toEqual([
@@ -55,6 +56,7 @@ it("performs basic CRUD", () => {
       { id: 2, name: "Alexandra" },
     ],
     [1, 1],
+    [0],
   ]);
 });
 
@@ -66,16 +68,17 @@ it("updates children", () => {
       { id: 0, name: "Bob" },
       { id: 1, name: "Alice" },
     ],
-    (a, b) => a.id - b.id,
+    ["id", "asc"],
   );
 
   // Create
   users.push([
     [{ id: 1, name: "Alice", children: [{ id: 3, name: "Clara" }] }],
-    Object.assign([0], { children: [[1]] }),
+    Object.assign([0], { children: [[1]] }), // Initializes children meta
+    Object.assign([0], { children: [0] }), // Initializes children order
   ]);
   {
-    const [data, metadata] = users.pull();
+    const [data, metadata, order] = users.pull();
     expect(data).toEqual([
       { id: 0, name: "Bob" },
       { id: 1, name: "Alice", children: [{ id: 3, name: "Clara" }] },
@@ -85,15 +88,17 @@ it("updates children", () => {
       1: 1,
       children: [undefined, [1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, children: [0] });
   }
 
   // Create one more
   users.push([
     [{ id: 1, name: "Alice", children: [{ id: 4, name: "Kate" }] }],
     Object.assign([0], { children: [[1]] }),
+    // Order is not required
   ]);
   {
-    const [data, metadata] = users.pull();
+    const [data, metadata, order] = users.pull();
     expect(data).toEqual([
       { id: 0, name: "Bob" },
       {
@@ -110,6 +115,7 @@ it("updates children", () => {
       1: 1,
       children: [undefined, [1, 1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, children: [0] });
   }
 
   // Update
@@ -118,7 +124,7 @@ it("updates children", () => {
     Object.assign([0], { children: [[0]] }),
   ]);
   {
-    const [data, metadata] = users.pull();
+    const [data, metadata, order] = users.pull();
     expect(data).toEqual([
       { id: 0, name: "Bob" },
       {
@@ -135,6 +141,7 @@ it("updates children", () => {
       1: 1,
       children: [undefined, [1, 1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, children: [0] });
   }
 
   // Delete & Create
@@ -146,7 +153,7 @@ it("updates children", () => {
     Object.assign([0, 0], { children: [[1], [-1]] }),
   ]);
   {
-    const [data, metadata] = users.pull();
+    const [data, metadata, order] = users.pull();
     expect(data).toEqual([
       { id: 0, name: "Bob", children: [{ id: 5, name: "Hank" }] },
       { id: 1, name: "Alice", children: [{ id: 4, name: "Katelyn" }] },
@@ -156,6 +163,7 @@ it("updates children", () => {
       1: 1,
       children: [[1], [1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, children: [0] });
   }
 
   // Delete All
@@ -167,7 +175,7 @@ it("updates children", () => {
     Object.assign([0, 0], { children: [[-1], [-1]] }),
   ]);
   {
-    const [data, metadata] = users.pull();
+    const [data, metadata, order] = users.pull();
     expect(data).toEqual([
       { id: 0, name: "Bob", children: [] },
       { id: 1, name: "Alice", children: [] },
@@ -177,6 +185,7 @@ it("updates children", () => {
       1: 1,
       children: [[], []],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, children: [0] });
   }
 });
 
@@ -186,7 +195,7 @@ it("joins streams", () => {
       { id: 0, name: "Bob" },
       { id: 1, name: "Alice" },
     ],
-    (a, b) => a.id - b.id,
+    ["id", "asc"],
   );
   const messages = memory(
     [
@@ -195,16 +204,13 @@ it("joins streams", () => {
       { id: 2, text: "And I'm Alice!", user: 1 },
       { id: 3, text: "I'll be here!", user: 2 },
     ],
-    (a, b) => a.id - b.id,
+    ["id", "asc"],
   );
 
-  const joined = sink(
-    join(users, "id", messages, "user", "messages"),
-    (a, b) => a.id - b.id,
-  );
+  const joined = sink(join(users, "id", messages, "user", "messages"));
 
   {
-    const [data, metadata] = joined.pull();
+    const [data, metadata, order] = joined.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -225,11 +231,12 @@ it("joins streams", () => {
       1: 1,
       messages: [[1, 1], [1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, messages: [0] });
   }
 
   messages.push([[{ id: 4, text: "Nice to meet you!", user: 1 }], [1]]);
   {
-    const [data, metadata] = joined.pull();
+    const [data, metadata, order] = joined.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -256,11 +263,12 @@ it("joins streams", () => {
         [1, 1],
       ],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, messages: [0] });
   }
 
   users.push([[{ id: 2, name: "Emily" }], [1]]);
   {
-    const [data, metadata] = joined.pull();
+    const [data, metadata, order] = joined.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -290,6 +298,7 @@ it("joins streams", () => {
       2: 1,
       messages: [[1, 1], [1, 1], [1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, messages: [0] });
   }
 
   messages.push([
@@ -300,7 +309,7 @@ it("joins streams", () => {
     [-1, 0],
   ]);
   {
-    const [data, metadata] = joined.pull();
+    const [data, metadata, order] = joined.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -327,6 +336,7 @@ it("joins streams", () => {
       2: 1,
       messages: [[1], [1, 1], [1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, messages: [0] });
   }
 
   messages.push([
@@ -338,7 +348,7 @@ it("joins streams", () => {
     [-1, 1],
   ]);
   {
-    const [data, metadata] = joined.pull();
+    const [data, metadata, order] = joined.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -365,6 +375,7 @@ it("joins streams", () => {
       2: 1,
       messages: [[1], [1], [1, 1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, messages: [0] });
   }
 });
 
@@ -374,7 +385,7 @@ it("processes full pipeline", () => {
       { id: 0, name: "Bob" },
       { id: 1, name: "Alice" },
     ],
-    (a, b) => a.id - b.id,
+    ["id", "asc"],
   );
   const messages = memory(
     [
@@ -383,7 +394,7 @@ it("processes full pipeline", () => {
       { id: 2, text: "And I'm Alice!", user: 1 },
       { id: 3, text: "I'll be here!", user: 2 },
     ],
-    (a, b) => a.id - b.id,
+    ["id", "asc"],
   );
 
   const changes = map(
@@ -407,13 +418,13 @@ it("processes full pipeline", () => {
       }
     ),
   );
-  const view = sink(changes, (a, b) => a.id - b.id);
+  const view = sink(changes);
 
   const flowing = mock();
   changes.subscribe(flowing);
 
   {
-    const [data, metadata] = view.pull();
+    const [data, metadata, order] = view.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -425,11 +436,12 @@ it("processes full pipeline", () => {
       0: 1,
       messages: [[1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, messages: [0] });
   }
 
   users.push([[{ id: 2, name: "Clara" }], [1]]);
   {
-    const [data, metadata] = view.pull();
+    const [data, metadata, order] = view.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -443,11 +455,12 @@ it("processes full pipeline", () => {
       1: 1,
       messages: [[1], [1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, messages: [0] });
   }
 
   messages.push([[{ id: 4, text: "Whatever message!", user: 2 }], [1]]);
   {
-    const [data, metadata] = view.pull();
+    const [data, metadata, order] = view.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -468,6 +481,7 @@ it("processes full pipeline", () => {
       1: 1,
       messages: [[1], [1, 1]],
     });
+    expect({ ...(order as any) }).toEqual({ 0: 0, messages: [0] });
   }
 
   expect(flowing).toHaveBeenLastCalledWith([
@@ -479,6 +493,7 @@ it("processes full pipeline", () => {
       },
     ],
     [0],
+    [0],
   ]);
 });
 
@@ -488,10 +503,14 @@ it("orders items", () => {
       { id: 0, name: "Bob", order: 3 },
       { id: 1, name: "Alice", order: 1 },
     ],
-    (a, b) => a.order - b.order || a.id - b.id,
+    ["order", "asc"],
+    ["id", "asc"],
   );
 
-  const view = sink(users, (a, b) => a.order - b.order || a.id - b.id);
+  const view = sink(users);
+  expect(users.pull()[2]).toEqual([4, 0]);
+  expect(view.pull()[2]).toEqual([4, 0]);
+
   expect(view.pull()).toEqual(users.pull());
   expect(view.pull()[0]).toEqual([
     { id: 1, name: "Alice", order: 1 },

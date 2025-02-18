@@ -4,25 +4,36 @@ type Metadata<T> = number[] & {
   : never;
 };
 
-type Wrapper<T> = [T[], Metadata<T>];
+type Order<T> = number[] & {
+  [K in keyof T as T[K] extends any[] ? K : never]?: T[K] extends (infer U)[] ?
+    Order<U>[]
+  : never;
+};
 
-function add<T>(
-  a: Wrapper<T>,
-  b: Wrapper<T>,
-  compare?: (a: T, b: T) => number,
-) {
-  const [aData, aMetadata] = a;
-  const [bData, bMetadata] = b;
+type Wrapper<T> = [T[], Metadata<T>, Order<T>?];
+
+function add<T>(a: Wrapper<T>, b: Wrapper<T>) {
+  const [aData, aMetadata, aOrder] = a;
+  const [bData, bMetadata, bOrder] = b;
+  const keys =
+    typeof aData[0] === "object" && aData[0] ?
+      (Object.keys(aData[0]) as (keyof T)[])
+    : undefined;
   const bMetadataKeys = Object.keys(bMetadata).filter(
     (key) => !Number.isInteger(+key),
   );
+
+  if (!aOrder) throw new Error("Destination must be ordered!");
+  if (bOrder?.length && bOrder.toString() !== aOrder.toString()) {
+    throw new Error(`Mismatched order: ${aOrder} and ${bOrder}`);
+  }
 
   let i = 0;
   let j = 0;
 
   while (j < bData.length) {
     const equality =
-      i < aData.length && compare ? compare(aData[i], bData[j]) : 1;
+      i < aData.length ? compare(aData[i], bData[j], aOrder, keys) : 1;
     if (equality < 0) {
       i++;
       continue;
@@ -35,11 +46,19 @@ function add<T>(
               (aData as any)[i][key] = bData[j][key];
               (aMetadata as any)[key] ??= [];
               (aMetadata as any)[key][i] = bMetadata[key]?.[j].slice() ?? [];
+              (aOrder as any)[key] ??= bOrder?.[key]?.slice();
             } else {
               add(
-                [aData[i][key] as unknown[], (aMetadata as any)[key][i]],
-                [bData[j][key] as unknown[], bMetadata[key]?.[j] ?? []],
-                compare as (a: unknown, b: unknown) => number, // TODO: this is wrong! children might have a different compare
+                [
+                  aData[i][key] as unknown[],
+                  (aMetadata as any)[key][i],
+                  (aOrder as any)[key],
+                ],
+                [
+                  bData[j][key] as unknown[],
+                  bMetadata[key]?.[j] ?? [],
+                  (bOrder as any)?.[key],
+                ],
               );
             }
           } else {
@@ -84,12 +103,12 @@ function multiply<A, B, K extends string>(
   }
 
   for (let i = 0; i < a[0].length; i++) {
-    const matchingRights = rightIndex.get(a[0][i][keyA]) || [];
-    // TODO: optimize
-    (a[0][i] as any)[relationship] = matchingRights.map((x) => b[0][x]);
-    (a[1] as any)[relationship] ??= [];
-    (a[1] as any)[relationship][i] = matchingRights.map((x) => b[1][x]);
+    const matches = rightIndex.get(a[0][i][keyA]) || [];
+    // TODO: refactor
+    (a[0][i] as any)[relationship] = matches.map((x) => b[0][x]);
+    ((a[1] as any)[relationship] ??= [])[i] = matches.map((x) => b[1][x]);
   }
+  ((a[2] as any) ??= [])[relationship] ??= b[2];
 
   return a as Wrapper<A & { [_ in K]: B[] }>;
 }
@@ -121,5 +140,30 @@ function zero<T>(item: Wrapper<T>) {
   return item;
 }
 
-export { add, distinct, zero, multiply };
+function compare<T>(a: T, b: T, order: number[], keys?: (keyof T)[]) {
+  for (let i = 0; i < order.length; i++) {
+    const direction = order[i] & 1 ? -1 : 1;
+    const key = keys?.[order[i] >> 1];
+    const x = key ? a[key] : a;
+    const y = key ? b[key] : b;
+
+    if (x === y) continue;
+    if (y == null) return 1 * direction;
+    if (x == null) return -1 * direction;
+
+    if (typeof x !== typeof y) {
+      throw new Error(`Mismatched types: ${typeof x} ${typeof y}`);
+    }
+
+    // TODO: ensure it is OK to use localeCompare
+    if (typeof x === "string") return x.localeCompare(y as string) * direction;
+    if (typeof x === "number") return (x - (y as number)) * direction;
+    if (typeof x === "boolean") return (x ? 1 : -1) * direction;
+    throw new Error(`Unsupported compare type: ${typeof x}`);
+  }
+
+  return 0;
+}
+
+export { add, distinct, zero, compare, multiply };
 export type { Metadata, Wrapper };

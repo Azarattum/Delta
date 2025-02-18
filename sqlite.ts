@@ -1,9 +1,15 @@
 import SQLite from "bun:sqlite";
 import { stream } from "./stream";
 import { Wrapper } from "./datastructure";
+import { encodeOrder } from "./util";
 
 /** Stateless SQLite source node (prototype) */
-function sqlite<T extends object>(db: SQLite, table: string, initialData: T[]) {
+function sqlite<T extends object>(
+  db: SQLite,
+  table: string,
+  initialData: T[],
+  primaryKeys: [NoInfer<keyof T & string>, "asc" | "desc"][],
+) {
   const columns = Object.keys(initialData[0]);
 
   // For debugging
@@ -11,10 +17,11 @@ function sqlite<T extends object>(db: SQLite, table: string, initialData: T[]) {
   // sqlite.query = (...args) => (
   //   console.log("SQL:", args[0]), orig.call(sqlite, ...args)
   // );
+  const encodedOrder = encodeOrder(columns, ...primaryKeys);
 
   // Autocreating for testing convenience (TODO: remove later)
   db.run(
-    `CREATE TABLE IF NOT EXISTS ${table} (${columns.join(",")}, PRIMARY KEY (id))`,
+    `CREATE TABLE IF NOT EXISTS ${table} (${columns.join(",")}, PRIMARY KEY (${primaryKeys.map((x) => x[0]).join(",")}))`,
   );
   db.run(
     `INSERT OR IGNORE INTO ${table} VALUES ${initialData.map(() => `(${columns.map(() => "?").join(",")})`)}`,
@@ -38,6 +45,7 @@ function sqlite<T extends object>(db: SQLite, table: string, initialData: T[]) {
       return [
         scan,
         options?.zero ? Array(scan.length).fill(0) : Array(scan.length).fill(1),
+        encodedOrder as any[],
       ] as Wrapper<T>;
     },
     push: (x?: Wrapper<T>) => {

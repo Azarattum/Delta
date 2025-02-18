@@ -7,21 +7,28 @@ import SQLite from "bun:sqlite";
 const db = new SQLite("test.db");
 
 it("works with sqlite", async () => {
-  const users = sqlite(db, "users", [
-    { id: 0, name: "Bob" },
-    { id: 1, name: "Alice" },
-  ]);
-  const messages = sqlite(db, "messages", [
-    { id: 0, text: "Hello", user: 0 },
-    { id: 1, text: "I'm Bob", user: 0 },
-    { id: 2, text: "And I'm Alice!", user: 1 },
-    { id: 3, text: "I'll be here!", user: 2 },
-  ]);
-
-  const joined = sink(
-    join(users, "id", messages, "user", "messages"),
-    (a, b) => a.id - b.id,
+  const users = sqlite(
+    db,
+    "users",
+    [
+      { id: 0, name: "Bob" },
+      { id: 1, name: "Alice" },
+    ],
+    [["id", "asc"]],
   );
+  const messages = sqlite(
+    db,
+    "messages",
+    [
+      { id: 0, text: "Hello", user: 0 },
+      { id: 1, text: "I'm Bob", user: 0 },
+      { id: 2, text: "And I'm Alice!", user: 1 },
+      { id: 3, text: "I'll be here!", user: 2 },
+    ],
+    [["id", "asc"]],
+  );
+
+  const joined = sink(join(users, "id", messages, "user", "messages"));
   expect(joined.pull()[0]).toEqual([
     {
       id: 0,

@@ -1,11 +1,24 @@
-import { add, distinct, Wrapper, multiply } from "./datastructure";
+import { add, distinct, Wrapper, multiply, compare } from "./datastructure";
 import { Stream, stream } from "./stream";
+import { encodeOrder } from "./util";
 
 /** Stateful */
-function memory<T>(initialData: T[], compare: (a: T, b: T) => number) {
+function memory<T>(
+  initialData: T[],
+  ...order: [NoInfer<keyof T & string>, "asc" | "desc"][]
+) {
+  if (!initialData[0]) {
+    throw new Error("Must have at least one item to infer order");
+  }
+  const keys =
+    typeof initialData[0] === "object" && initialData[0] ?
+      (Object.keys(initialData[0]) as (keyof T)[])
+    : undefined;
+  const encodedOrder = encodeOrder(keys, ...order);
   const data = [
-    initialData.sort(compare),
+    initialData.sort((a, b) => compare(a, b, encodedOrder, keys)),
     Array(initialData.length).fill(1),
+    encodedOrder as any[],
   ] as Wrapper<T>;
 
   return stream({
@@ -24,21 +37,19 @@ function memory<T>(initialData: T[], compare: (a: T, b: T) => number) {
 
       return [
         scan,
-        options?.zero ? Array(scan.length).fill(0) : structuredClone(data[1]),
+        options?.zero ? Array(scan.length).fill(0) : structuredClone(data[1]), // TODO: this is a bug when we have constraints!
+        structuredClone(data[2]),
       ] as Wrapper<T>;
     },
-    push: (x?: Wrapper<T>) => (distinct(add(data, x!, compare)), x!),
+    push: (x?: Wrapper<T>) => (distinct(add(data, x!)), x!),
   })();
 }
 
 /** Stateful */
-function sink<T>(
-  downstream: Stream<Wrapper<T>>,
-  compare: (a: T, b: T) => number,
-) {
+function sink<T>(downstream: Stream<Wrapper<T>>) {
   let view: Wrapper<T>;
   return stream({
-    push: (x) => distinct(add(view, x, compare)),
+    push: (x) => distinct(add(view, x)),
     pull: () => (view ??= distinct(downstream.pull())),
   })(downstream);
 }
