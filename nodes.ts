@@ -1,4 +1,12 @@
-import { add, distinct, Wrapper, multiply, compare } from "./datastructure";
+import {
+  add,
+  distinct,
+  Wrapper,
+  multiply,
+  compare,
+  zero,
+  copy,
+} from "./datastructure";
 import { Stream, stream } from "./stream";
 import { encodeOrder } from "./util";
 
@@ -37,7 +45,9 @@ function memory<T>(
 
       return [
         scan,
-        options?.zero ? Array(scan.length).fill(0) : structuredClone(data[1]), // TODO: this is a bug when we have constraints!
+        options?.constraints ?
+          Array(scan.length).fill(1)
+        : structuredClone(data[1]),
         structuredClone(data[2]),
       ] as Wrapper<T>;
     },
@@ -49,7 +59,7 @@ function memory<T>(
 function sink<T>(downstream: Stream<Wrapper<T>>) {
   let view: Wrapper<T>;
   return stream({
-    push: (x) => distinct(add(view, x)),
+    push: (x) => view && distinct(add(view, x)),
     pull: () => (view ??= distinct(downstream.pull())),
   })(downstream);
 }
@@ -93,27 +103,37 @@ function join<A, B, const K extends string>(
   keyB: keyof B,
   relationship: K,
 ) {
+  type C = A & { [_ in K]: B[] };
   return stream({
     push(a?: Wrapper<A>, b?: Wrapper<B>) {
-      const bExtra =
-        a &&
+      const anyA = a?.[0].length;
+      const anyB = b?.[0].length;
+
+      let pulledA =
+        anyB &&
+        zero(
+          downstreamA.pull({
+            constraints: b[0].map((x) => ({ [keyA]: x[keyB] })),
+          }),
+        );
+      const pulledB =
+        anyA &&
         downstreamB.pull({
           constraints: a[0].map((x) => ({ [keyB]: x[keyA] })),
         });
-      const aExtra =
-        b &&
-        downstreamA.pull({
-          constraints: b[0].map((x) => ({ [keyA]: x[keyB] })),
-          zero: true,
-        });
-      // TODO: optimize like in the paper
-      const bothChange = a && b && multiply(a, keyA, b, keyB, relationship);
-      const bChange = aExtra && multiply(aExtra, keyA, b, keyB, relationship);
-      const aChange = bExtra && multiply(a, keyA, bExtra, keyB, relationship);
 
-      return [aChange, bChange, bothChange]
-        .filter((x) => !!x)
-        .reduce((acc, x) => add(acc, x))!;
+      if (pulledA && anyA) add(pulledA, a);
+      else if (anyA) pulledA = a;
+
+      if (pulledA && anyB) multiply(pulledA, keyA, b, keyB, relationship);
+      if (pulledA && pulledB) {
+        return add(
+          multiply(zero(copy(a)), keyA, pulledB, keyB, relationship),
+          pulledA,
+        ) as Wrapper<C>;
+      }
+
+      return (pulledA || [[], [], []]) as Wrapper<C>;
     },
     pull(options) {
       const a = downstreamA.pull(options);
@@ -121,7 +141,7 @@ function join<A, B, const K extends string>(
         ...options,
         constraints: a![0].map((x) => ({ [keyB]: x[keyA] })),
       });
-      return multiply(a, keyA, b, keyB, relationship);
+      return multiply(a, keyA, b, keyB, relationship) as Wrapper<C>;
     },
   })(downstreamA, downstreamB);
 }

@@ -12,6 +12,14 @@ it("streams lazily", () => {
   expect(source.pull).toHaveBeenCalledTimes(1);
 });
 
+it("fails with invalid data", () => {
+  expect(() => memory([])).toThrowError("at least one item");
+  const users = memory([{ id: 0, name: "Bob" }], ["id", "asc"]);
+  expect(() => users.push([[{ id: 1, name: "Alice" }], [1], [1]])).toThrowError(
+    "Mismatched order",
+  );
+});
+
 it("performs basic CRUD", () => {
   const users = memory(
     [
@@ -533,4 +541,103 @@ it("orders items", () => {
     { id: -1, name: "Emily", order: 2 },
     { id: 0, name: "Bob", order: 3 },
   ]);
+});
+
+it("joins changes correctly", () => {
+  const input1 = memory([{ id: 0 }], ["id", "asc"]);
+  const input2 = memory([{ id: 0, ref: 2 }], ["id", "asc"]);
+  const joined = join(input1, "id", input2, "ref", "item");
+
+  const spy = mock();
+  joined.connect(spy);
+
+  const anyArray = expect.any(Array);
+
+  // Only left
+  joined.push([[{ id: 1 }], [1]], undefined);
+  expect(spy).toHaveBeenLastCalledWith([[{ id: 1, item: [] }], [1], anyArray]);
+
+  // Only right
+  joined.push(undefined, [[{ id: 1, ref: 1 }], [1]]);
+  expect(spy).toHaveBeenLastCalledWith([[], [], anyArray]);
+
+  // Left with source join
+  joined.push([[{ id: 2 }], [1]], undefined);
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 2, item: [{ id: 0, ref: 2 }] }],
+    [1],
+    anyArray,
+  ]);
+
+  // Right with source join
+  joined.push(undefined, [[{ id: 1, ref: 0 }], [1]]);
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 0, item: [{ id: 1, ref: 0 }] }],
+    [0],
+    anyArray,
+  ]);
+
+  // Join between deltas
+  joined.push([[{ id: 3 }], [1], [0]], [[{ id: 1, ref: 3 }], [1], [0]]);
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 3, item: [{ id: 1, ref: 3 }] }],
+    [1],
+    anyArray,
+  ]);
+
+  // Cross-join between deltas and source
+  joined.push(
+    [[{ id: 2 }], [1], [0]],
+    [
+      [
+        { id: 3, ref: 2 },
+        { id: 4, ref: 0 },
+      ],
+      [1, 1],
+      [0],
+    ],
+  );
+  expect(spy).toHaveBeenLastCalledWith([
+    [
+      { id: 0, item: [{ id: 4, ref: 0 }] },
+      {
+        id: 2,
+        item: [
+          { id: 0, ref: 2 },
+          { id: 3, ref: 2 },
+        ],
+      },
+    ],
+    [0, 1],
+    anyArray,
+  ]);
+
+  // Empty left join
+  joined.push(
+    [[], [], []],
+    [
+      [
+        { id: 3, ref: 2 },
+        { id: 4, ref: 0 },
+      ],
+      [1, 1],
+      [0],
+    ],
+  );
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 0, item: [{ id: 4, ref: 0 }] }],
+    [0],
+    anyArray,
+  ]);
+
+  // Empty right join
+  joined.push([[{ id: 2 }], [1], [0]], [[], [], []]);
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 2, item: [{ id: 0, ref: 2 }] }],
+    [1],
+    anyArray,
+  ]);
+
+  joined.push(undefined, undefined);
+  expect(spy).toHaveBeenLastCalledWith([[], [], anyArray]);
 });

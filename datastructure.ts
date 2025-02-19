@@ -39,7 +39,7 @@ function add<T>(a: Wrapper<T>, b: Wrapper<T>) {
       continue;
     } else if (equality === 0) {
       // Update
-      if (bMetadata[j] === 0) {
+      if (bMetadata[j] === 0 || aMetadata[j] === 0) {
         for (const key in bData[j]) {
           if (key in bMetadata) {
             if (aMetadata[key]?.[i] == null) {
@@ -133,11 +133,33 @@ function distinct<T>(item: Wrapper<T>) {
 
 function zero<T>(item: Wrapper<T>) {
   item[1].fill(0);
+  // TODO: test whether this is actually needed
   Object.keys(item[1]).forEach((key) => {
     if (Number.isInteger(+key)) return;
     item[0].forEach((x, i) => x[key] && zero([x[key], item[1][key][i]]));
   });
   return item;
+}
+
+function copy<T>(item: Wrapper<T>) {
+  const items = item[0].slice();
+  const metadata = item[1].slice();
+  const order = item[2]?.slice();
+
+  const bMetadataKeys = Object.keys(item[1]).filter(
+    (key) => !Number.isInteger(+key),
+  );
+  items.forEach((x, i) => {
+    items[i] = { ...x };
+    bMetadataKeys.forEach((key) => {
+      const clone = copy([x[key], item[1][key][i], item[2]?.[key]]);
+      x[key] = clone[0];
+      (metadata[key] ??= [])[i] = clone[1];
+      if (order) order[key] = clone[2];
+    });
+  });
+
+  return [items, metadata, order] as unknown as Wrapper<T>;
 }
 
 function compare<T>(a: T, b: T, order: number[], keys?: (keyof T)[]) {
@@ -165,5 +187,5 @@ function compare<T>(a: T, b: T, order: number[], keys?: (keyof T)[]) {
   return 0;
 }
 
-export { add, distinct, zero, compare, multiply };
+export { add, distinct, zero, copy, compare, multiply };
 export type { Metadata, Wrapper };

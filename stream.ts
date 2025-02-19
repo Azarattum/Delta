@@ -41,15 +41,15 @@ type Streamify<T> = { [K in keyof T]: Stream<T[K]> };
 type PartialEntities<T extends any[]> =
   T extends [any] ? T : { [K in keyof T]?: T[K] };
 
-type Stream<T, D extends any[] = unknown[]> = {
+type Stream<TOut, TIn extends any[] = unknown[]> = {
   /** Subscribes to changes and immediately pulls the current state */
-  subscribe(fn: (entity: T) => void): () => void;
+  subscribe(fn: (entity: TOut) => void): () => void;
   /** Subscribes to future changes without side-effects */
-  connect(fn: (entity: T) => void): () => void;
+  connect(fn: (entity: TOut) => void): () => void;
   /** Pushes to the stream */
-  push(...entities: D): void;
+  push(...entities: TIn): void;
   /** Pulls from the stream */
-  pull(options?: PullOptions<T>): T;
+  pull(options?: PullOptions<TOut>): TOut;
 };
 
 type StreamOptions<TOut, TIn extends any[]> = {
@@ -63,8 +63,6 @@ type StreamOptions<TOut, TIn extends any[]> = {
 type PullOptions<T> = {
   /** Lookup and order by provided keys */
   constraints?: Record<string, unknown>[];
-  /** Return with 0 weight */
-  zero?: boolean;
 };
 
 export { stream };

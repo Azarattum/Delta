@@ -44,7 +44,7 @@ function sqlite<T extends object>(
 
       return [
         scan,
-        options?.zero ? Array(scan.length).fill(0) : Array(scan.length).fill(1),
+        Array(scan.length).fill(1),
         encodedOrder as any[],
       ] as Wrapper<T>;
     },
