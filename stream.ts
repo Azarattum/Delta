@@ -5,19 +5,17 @@ function stream<TOut, TIn extends any[] = [TOut]>(
     const push = options.push ?? ((...entity: TIn) => entity[0]);
     const pull =
       options.pull ??
-      ((options?) => push(...(downstreams.map((x) => x.pull(options)) as TIn))); // TODO: Should we use fetch here?
-    const fetch =
-      options.fetch ??
-      ((...args) => downstreams.map((x, i) => args[i] ?? x.pull()) as TIn);
+      ((options?) => push(...(downstreams.map((x) => x.pull(options)) as TIn)));
 
     const upstream: Set<(entity: TOut) => void> = new Set();
     const forward = (entity: TOut) => upstream.forEach((fn) => fn(entity));
 
     downstreams.forEach((downstream, i) => {
       downstream.connect((entity: TOut) => {
+        // TODO: defer and batch
         const all = new Array(downstreams.length);
         all[i] = entity;
-        forward(push(...fetch(...(all as TIn))));
+        forward(push(...all));
       });
     });
 
@@ -40,6 +38,9 @@ function stream<TOut, TIn extends any[] = [TOut]>(
 
 type Streamify<T> = { [K in keyof T]: Stream<T[K]> };
 
+type PartialEntities<T extends any[]> =
+  T extends [any] ? T : { [K in keyof T]?: T[K] };
+
 type Stream<T, D extends any[] = unknown[]> = {
   /** Subscribes to changes and immediately pulls the current state */
   subscribe(fn: (entity: T) => void): () => void;
@@ -52,10 +53,8 @@ type Stream<T, D extends any[] = unknown[]> = {
 };
 
 type StreamOptions<TOut, TIn extends any[]> = {
-  /** Describes the behavior when the stream need to fetch extra data from its downstreams */
-  fetch?: (...entities: { [K in keyof TIn]: TIn[K] | undefined }) => TIn;
   /** Describes the behavior when somebody pushes to the stream */
-  push?: (...entities: TIn) => TOut;
+  push?: (...entities: PartialEntities<TIn>) => TOut;
   /** Describes the behavior when somebody tries to pull from the stream */
   pull?: (options?: PullOptions<TOut>) => TOut;
 };

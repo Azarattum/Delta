@@ -94,9 +94,26 @@ function join<A, B, const K extends string>(
   relationship: K,
 ) {
   return stream({
-    // TODO: try to unify this implementations, also adapt for future batching
-    push(a: Wrapper<A>, b: Wrapper<B>) {
-      return multiply(a, keyA, b, keyB, relationship);
+    push(a?: Wrapper<A>, b?: Wrapper<B>) {
+      const bExtra =
+        a &&
+        downstreamB.pull({
+          constraints: a[0].map((x) => ({ [keyB]: x[keyA] })),
+        });
+      const aExtra =
+        b &&
+        downstreamA.pull({
+          constraints: b[0].map((x) => ({ [keyA]: x[keyB] })),
+          zero: true,
+        });
+      // TODO: optimize like in the paper
+      const bothChange = a && b && multiply(a, keyA, b, keyB, relationship);
+      const bChange = aExtra && multiply(aExtra, keyA, b, keyB, relationship);
+      const aChange = bExtra && multiply(a, keyA, bExtra, keyB, relationship);
+
+      return [aChange, bChange, bothChange]
+        .filter((x) => !!x)
+        .reduce((acc, x) => add(acc, x))!;
     },
     pull(options) {
       const a = downstreamA.pull(options);
@@ -105,16 +122,6 @@ function join<A, B, const K extends string>(
         constraints: a![0].map((x) => ({ [keyB]: x[keyA] })),
       });
       return multiply(a, keyA, b, keyB, relationship);
-    },
-    fetch(a, b) {
-      a ??= downstreamA.pull({
-        constraints: b![0].map((x) => ({ [keyA]: x[keyB] })),
-        zero: true,
-      });
-      b ??= downstreamB.pull({
-        constraints: a![0].map((x) => ({ [keyB]: x[keyA] })),
-      });
-      return [a, b] as const;
     },
   })(downstreamA, downstreamB);
 }
