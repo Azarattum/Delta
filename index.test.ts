@@ -1,6 +1,8 @@
 import { expect, it, mock } from "bun:test";
-import { stream } from "./stream";
+import { Stream, stream } from "./stream";
 import { filter, join, map, memory, sink } from "./nodes";
+import { Wrapper } from "./datastructure";
+import "./type-test";
 
 it("streams lazily", () => {
   const source = stream({ pull: mock(() => 123), push: () => 0 })();
@@ -639,4 +641,73 @@ it("joins changes correctly", () => {
 
   joined.push(undefined, undefined);
   expect(spy).toHaveBeenLastCalledWith([[], [], anyArray]);
+});
+
+it("handles async pulls", () => {
+  const asyncSource = stream({
+    push: (x?: Wrapper<number>) => x!,
+    pull: () => Promise.resolve([[42], [1], []] as any as Wrapper<number>),
+  })();
+  const syncSource = stream({
+    push: (x?: Wrapper<number>) => x!,
+    pull: () => [[42], [1], []] as any as Wrapper<number>,
+  })();
+
+  expect(asyncSource).toExtendType<
+    Stream<Wrapper<number>, [Wrapper<number>], Promise<Wrapper<number>>>
+  >();
+  expect(syncSource).toExtendType<
+    Stream<Wrapper<number>, [Wrapper<number>], Wrapper<number>>
+  >();
+
+  const spy = mock();
+  asyncSource.connect(spy);
+  asyncSource.push([[5], [1] as any]);
+  expect(spy).toHaveBeenLastCalledWith([[5], [1]]);
+
+  expect(asyncSource.pull()).toBeInstanceOf(Promise);
+  expect(asyncSource.pull()).toBeOfType<Promise<Wrapper<number>>>();
+
+  const identity = stream<Wrapper<number>>({});
+  const multiple = stream({
+    push: (a?: Wrapper<number>, b?: Wrapper<number>) => a!,
+  });
+
+  {
+    const fromAsync = identity(asyncSource);
+    expect(fromAsync).toExtendType<
+      Stream<Wrapper<number>, [Wrapper<number>], Promise<Wrapper<number>>>
+    >();
+    expect(fromAsync.pull()).toBeInstanceOf(Promise);
+    expect(fromAsync.pull()).toBeOfType<Promise<Wrapper<number>>>();
+
+    const fromSync = identity(syncSource);
+    expect(fromSync).toExtendType<
+      Stream<Wrapper<number>, [Wrapper<number>], Wrapper<number>>
+    >();
+    expect(fromSync.pull()).toEqual([[42], [1], []] as any);
+    expect(fromSync.pull()).toBeOfType<Wrapper<number>>();
+  }
+  {
+    const fromAsync = multiple(asyncSource, asyncSource);
+    expect(fromAsync).toExtendType<
+      Stream<Wrapper<number>, Wrapper<number>[], Promise<Wrapper<number>>>
+    >();
+    expect(fromAsync.pull()).toBeInstanceOf(Promise);
+    expect(fromAsync.pull()).toBeOfType<Promise<Wrapper<number>>>();
+
+    const fromSync = multiple(syncSource, syncSource);
+    expect(fromSync).toExtendType<
+      Stream<Wrapper<number>, Wrapper<number>[], Wrapper<number>>
+    >();
+    expect(fromSync.pull()).toEqual([[42], [1], []] as any);
+    expect(fromSync.pull()).toBeOfType<Wrapper<number>>();
+
+    const fromBoth = multiple(syncSource, asyncSource);
+    expect(fromBoth).toExtendType<
+      Stream<Wrapper<number>, Wrapper<number>[], Promise<Wrapper<number>>>
+    >();
+    expect(fromBoth.pull()).toBeInstanceOf(Promise); // TODO: this doesn't work
+    expect(fromBoth.pull()).toBeOfType<Promise<Wrapper<number>>>();
+  }
 });
