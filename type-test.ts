@@ -11,10 +11,19 @@ declare module "bun:test" {
     toBeOfType<U extends Equal<U, T>>(): any;
     toIncludeType<U extends T>(): any;
   }
+
+  interface Matchers<T extends (..._: any[]) => any> {
+    toHaveReturnTypeExtend<U extends Extends<ReturnType<T>, U>>(): any;
+    toHaveReturnTypeOf<U extends Equal<U, ReturnType<T>>>(): any;
+    toHaveReturnTypeInclude<U extends ReturnType<T>>(): any;
+  }
 }
 
 expect.extend({
   toBeOfType: () => ({ pass: true }),
   toExtendType: () => ({ pass: true }),
   toIncludeType: () => ({ pass: true }),
+  toHaveReturnTypeOf: () => ({ pass: true }),
+  toHaveReturnTypeExtend: () => ({ pass: true }),
+  toHaveReturnTypeInclude: () => ({ pass: true }),
 });

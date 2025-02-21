@@ -21,6 +21,7 @@ function stream<
         return SyncPromise.all(entities).then((x) => push(...(x as TIn)));
       });
 
+    let flushing: void | Promise<void> | null = null;
     const queue: PartialEntities<TIn>[] = [];
     const upstream: Set<(entity: Awaited<TOut>) => void> = new Set();
 
@@ -41,7 +42,7 @@ function stream<
       const shouldSchedule = queue.length === 0;
       const last = queue[queue.length - 1];
       const canMerge =
-        last && entities.every((x, i) => x == null || last[i] === null);
+        last && entities.every((x, i) => x == null || last[i] == null);
 
       if (canMerge) entities.forEach((x, i) => (last[i] = x));
       else queue.push(entities);
@@ -50,16 +51,22 @@ function stream<
     }
 
     function flush() {
-      downstreams.forEach((x) => x?.flush());
-      if (!queue.length) return;
-      try {
-        for (const entities of queue) {
-          const transformed = push(...entities);
-          upstream.forEach((fn) => fn(transformed));
+      return (flushing ??= SyncPromise.all(
+        downstreams.map((x) => x?.flush()),
+      ).then(() => {
+        if (!queue.length) return;
+        try {
+          return SyncPromise.all(
+            queue.map((entities) =>
+              SyncPromise.one(push(...entities)).then((x) =>
+                upstream.forEach((fn) => fn(x)),
+              ),
+            ),
+          ).finally(() => (flushing = null));
+        } finally {
+          queue.length = 0;
         }
-      } finally {
-        queue.length = 0;
-      }
+      }));
     }
 
     return {
@@ -70,6 +77,13 @@ function stream<
       subscribe: (fn) => {
         SyncPromise.one(pull()).then(fn);
         return connect(fn);
+      },
+      get isDirty() {
+        return !!(
+          flushing ||
+          queue.length > 0 ||
+          downstreams.some((x) => x?.isDirty)
+        );
       },
     };
   };
@@ -103,6 +117,8 @@ type Stream<TOut, TIn extends any[] = unknown[]> = {
   pull(options?: PullOptions): TOut;
   /** Immediately flushes all the pending stream pushes */
   flush(): void;
+  /** Checks if the stream has pending changes */
+  get isDirty(): boolean;
 };
 
 type StreamOptions<
@@ -113,7 +129,7 @@ type StreamOptions<
   /** Describes the behavior when somebody tries to pull from the stream */
   pull?: (options?: PullOptions) => TPull;
   /** Describes the behavior when somebody pushes to the stream */
-  push?: (...entities: PartialEntities<TIn>) => TOut;
+  push?: (...entities: PartialEntities<TIn>) => TOut | Promise<TOut>;
 };
 
 /** TODO: these should be datatype specific */

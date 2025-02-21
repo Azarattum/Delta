@@ -111,3 +111,112 @@ it("batches changes to a microtask", async () => {
   await Promise.resolve();
   expect(count).toBe(10);
 });
+
+it("merges batched changes", async () => {
+  const source1 = stream<number>({ pull: () => 42 })(null);
+  const source2 = stream<number>({ pull: () => 1337 })(null);
+
+  {
+    const spy = mock((a?: number, b?: number) => 0 as const);
+    const joined = stream({ push: spy })(source1, source2);
+
+    expect(joined.flush).toHaveReturnTypeOf<void>();
+    expect(joined.pull).toHaveReturnTypeOf<0>();
+
+    source1.push(1);
+    source2.push(2);
+    expect(spy).toHaveBeenCalledTimes(0);
+    joined.flush();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenLastCalledWith(1, 2);
+    expect(joined.pull()).toBe(0);
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    source1.push(3);
+    source2.push(4);
+    source2.push(5);
+    expect(spy).toHaveBeenCalledTimes(2);
+    joined.flush();
+    expect(spy).toHaveBeenCalledTimes(4);
+    expect(spy).toHaveBeenNthCalledWith(2, 42, 1337);
+    expect(spy).toHaveBeenNthCalledWith(3, 3, 4);
+    expect(spy).toHaveBeenNthCalledWith(4, undefined, 5);
+  }
+  {
+    const spy = mock(async (a?: number, b?: number) => 0 as const);
+    const joined = stream({ push: spy })(source1, source2);
+
+    // TODO: fix types
+    expect(joined.flush).toHaveReturnTypeOf<Promise<void>>();
+    expect(joined.pull).toHaveReturnTypeOf<Promise<number>>();
+
+    source1.push(1);
+    source2.push(2);
+    expect(spy).toHaveBeenCalledTimes(0);
+    await joined.flush();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenLastCalledWith(1, 2);
+    expect(await joined.pull()).toBe(0);
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    source1.push(3);
+    source2.push(4);
+    source2.push(5);
+    expect(spy).toHaveBeenCalledTimes(2);
+    await joined.flush();
+    expect(spy).toHaveBeenCalledTimes(4);
+    expect(spy).toHaveBeenNthCalledWith(2, 42, 1337);
+    expect(spy).toHaveBeenNthCalledWith(3, 3, 4);
+    expect(spy).toHaveBeenNthCalledWith(4, undefined, 5);
+  }
+});
+
+it("handles async pushes", async () => {
+  const source = stream({
+    push: (x: number) => Promise.resolve(x),
+  })(null);
+
+  let count = 0;
+  const view = stream({
+    push: (x: number) => (count += x),
+    pull: () => count,
+  })(source);
+
+  // TODO: fix types
+  expect(source.pull).toHaveReturnTypeOf<Promise<number>>(); // or never?
+  expect(source.flush).toHaveReturnTypeOf<Promise<void>>();
+  expect(view.pull).toHaveReturnTypeOf<Promise<number>>(); // or never?
+  expect(view.flush).toHaveReturnTypeOf<Promise<void>>();
+  expect(source.push).toHaveReturnTypeOf<void>();
+  expect(view.push).toHaveReturnTypeOf<void>();
+
+  source.push(1);
+  expect(view.pull()).toBe(0);
+  expect(view.isDirty).toBe(true);
+  await view.flush();
+  expect(view.pull()).toBe(1);
+  expect(view.isDirty).toBe(false);
+
+  const source1 = stream<number>({ pull: () => 42 })(null);
+  const source2 = stream<number>({ pull: () => 1337 })(null);
+
+  count = 0;
+  const spy = mock((a?: number, b?: number) => (count += (a || 0) + (b || 0)));
+  const joined = stream({
+    push: (a?: number, b?: number) => Promise.resolve().then(() => spy(a, b)),
+    pull: () => count,
+  })(source1, source2);
+
+  expect(await joined.pull()).toBe(0);
+  expect(count).toBe(0);
+
+  source1.push(1);
+  source2.push(2);
+  const promise = joined.flush();
+  expect(count).toBe(0);
+  await promise;
+  expect(count).toBe(3);
+
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(spy).toHaveBeenLastCalledWith(1, 2);
+});
