@@ -51,8 +51,8 @@ function memory<T>(
         structuredClone(data[2]),
       ] as Wrapper<T>;
     },
-    push: (x?: Wrapper<T>) => (distinct(add(data, x!)), x!),
-  })();
+    push: (x: Wrapper<T>) => (distinct(add(data, x!)), x!),
+  })(null);
 }
 
 /** Stateful */

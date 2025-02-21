@@ -21,5 +21,3 @@ export type SyncPromises<T extends any[]> = {
 
 export type IsPromise<T, TTrue = true, TFalse = false> =
   Promise<any> extends T ? TTrue : TFalse;
-
-export type MergePromise<T> = IsPromise<T, Promise<Awaited<T>>, T>;
