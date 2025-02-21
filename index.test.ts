@@ -594,7 +594,6 @@ it("joins changes correctly", () => {
         { id: 4, ref: 0 },
       ],
       [1, 1],
-      [0],
     ],
   );
   expect(spy).toHaveBeenLastCalledWith([
