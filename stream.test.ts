@@ -3,13 +3,14 @@ import { Stream, stream } from "./stream";
 import "./type-test";
 
 it("streams lazily", () => {
-  const source = stream({ pull: mock(() => 123), push: () => 0 })();
+  const spyPull = mock(() => 123);
+  const source = stream({ pull: spyPull, push: () => 0 })();
   const noop = stream<number>({});
   const node = noop(source);
 
-  expect(source.pull).not.toHaveBeenCalled();
+  expect(spyPull).not.toHaveBeenCalled();
   node.pull();
-  expect(source.pull).toHaveBeenCalledTimes(1);
+  expect(spyPull).toHaveBeenCalledTimes(1);
 });
 
 it("handles async pulls", () => {
@@ -28,6 +29,7 @@ it("handles async pulls", () => {
   const spy = mock();
   asyncSource.connect(spy);
   asyncSource.push(5);
+  asyncSource.flush();
   expect(spy).toHaveBeenLastCalledWith(5);
 
   expect(asyncSource.pull()).toBeInstanceOf(Promise);
@@ -80,4 +82,32 @@ it("handles async pulls", () => {
     expect(fromAsync.pull()).toBe("1337");
     expect(fromAsync.pull()).toBeOfType<string>();
   }
+});
+
+it("batches changes to a microtask", async () => {
+  const source = stream({
+    push: (x: number) => x!,
+  })(null);
+
+  let count = 0;
+  const sink = stream({
+    push: (x: number) => (count += x),
+    pull: () => count,
+  })(source);
+
+  source.push(1);
+  source.push(2);
+  expect(count).toBe(0);
+
+  expect(sink.pull()).toBe(3);
+  expect(count).toBe(3);
+
+  source.push(3);
+  expect(count).toBe(3);
+  sink.flush();
+  expect(count).toBe(6);
+
+  source.push(4);
+  await Promise.resolve();
+  expect(count).toBe(10);
 });

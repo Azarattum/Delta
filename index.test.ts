@@ -4,9 +4,8 @@ import { filter, join, map, memory, sink } from "./nodes";
 it("fails with invalid data", () => {
   expect(() => memory([])).toThrowError("at least one item");
   const users = memory([{ id: 0, name: "Bob" }], ["id", "asc"]);
-  expect(() => users.push([[{ id: 1, name: "Alice" }], [1], [1]])).toThrowError(
-    "Mismatched order",
-  );
+  users.push([[{ id: 1, name: "Alice" }], [1], [1]]);
+  expect(() => users.flush()).toThrowError("Mismatched order");
 });
 
 it("performs basic CRUD", () => {
@@ -544,14 +543,18 @@ it("joins changes correctly", () => {
 
   // Only left
   joined.push([[{ id: 1 }], [1]], undefined);
+  expect(spy).not.toHaveBeenCalled();
+  joined.flush();
   expect(spy).toHaveBeenLastCalledWith([[{ id: 1, item: [] }], [1], anyArray]);
 
   // Only right
   joined.push(undefined, [[{ id: 1, ref: 1 }], [1]]);
+  joined.flush();
   expect(spy).toHaveBeenLastCalledWith([[], [], anyArray]);
 
   // Left with source join
   joined.push([[{ id: 2 }], [1]], undefined);
+  joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 2, item: [{ id: 0, ref: 2 }] }],
     [1],
@@ -560,6 +563,7 @@ it("joins changes correctly", () => {
 
   // Right with source join
   joined.push(undefined, [[{ id: 1, ref: 0 }], [1]]);
+  joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 0, item: [{ id: 1, ref: 0 }] }],
     [0],
@@ -568,6 +572,7 @@ it("joins changes correctly", () => {
 
   // Join between deltas
   joined.push([[{ id: 3 }], [1], [0]], [[{ id: 1, ref: 3 }], [1], [0]]);
+  joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 3, item: [{ id: 1, ref: 3 }] }],
     [1],
@@ -585,6 +590,7 @@ it("joins changes correctly", () => {
       [1, 1],
     ],
   );
+  joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [
       { id: 0, item: [{ id: 4, ref: 0 }] },
@@ -612,6 +618,7 @@ it("joins changes correctly", () => {
       [0],
     ],
   );
+  joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 0, item: [{ id: 4, ref: 0 }] }],
     [0],
@@ -620,6 +627,7 @@ it("joins changes correctly", () => {
 
   // Empty right join
   joined.push([[{ id: 2 }], [1], [0]], [[], [], []]);
+  joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 2, item: [{ id: 0, ref: 2 }] }],
     [1],
@@ -627,5 +635,6 @@ it("joins changes correctly", () => {
   ]);
 
   joined.push(undefined, undefined);
+  joined.flush();
   expect(spy).toHaveBeenLastCalledWith([[], [], anyArray]);
 });

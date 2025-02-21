@@ -21,16 +21,14 @@ function stream<
         return SyncPromise.all(entities).then((x) => push(...(x as TIn)));
       });
 
+    const queue: PartialEntities<TIn>[] = [];
     const upstream: Set<(entity: Awaited<TOut>) => void> = new Set();
-    const forward = (entity: Awaited<TOut>) =>
-      upstream.forEach((fn) => fn(entity));
 
     downstreams.forEach((downstream, i) => {
       downstream?.connect((entity: TIn[number]) => {
-        // TODO: defer and batch
-        const all = new Array(downstreams.length) as PartialEntities<TIn>;
-        all[i] = entity;
-        forward(push(...all));
+        const entities = new Array() as PartialEntities<TIn>;
+        entities[i] = entity;
+        forward(entities);
       });
     });
 
@@ -39,11 +37,37 @@ function stream<
       return () => upstream.delete(fn);
     }
 
+    function forward(entities: PartialEntities<TIn>) {
+      const shouldSchedule = queue.length === 0;
+      const last = queue[queue.length - 1];
+      const canMerge =
+        last && entities.every((x, i) => x == null || last[i] === null);
+
+      if (canMerge) entities.forEach((x, i) => (last[i] = x));
+      else queue.push(entities);
+
+      if (shouldSchedule) queueMicrotask(flush);
+    }
+
+    function flush() {
+      downstreams.forEach((x) => x?.flush());
+      if (!queue.length) return;
+      try {
+        for (const entities of queue) {
+          const transformed = push(...entities);
+          upstream.forEach((fn) => fn(transformed));
+        }
+      } finally {
+        queue.length = 0;
+      }
+    }
+
     return {
-      pull,
-      push: (...entities: PartialEntities<TIn>) => forward(push(...entities)),
+      flush,
+      pull: (options) => (flush(), pull(options)),
+      push: (...entities) => forward(entities),
       connect,
-      subscribe: (fn: (entity: Awaited<TOut>) => void) => {
+      subscribe: (fn) => {
         SyncPromise.one(pull()).then(fn);
         return connect(fn);
       },
@@ -77,6 +101,8 @@ type Stream<TOut, TIn extends any[] = unknown[]> = {
   push(...entities: PartialEntities<TIn>): void;
   /** Pulls from the stream */
   pull(options?: PullOptions): TOut;
+  /** Immediately flushes all the pending stream pushes */
+  flush(): void;
 };
 
 type StreamOptions<
