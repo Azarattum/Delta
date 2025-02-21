@@ -59,7 +59,7 @@ function memory<T>(
 function sink<T>(downstream: Stream<Wrapper<T>>) {
   let view: Wrapper<T>;
   return stream({
-    push: (x) => view && distinct(add(view, x)),
+    push: (x: Wrapper<T>) => view && distinct(add(view, x)),
     pull: () => (view ??= distinct(downstream.pull())),
   })(downstream);
 }
