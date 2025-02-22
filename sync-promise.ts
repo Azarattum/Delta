@@ -23,3 +23,10 @@ export type SyncPromises<T extends any[]> = {
 
 export type IsPromise<T, TTrue = true, TFalse = false> =
   Promise<any> extends T ? TTrue : TFalse;
+
+export type MaybePromise<T> = Awaited<T> | Promise<Awaited<T>>;
+
+export type HasPromise<T, TTrue = true, TFalse = false> =
+  [T] extends [never] ? never
+  : Extract<T, Promise<any>> extends never ? TFalse
+  : TTrue;

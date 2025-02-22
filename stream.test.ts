@@ -113,8 +113,10 @@ it("batches changes to a microtask", async () => {
 });
 
 it("merges batched changes", async () => {
-  const source1 = stream<number>({ pull: () => 42 })(null);
-  const source2 = stream<number>({ pull: () => 1337 })(null);
+  const source1 = stream({ pull: () => 42 })(null);
+  const source2 = stream({ pull: () => 1337 })(null);
+
+  expect(source1).toBeOfType<Stream<number, [number]>>();
 
   {
     const spy = mock((a?: number, b?: number) => 0 as const);
@@ -146,9 +148,8 @@ it("merges batched changes", async () => {
     const spy = mock(async (a?: number, b?: number) => 0 as const);
     const joined = stream({ push: spy })(source1, source2);
 
-    // TODO: fix types
     expect(joined.flush).toHaveReturnTypeOf<Promise<void>>();
-    expect(joined.pull).toHaveReturnTypeOf<Promise<number>>();
+    expect(joined.pull).toHaveReturnTypeOf<Promise<0>>();
 
     source1.push(1);
     source2.push(2);
@@ -176,16 +177,19 @@ it("handles async pushes", async () => {
     push: (x: number) => Promise.resolve(x),
   })(null);
 
+  expect(source).toBeOfType<Stream<never, [number], Promise<void>>>();
+
   let count = 0;
   const view = stream({
     push: (x: number) => (count += x),
     pull: () => count,
   })(source);
 
-  // TODO: fix types
-  expect(source.pull).toHaveReturnTypeOf<Promise<number>>(); // or never?
+  expect(view).toBeOfType<Stream<number, [number], Promise<void>>>();
+
+  expect(source.pull).toHaveReturnTypeOf<never>();
   expect(source.flush).toHaveReturnTypeOf<Promise<void>>();
-  expect(view.pull).toHaveReturnTypeOf<Promise<number>>(); // or never?
+  expect(view.pull).toHaveReturnTypeOf<number>();
   expect(view.flush).toHaveReturnTypeOf<Promise<void>>();
   expect(source.push).toHaveReturnTypeOf<void>();
   expect(view.push).toHaveReturnTypeOf<void>();
@@ -207,12 +211,15 @@ it("handles async pushes", async () => {
     pull: () => count,
   })(source1, source2);
 
-  expect(await joined.pull()).toBe(0);
+  expect(joined.pull).toHaveReturnTypeOf<number>();
+  expect(joined.pull()).toBe(0);
   expect(count).toBe(0);
 
   source1.push(1);
   source2.push(2);
+  expect(joined.flush).toHaveReturnTypeOf<Promise<void>>();
   const promise = joined.flush();
+  expect(promise).toBeInstanceOf(Promise);
   expect(count).toBe(0);
   await promise;
   expect(count).toBe(3);

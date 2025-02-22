@@ -71,7 +71,7 @@ function sqlite<T extends object>(
       }
       return x!;
     },
-  })();
+  })(null);
 }
 
 export { sqlite };
