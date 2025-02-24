@@ -227,3 +227,31 @@ it("handles async pushes", async () => {
   expect(spy).toHaveBeenCalledTimes(1);
   expect(spy).toHaveBeenLastCalledWith(1, 2);
 });
+
+it("calls external flush", async () => {
+  let resolve = () => {};
+  const flush = mock(() => new Promise<void>((r) => (resolve = r)));
+  const source = stream({
+    push: (x: number) => x,
+    flush,
+  })(null);
+
+  expect(source).toBeOfType<Stream<never, [number], Promise<void>>>();
+  expect(source.flush).toHaveReturnTypeOf<Promise<void>>();
+
+  expect(flush).not.toHaveBeenCalled();
+  const result = source.flush();
+  expect(result).toBeInstanceOf(Promise);
+  expect(flush).toHaveBeenLastCalledWith([]);
+  expect(flush).toHaveBeenCalledTimes(1);
+
+  expect(Promise.race([result, Promise.resolve(1)])).resolves.toBe(1);
+  resolve(), await result;
+  expect(Promise.race([result, Promise.resolve(1)])).resolves.toBe(undefined);
+
+  const noop = stream({})(source);
+
+  expect(noop).toBeOfType<Stream<unknown, [unknown], Promise<void>>>();
+  noop.flush();
+  expect(flush).toHaveBeenCalledTimes(2);
+});

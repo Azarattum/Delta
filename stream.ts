@@ -5,16 +5,16 @@ function stream<
   TPush,
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends any[] = [Awaited<TPull>],
->(options: StreamOptions<TPush, TPull, TIn>) {
+  TFlush extends MaybePromise<void> = void,
+>(options: StreamOptions<TPush, TPull, TIn, TFlush>) {
   type Downstreams = { [K in keyof TIn]: Stream<unknown, [TIn[K]]> | null };
 
   return <
     TDownstreams extends Downstreams,
     TOut = InferOut<TPush, TPull, TDownstreams>,
-    TFlush extends MaybePromise<void> = InferFlush<TPush, TDownstreams>,
   >(
     ...downstreams: TDownstreams
-  ): Stream<TOut, TIn, TFlush> => {
+  ): Stream<TOut, TIn, InferFlush<TPush, TFlush, TDownstreams>> => {
     const push = options.push ?? ((...entity: TIn) => entity[0]);
     const pull =
       options.pull ??
@@ -52,23 +52,32 @@ function stream<
       if (shouldSchedule) queueMicrotask(flush);
     }
 
-    function flush() {
-      return (flushing ??= SyncPromise.all(
-        downstreams.map((x) => x?.flush()),
-      ).then(() => {
-        if (!queue.length) return;
+    function flush(cascade = false) {
+      const previousFlush = flushing;
+
+      return (flushing = SyncPromise.all(
+        downstreams.map((x) => (x?.flush as typeof flush)(true)),
+      ).then((pending) => {
         try {
+          const nonBlocking = SyncPromise.all([
+            ...pending.flat(),
+            options.flush?.(queue.slice()),
+            previousFlush,
+          ]).then(() => {});
+
           return SyncPromise.all(
             queue.map((entities) =>
               SyncPromise.one(push(...entities)).then((x) =>
                 upstream.forEach((fn) => fn(x)),
               ),
             ),
-          ).finally(() => (flushing = null));
+          )
+            .then(() => SyncPromise.one(cascade ? [nonBlocking] : nonBlocking))
+            .finally(() => (flushing = null));
         } finally {
           queue.length = 0;
         }
-      })) as TFlush;
+      }));
     }
 
     return {
@@ -82,8 +91,8 @@ function stream<
       },
       get isDirty() {
         return !!(
-          flushing ||
           queue.length > 0 ||
+          flushing instanceof Promise ||
           downstreams.some((x) => x?.isDirty)
         );
       },
@@ -91,10 +100,11 @@ function stream<
   };
 }
 
-type InferFlush<TPush, TDownstreams extends any[]> =
-  // Check if the push or any downstream TFlush has a Promise
+type InferFlush<TPush, TFlush, TDownstreams extends any[]> =
+  // Check if the push, flush or any downstream TFlush has a Promise
   HasPromise<
-    | TPush
+    | TFlush
+    | (unknown extends TPush ? void : TPush)
     | (TDownstreams[number] extends Stream<any, any, infer TFlush> ? TFlush
       : never),
     Promise<void>,
@@ -141,11 +151,14 @@ type StreamOptions<
   TOut,
   TPull extends MaybePromise<TOut> = MaybePromise<TOut>,
   TIn extends any[] = [Awaited<TPull>],
+  TFlush extends MaybePromise<void> = void,
 > = {
   /** Describes the behavior when somebody tries to pull from the stream */
   pull?: (options?: PullOptions) => TPull;
   /** Describes the behavior when somebody pushes to the stream */
   push?: (...entities: PartialEntities<TIn>) => TOut;
+  /** Describes any additional flush behavior */
+  flush?: (entities: PartialEntities<TIn>[]) => TFlush;
 };
 
 /** TODO: these should be datatype specific */
