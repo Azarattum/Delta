@@ -1,12 +1,18 @@
-function all<T extends any[]>(items: T): SyncPromises<T> {
+function all<const T extends any[]>(items: T): SyncPromises<T> {
   const hasPromise = items.some((x) => x instanceof Promise);
   if (hasPromise) return Promise.all(items) as any;
-  return { then: (fn) => fn(items as any) as any, finally: (fn) => fn() };
+  return {
+    then: (fn) => fn(items as any) as any,
+    finally: (fn) => (fn(), items),
+  };
 }
 
-function one<T>(item: T): SyncPromise<T> {
+function one<const T>(item: T): SyncPromise<T> {
   if (item instanceof Promise) return item as any;
-  return { then: (fn) => fn(item as any) as any, finally: (fn) => fn() };
+  return {
+    then: (fn) => fn(item as any) as any,
+    finally: (fn) => (fn(), item),
+  };
 }
 
 export const SyncPromise = { all, one };
@@ -17,7 +23,9 @@ export type SyncPromise<T> = {
 };
 
 export type SyncPromises<T extends any[]> = {
-  then: <R>(fn: (x: Awaited<T>) => R) => IsPromise<T, Promise<R>, R>;
+  then: <R>(
+    fn: (x: { [K in keyof T]: Awaited<T[K]> }) => R,
+  ) => IsPromise<T, Promise<R>, R>;
   finally: (fn: () => void) => void;
 };
 
