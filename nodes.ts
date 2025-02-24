@@ -8,6 +8,7 @@ import {
   copy,
 } from "./datastructure";
 import { Stream, stream } from "./stream";
+import { SyncPromise } from "./sync-promise";
 import { encodeOrder } from "./util";
 
 /** Stateful */
@@ -56,17 +57,31 @@ function memory<T>(
 }
 
 /** Stateful */
-function sink<T>(downstream: Stream<Wrapper<T>>) {
-  let view: Wrapper<T>;
+function sink<T>(
+  downstream: Stream<Wrapper<T> | Promise<Wrapper<T>>>,
+  zero = [[], [], []] as Wrapper<T>,
+) {
+  let view: Promise<Wrapper<T>> | Wrapper<T>;
+  const pullView = () =>
+    (view = SyncPromise.one(downstream.pull()).then((x) => (view = x)));
+
   return stream({
-    push: (x: Wrapper<T>) => view && distinct(add(view, x)),
-    pull: () => (view ??= distinct(downstream.pull())),
+    push: (x: Wrapper<T>) => {
+      if (!view) return zero;
+      return SyncPromise.one(view).then((view) => distinct(add(view, x)));
+    },
+    pull: () => {
+      if (!view) pullView();
+      if (view instanceof Promise) return zero;
+      return view;
+    },
+    flush: () => SyncPromise.one(view ?? pullView()).then(() => void 0),
   })(downstream);
 }
 
 /** Stateless */
 function filter<T>(
-  downstream: Stream<Wrapper<T>>,
+  downstream: Stream<Wrapper<T> | Promise<Wrapper<T>>>,
   predicate: (x: T) => boolean,
 ) {
   return stream({
@@ -86,7 +101,10 @@ function filter<T>(
 }
 
 /** Stateless */
-function map<T, U>(downstream: Stream<Wrapper<T>>, mapping: (x: T) => U) {
+function map<T, U>(
+  downstream: Stream<Wrapper<T> | Promise<Wrapper<T>>>,
+  mapping: (x: T) => U,
+) {
   return stream({
     push: (x: Wrapper<T>) => {
       x[0].forEach((y, i) => ((x[0] as any)[i] = mapping(y)));
@@ -97,51 +115,51 @@ function map<T, U>(downstream: Stream<Wrapper<T>>, mapping: (x: T) => U) {
 
 /** Stateless */
 function join<A, B, const K extends string>(
-  downstreamA: Stream<Wrapper<A>>,
+  downstreamA: Stream<Wrapper<A> | Promise<Wrapper<A>>>,
   keyA: keyof A,
-  downstreamB: Stream<Wrapper<B>>,
+  downstreamB: Stream<Wrapper<B> | Promise<Wrapper<B>>>,
   keyB: keyof B,
   relationship: K,
 ) {
   type C = A & { [_ in K]: B[] };
   return stream({
     push(a?: Wrapper<A>, b?: Wrapper<B>) {
-      const anyA = a?.[0].length;
-      const anyB = b?.[0].length;
+      const keysB = b?.[0].map((x) => ({ [keyA]: x[keyB] }));
+      const keysA = a?.[0]
+        .filter((_, i) => a[1][i] > 0)
+        .map((x) => ({ [keyB]: x[keyA] }));
 
-      let pulledA =
-        anyB &&
-        zero(
-          downstreamA.pull({
-            constraints: b[0].map((x) => ({ [keyA]: x[keyB] })),
-          }),
-        );
-      const pulledB =
-        anyA &&
-        downstreamB.pull({
-          constraints: a[0].map((x) => ({ [keyB]: x[keyA] })),
-        });
+      return SyncPromise.all([
+        keysB?.length && downstreamA.pull({ constraints: keysB }),
+        keysA?.length && downstreamB.pull({ constraints: keysA }),
+      ] as const).then(([pulledA, pulledB]) => {
+        if (pulledA) zero(pulledA);
+        if (pulledA && a) add(pulledA, a);
+        else if (a) pulledA = a;
 
-      if (pulledA && anyA) add(pulledA, a);
-      else if (anyA) pulledA = a;
+        if (pulledA && b) multiply(pulledA, keyA, b, keyB, relationship);
+        if (pulledA && pulledB) {
+          return add(
+            multiply(zero(copy(a!)), keyA, pulledB, keyB, relationship),
+            pulledA,
+          ) as Wrapper<C>;
+        }
 
-      if (pulledA && anyB) multiply(pulledA, keyA, b, keyB, relationship);
-      if (pulledA && pulledB) {
-        return add(
-          multiply(zero(copy(a)), keyA, pulledB, keyB, relationship),
-          pulledA,
-        ) as Wrapper<C>;
-      }
-
-      return (pulledA || [[], [], []]) as Wrapper<C>;
+        return (pulledA || [[], [], []]) as Wrapper<C>;
+      });
     },
     pull(options) {
-      const a = downstreamA.pull(options);
-      const b = downstreamB.pull({
-        ...options,
-        constraints: a![0].map((x) => ({ [keyB]: x[keyA] })),
-      });
-      return multiply(a, keyA, b, keyB, relationship) as Wrapper<C>;
+      return SyncPromise.one(downstreamA.pull(options)).then((a) =>
+        SyncPromise.all([
+          a,
+          downstreamB.pull({
+            ...options,
+            constraints: a[0].map((x) => ({ [keyB]: x[keyA] })),
+          }),
+        ]).then(([a, b]) => {
+          return multiply(a, keyA, b, keyB, relationship) as Wrapper<C>;
+        }),
+      );
     },
   })(downstreamA, downstreamB);
 }

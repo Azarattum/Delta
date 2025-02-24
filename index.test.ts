@@ -541,9 +541,14 @@ it("joins changes correctly", () => {
 
   const anyArray = expect.any(Array);
 
+  // Noop update
+  joined.push([[{ id: 2 }], [0]], undefined);
+  expect(spy).not.toHaveBeenCalled();
+  joined.flush();
+  expect(spy).toHaveBeenLastCalledWith([[{ id: 2 }], [0]]);
+
   // Only left
   joined.push([[{ id: 1 }], [1]], undefined);
-  expect(spy).not.toHaveBeenCalled();
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([[{ id: 1, item: [] }], [1], anyArray]);
 
