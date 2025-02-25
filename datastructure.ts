@@ -131,7 +131,9 @@ function distinct<T>(item: ZSet<T>) {
   return item;
 }
 
-function zero<T>(item: ZSet<T>) {
+function zero<T>(item?: ZSet<T>) {
+  if (!item) return [[], [], []] as ZSet<T>;
+
   item[1].fill(0);
   // TODO: test whether this is actually needed
   Object.keys(item[1]).forEach((key) => {

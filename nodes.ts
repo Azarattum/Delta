@@ -59,7 +59,7 @@ function memory<T>(
 /** Stateful */
 function sink<T>(
   downstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
-  zero = [[], [], []] as ZSet<T>,
+  initial = zero(),
 ) {
   let view: Promise<ZSet<T>> | ZSet<T>;
   const pullView = () =>
@@ -67,12 +67,12 @@ function sink<T>(
 
   return stream({
     push: (x: ZSet<T>) => {
-      if (!view) return zero;
+      if (!view) return initial;
       return SyncPromise.one(view).then((view) => distinct(add(view, x)));
     },
     pull: () => {
       if (!view) pullView();
-      if (view instanceof Promise) return zero;
+      if (view instanceof Promise) return initial;
       return view;
     },
     flush: () => SyncPromise.one(view ?? pullView()).then(() => void 0),
@@ -145,7 +145,7 @@ function join<A, B, const K extends string>(
           ) as ZSet<C>;
         }
 
-        return (pulledA || [[], [], []]) as ZSet<C>;
+        return (pulledA || zero()) as ZSet<C>;
       });
     },
     pull(options) {
