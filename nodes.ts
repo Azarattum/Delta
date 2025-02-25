@@ -16,6 +16,7 @@ import type { CLMetadata, CLSet } from "./crdt";
 function memory<T>(
   initialData: T[],
   ...order: [NoInfer<keyof T & string>, "asc" | "desc"][]
+  // TODO: allow memory to accept downstream (e.g. to allow pushes to it)
 ) {
   if (!initialData[0]) {
     throw new Error("Must have at least one item to infer order");

@@ -9,6 +9,7 @@ import {
   sink,
   z2cl,
 } from "./nodes";
+import { stream } from "./stream";
 
 it("fails with invalid data", () => {
   expect(() => memory([])).toThrowError("at least one item");
@@ -666,6 +667,10 @@ it("converts ZSet to CLSet", async () => {
   const metadata = memoryMergeMetadata(users, peer, [
     [0, [1, 1, 1, peer, 1, peer]],
   ]);
+
+  // TODO: consider forking before pushing to users,
+  //  to avoid z2cl node when receiving changes in a full pipeline
+  //  this would mean we would want some kind of `input` node
 
   // Fork changes to copy them to 2 streams
   const [users1, users2] = fork(users);
