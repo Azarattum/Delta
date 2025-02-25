@@ -1,5 +1,14 @@
 import { expect, it, mock } from "bun:test";
-import { filter, join, map, memory, sink } from "./nodes";
+import {
+  filter,
+  fork,
+  join,
+  map,
+  memory,
+  memoryMergeMetadata,
+  sink,
+  z2cl,
+} from "./nodes";
 
 it("fails with invalid data", () => {
   expect(() => memory([])).toThrowError("at least one item");
@@ -642,4 +651,46 @@ it("joins changes correctly", () => {
   joined.push(undefined, undefined);
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([[], [], anyArray]);
+});
+
+it("converts ZSet to CLSet", async () => {
+  const users = memory(
+    [
+      { id: 0, name: "Bob", age: 17 },
+      { id: 1, name: "Alice", age: 22 },
+    ],
+    ["id", "asc"],
+  );
+
+  const peer = 42;
+  const metadata = memoryMergeMetadata(users, peer, [
+    [0, [1, 1, 1, peer, 1, peer]],
+  ]);
+
+  // Fork changes to copy them to 2 streams
+  const [users1, users2] = fork(users);
+  const changes = z2cl(users1, metadata, peer);
+  const view = sink(users2);
+
+  // Materialize view
+  view.pull();
+
+  const spy = mock();
+  changes.connect(spy);
+  expect(spy).not.toHaveBeenCalled();
+
+  users.push([[{ id: 2, name: "Eve", age: 20 }], [1]]);
+  expect(spy).not.toHaveBeenCalled();
+  changes.flush();
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 2, name: "Eve", age: 20 }],
+    [[Infinity, 1, 1, 42, 1, 42]],
+    [0],
+  ]);
+
+  expect(view.pull()[0]).toEqual([
+    { id: 0, name: "Bob", age: 17 },
+    { id: 1, name: "Alice", age: 22 },
+    { id: 2, name: "Eve", age: 20 },
+  ]);
 });

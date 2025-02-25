@@ -4,12 +4,13 @@ import {
   ZSet,
   multiply,
   compare,
-  zero,
   copy,
+  zero,
 } from "./datastructure";
 import { Stream, stream } from "./stream";
 import { SyncPromise } from "./sync-promise";
 import { encodeOrder } from "./util";
+import type { CLMetadata, CLSet } from "./crdt";
 
 /** Stateful */
 function memory<T>(
@@ -164,4 +165,138 @@ function join<A, B, const K extends string>(
   })(downstreamA, downstreamB);
 }
 
-export { memory, sink, filter, join, map };
+function fork<T, S extends Stream<ZSet<T> | Promise<ZSet<T>>>>(
+  downstream: S,
+  count = 2,
+) {
+  // TODO: this should not be a promise....
+  const clone = stream({ push: (x: ZSet<T>) => copy(x) });
+  const forks = Array.from({ length: count }).map(() => clone(downstream));
+  // TODO: this should be inferred automatically
+  return forks as unknown as S[];
+}
+
+// TODO: come up with a better name
+/** Stateful */
+function memoryMergeMetadata<T>(
+  dataStream: Stream<ZSet<T> | Promise<ZSet<T>>>,
+  clientID: number,
+  initialData: [number, CLMetadata][] = [],
+) {
+  // TODO: use generic key, not a number
+  const meta = new Map<number, CLMetadata>(initialData);
+  let version = initialData.reduce((a, b) => Math.max(a, b[1][0]), 0);
+
+  return stream({
+    pull(options) {
+      return SyncPromise.one(dataStream.pull(options)).then((zset) => {
+        const [data, _, order] = zset;
+
+        // TODO: put this away from here
+        const keys =
+          typeof data[0] === "object" && data[0] ?
+            (Object.keys(data[0]).filter((_, i) =>
+              order ? order.every((y) => y >> 1 !== i) : true,
+            ) as (keyof T)[])
+          : undefined;
+
+        const emptyCols = keys?.flatMap(() => [0, clientID]) || [];
+        // TODO: do not use the ID, but actual key!
+        const metadata = data.map(
+          (x) =>
+            // TODO: I'm not sure if fallback here is a good idea...
+            meta.get((x as any).id) ?? [version, 0, ...emptyCols],
+        );
+
+        return [data, metadata, order] as unknown as CLSet<T>;
+      });
+    },
+  })(null);
+}
+
+// TODO: come up with a better name
+/** Stateless */
+function z2cl<T>(
+  downstreamA: Stream<ZSet<T> | Promise<ZSet<T>>>,
+  downstreamB: Stream<CLSet<T> | Promise<CLSet<T>>>,
+  clientID: number,
+) {
+  return stream({
+    push(a: ZSet<T>) {
+      // TODO: don't use id here!
+      const keysA = a?.[0]
+        .filter((_, i) => a[1][i] <= 0)
+        .map((x) => ({ id: x["id"] }));
+
+      // TODO: CLSet should also have a zero type (or maybe unite them?)
+      if (!keysA) return [[], [], []] as CLSet<T>;
+      return SyncPromise.one(downstreamB.pull({ constraints: keysA })).then(
+        (pulled) => {
+          // TODO: put this away from here
+          const keys =
+            typeof a[0][0] === "object" && a[0][0] ?
+              (Object.keys(a[0][0]).filter((_, i) =>
+                pulled[2] ? pulled[2].every((y) => y >> 1 !== i) : true,
+              ) as (keyof T)[])
+            : undefined;
+          const initCols = keys?.flatMap(() => [1, clientID]) || [];
+
+          let j = 0;
+          for (let i = 0; i < a[0].length; i++) {
+            // Create
+            if (a[1][i] > 0) {
+              // TODO: embed version in CLSet and client
+              (a[1][i] as any) = [Infinity, 1, ...initCols];
+              continue;
+            }
+
+            // Pulled have their own counter
+            const referenceItem = pulled[0][j];
+            const referenceMeta = pulled[1][j];
+            j++;
+
+            // Delete
+            if (a[1][i] < 0) {
+              if (!referenceMeta) {
+                throw new Error("Trying to delete non-existent item!");
+              }
+              (a[1][i] as any) = [
+                Infinity,
+                referenceMeta[1] % 2 ? referenceMeta[1] + 1 : referenceMeta[1],
+              ];
+            }
+            // Update
+            else {
+              /// TODO: support noop updates
+              if (!keys) throw new Error("Noop updates are not supported");
+              if (!referenceItem || !referenceMeta) {
+                throw new Error("Trying to update non-existent item!");
+              }
+              (a[1][i] as any) = referenceMeta;
+
+              // TODO: use real version here
+              a[1][i][0] = Infinity;
+              for (let j = 2; j < referenceMeta.length; j += 2) {
+                const key = keys[(j - 2) / 2];
+                if (a[0][i][key] !== referenceItem[key]) {
+                  a[1][i][j + 1] = clientID;
+                  a[1][i][j]++;
+                }
+              }
+            }
+          }
+
+          // TODO: make sure the order types are compatible in the future
+          (a[2] as any) ??= pulled[2];
+          return a as unknown as CLSet<T>;
+        },
+      );
+    },
+    pull(options) {
+      // TODO: implement pulling with version constraint
+      throw new Error("Pulling for changes is not implemented yet");
+    },
+  })(downstreamA);
+}
+
+export { memory, sink, filter, join, map, fork, z2cl, memoryMergeMetadata };
