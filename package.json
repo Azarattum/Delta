@@ -1,4 +1,12 @@
 {
+  "name": "asymptote",
+  "version": "0.0.1",
+  "author": {
+    "name": "Azarattum",
+    "homepage": "https://github.com/Azarattum"
+  },
+  "scripts": {},
+  "type": "module",
   "dependencies": {},
   "devDependencies": {
     "@types/bun": "^1.2.2",
