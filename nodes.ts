@@ -1,7 +1,7 @@
 import {
   add,
   distinct,
-  Wrapper,
+  ZSet,
   multiply,
   compare,
   zero,
@@ -28,7 +28,7 @@ function memory<T>(
     initialData.sort((a, b) => compare(a, b, encodedOrder, keys)),
     Array(initialData.length).fill(1),
     encodedOrder as any[],
-  ] as Wrapper<T>;
+  ] as ZSet<T>;
 
   return stream({
     pull: (options) => {
@@ -50,23 +50,23 @@ function memory<T>(
           Array(scan.length).fill(1)
         : structuredClone(data[1]),
         structuredClone(data[2]),
-      ] as Wrapper<T>;
+      ] as ZSet<T>;
     },
-    push: (x: Wrapper<T>) => (distinct(add(data, x!)), x!),
+    push: (x: ZSet<T>) => (distinct(add(data, x!)), x!),
   })(null);
 }
 
 /** Stateful */
 function sink<T>(
-  downstream: Stream<Wrapper<T> | Promise<Wrapper<T>>>,
-  zero = [[], [], []] as Wrapper<T>,
+  downstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
+  zero = [[], [], []] as ZSet<T>,
 ) {
-  let view: Promise<Wrapper<T>> | Wrapper<T>;
+  let view: Promise<ZSet<T>> | ZSet<T>;
   const pullView = () =>
     (view = SyncPromise.one(downstream.pull()).then((x) => (view = x)));
 
   return stream({
-    push: (x: Wrapper<T>) => {
+    push: (x: ZSet<T>) => {
       if (!view) return zero;
       return SyncPromise.one(view).then((view) => distinct(add(view, x)));
     },
@@ -81,11 +81,11 @@ function sink<T>(
 
 /** Stateless */
 function filter<T>(
-  downstream: Stream<Wrapper<T> | Promise<Wrapper<T>>>,
+  downstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
   predicate: (x: T) => boolean,
 ) {
   return stream({
-    push: (x: Wrapper<T>) => {
+    push: (x: ZSet<T>) => {
       let index = 0;
       x[0].forEach((y, i) => {
         if (predicate(y)) {
@@ -102,28 +102,28 @@ function filter<T>(
 
 /** Stateless */
 function map<T, U>(
-  downstream: Stream<Wrapper<T> | Promise<Wrapper<T>>>,
+  downstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
   mapping: (x: T) => U,
 ) {
   return stream({
-    push: (x: Wrapper<T>) => {
+    push: (x: ZSet<T>) => {
       x[0].forEach((y, i) => ((x[0] as any)[i] = mapping(y)));
-      return x as unknown as Wrapper<U>;
+      return x as unknown as ZSet<U>;
     },
   })(downstream);
 }
 
 /** Stateless */
 function join<A, B, const K extends string>(
-  downstreamA: Stream<Wrapper<A> | Promise<Wrapper<A>>>,
+  downstreamA: Stream<ZSet<A> | Promise<ZSet<A>>>,
   keyA: keyof A,
-  downstreamB: Stream<Wrapper<B> | Promise<Wrapper<B>>>,
+  downstreamB: Stream<ZSet<B> | Promise<ZSet<B>>>,
   keyB: keyof B,
   relationship: K,
 ) {
   type C = A & { [_ in K]: B[] };
   return stream({
-    push(a?: Wrapper<A>, b?: Wrapper<B>) {
+    push(a?: ZSet<A>, b?: ZSet<B>) {
       const keysB = b?.[0].map((x) => ({ [keyA]: x[keyB] }));
       const keysA = a?.[0]
         .filter((_, i) => a[1][i] > 0)
@@ -142,10 +142,10 @@ function join<A, B, const K extends string>(
           return add(
             multiply(zero(copy(a!)), keyA, pulledB, keyB, relationship),
             pulledA,
-          ) as Wrapper<C>;
+          ) as ZSet<C>;
         }
 
-        return (pulledA || [[], [], []]) as Wrapper<C>;
+        return (pulledA || [[], [], []]) as ZSet<C>;
       });
     },
     pull(options) {
@@ -157,7 +157,7 @@ function join<A, B, const K extends string>(
             constraints: a[0].map((x) => ({ [keyB]: x[keyA] })),
           }),
         ]).then(([a, b]) => {
-          return multiply(a, keyA, b, keyB, relationship) as Wrapper<C>;
+          return multiply(a, keyA, b, keyB, relationship) as ZSet<C>;
         }),
       );
     },

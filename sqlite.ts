@@ -1,6 +1,6 @@
 import SQLite from "bun:sqlite";
 import { stream } from "./stream";
-import { Wrapper } from "./datastructure";
+import { ZSet } from "./datastructure";
 import { encodeOrder } from "./util";
 
 /** Stateless SQLite source node (prototype) */
@@ -46,9 +46,9 @@ function sqlite<T extends object>(
         scan,
         Array(scan.length).fill(1),
         encodedOrder as any[],
-      ] as Wrapper<T>;
+      ] as ZSet<T>;
     },
-    push: (x?: Wrapper<T>) => {
+    push: (x?: ZSet<T>) => {
       for (let i = 0; i < x![0].length; i++) {
         const op = x![1][i];
         if (op < 0) {

@@ -1,6 +1,6 @@
 import { encodeOrder } from "./util";
 import { stream } from "./stream";
-import { Wrapper } from "./datastructure";
+import { type ZSet } from "./datastructure";
 
 /** Stateful IDB source node (prototype) */
 async function idb<T extends object>(
@@ -62,9 +62,9 @@ async function idb<T extends object>(
         scan,
         Array(scan.length).fill(1),
         encodedOrder as any[],
-      ] as Wrapper<T>;
+      ] as ZSet<T>;
     },
-    flush: async (changes: [Wrapper<T>][]) => {
+    flush: async (changes: [ZSet<T>][]) => {
       if (changes.length === 0) return;
       const store = db.transaction(table, "readwrite").objectStore(table);
       for (const [change] of changes) {

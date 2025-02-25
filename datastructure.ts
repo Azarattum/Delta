@@ -1,6 +1,6 @@
-type Metadata<T> = number[] & {
+type ZMetadata<T> = number[] & {
   [K in keyof T as T[K] extends any[] ? K : never]?: T[K] extends (infer U)[] ?
-    Metadata<U>[]
+    ZMetadata<U>[]
   : never;
 };
 
@@ -10,9 +10,9 @@ type Order<T> = number[] & {
   : never;
 };
 
-type Wrapper<T> = [T[], Metadata<T>, Order<T>?];
+type ZSet<T> = [data: T[], metadata: ZMetadata<T>, order?: Order<T>];
 
-function add<T>(a: Wrapper<T>, b: Wrapper<T>) {
+function add<T>(a: ZSet<T>, b: ZSet<T>) {
   const [aData, aMetadata, aOrder] = a;
   const [bData, bMetadata, bOrder] = b;
   const keys =
@@ -87,9 +87,9 @@ function add<T>(a: Wrapper<T>, b: Wrapper<T>) {
 }
 
 function multiply<A, B, K extends string>(
-  a: Wrapper<A>,
+  a: ZSet<A>,
   keyA: keyof A,
-  b: Wrapper<B>,
+  b: ZSet<B>,
   keyB: keyof B,
   relationship: K,
 ) {
@@ -110,10 +110,10 @@ function multiply<A, B, K extends string>(
   }
   ((a[2] as any) ??= [])[relationship] ??= b[2];
 
-  return a as Wrapper<A & { [_ in K]: B[] }>;
+  return a as ZSet<A & { [_ in K]: B[] }>;
 }
 
-function distinct<T>(item: Wrapper<T>) {
+function distinct<T>(item: ZSet<T>) {
   let index = 0;
   item[0].forEach((x, i) => {
     if (item[1][i] > 0) {
@@ -131,7 +131,7 @@ function distinct<T>(item: Wrapper<T>) {
   return item;
 }
 
-function zero<T>(item: Wrapper<T>) {
+function zero<T>(item: ZSet<T>) {
   item[1].fill(0);
   // TODO: test whether this is actually needed
   Object.keys(item[1]).forEach((key) => {
@@ -141,7 +141,7 @@ function zero<T>(item: Wrapper<T>) {
   return item;
 }
 
-function copy<T>(item: Wrapper<T>) {
+function copy<T>(item: ZSet<T>) {
   const items = item[0].slice();
   const metadata = item[1].slice();
   const order = item[2]?.slice();
@@ -159,7 +159,7 @@ function copy<T>(item: Wrapper<T>) {
     });
   });
 
-  return [items, metadata, order] as unknown as Wrapper<T>;
+  return [items, metadata, order] as unknown as ZSet<T>;
 }
 
 function compare<T>(a: T, b: T, order: number[], keys?: (keyof T)[]) {
@@ -188,4 +188,4 @@ function compare<T>(a: T, b: T, order: number[], keys?: (keyof T)[]) {
 }
 
 export { add, distinct, zero, copy, compare, multiply };
-export type { Metadata, Wrapper };
+export type { ZMetadata, ZSet };
