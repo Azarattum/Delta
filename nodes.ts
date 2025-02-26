@@ -61,7 +61,7 @@ function memory<T>(
 /** Stateful */
 function sink<T>(
   downstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
-  initial = zero(),
+  initial = zero<T>(),
 ) {
   let view: Promise<ZSet<T>> | ZSet<T>;
   const pullView = () =>
@@ -166,12 +166,12 @@ function join<A, B, const K extends string>(
   })(downstreamA, downstreamB);
 }
 
-function fork<T, S extends Stream<ZSet<T> | Promise<ZSet<T>>>>(
+function fork<S extends Stream<ZSet<any> | Promise<ZSet<any>>>>(
   downstream: S,
   count = 2,
 ) {
   // TODO: this should not be a promise....
-  const clone = stream({ push: (x: ZSet<T>) => copy(x) });
+  const clone = stream({ push: (x: ZSet<unknown>) => copy(x) });
   const forks = Array.from({ length: count }).map(() => clone(downstream));
   // TODO: this should be inferred automatically
   return forks as unknown as S[];
