@@ -141,10 +141,10 @@ function join<A, B, const K extends string>(
 
         if (pulledA && b) multiply(pulledA, keyA, b, keyB, relationship);
         if (pulledA && pulledB) {
-          return add(
-            multiply(zero(copy(a!)), keyA, pulledB, keyB, relationship),
-            pulledA,
-          ) as ZSet<C>;
+          const refA = pulledA === a ? a : zero(copy(a!));
+          multiply(refA, keyA, pulledB, keyB, relationship);
+          if (pulledA !== a) add(refA, pulledA);
+          return refA as ZSet<C>;
         }
 
         return (pulledA || zero()) as ZSet<C>;
