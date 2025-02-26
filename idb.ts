@@ -1,21 +1,22 @@
-import { encodeOrder } from "./util";
 import { stream } from "./stream";
 import { type ZSet } from "./datastructure";
+import { Shape, TYPE } from "./shape";
 
 /** Stateful IDB source node (prototype) */
 async function idb<T extends object>(
   db: IDBDatabase,
   table: string,
-  initialData: T[],
-  primaryKeys: [NoInfer<keyof T & string>, "asc" | "desc"][],
+  shape: Shape<T>,
+  initialData: T[] = [],
 ) {
-  const columns = Object.keys(initialData[0]);
-  const encodedOrder = encodeOrder(columns, ...primaryKeys);
-
   const store = db.transaction(table, "readwrite").objectStore(table);
   // Autocreating for testing convenience (TODO: remove later)
   initialData.forEach((x) => store.put(x));
   await new Promise((resolve) => (store.transaction.oncomplete = resolve));
+
+  const primaryKeys = shape.keys.filter(
+    (_, i) => shape.types[i] & TYPE.PRIMARY,
+  );
 
   return stream({
     pull: async (options) => {
@@ -58,11 +59,7 @@ async function idb<T extends object>(
         // console.log("FULL SCAN:", scan);
       }
 
-      return [
-        scan,
-        Array(scan.length).fill(1),
-        encodedOrder as any[],
-      ] as ZSet<T>;
+      return [scan, Array(scan.length).fill(1), shape] as ZSet<T>;
     },
     flush: async (changes: [ZSet<T>][]) => {
       if (changes.length === 0) return;
@@ -83,4 +80,19 @@ async function idb<T extends object>(
   })(null);
 }
 
-export { idb };
+// TODO: this is a temporary solution for testing purposes,
+//  we should use a proper schema and source create in the future
+function createStore(
+  db: IDBDatabase,
+  name: string,
+  shape: Shape<Record<string, any>>,
+) {
+  const keyPath = shape.keys.filter((_, i) => shape.types[i] & TYPE.PRIMARY);
+  const store = db.createObjectStore(name, { keyPath });
+  const relations = shape.keys.filter(
+    (_, i) => shape.types[i] >> 16 && !(shape.types[i] & TYPE.PRIMARY),
+  );
+  relations.forEach((x) => store.createIndex(x, [x]));
+}
+
+export { idb, createStore };

@@ -1,30 +1,31 @@
 import SQLite from "bun:sqlite";
 import { stream } from "./stream";
 import { ZSet } from "./datastructure";
-import { encodeOrder } from "./util";
+import { Shape, TYPE } from "./shape";
 
 /** Stateless SQLite source node (prototype) */
 function sqlite<T extends object>(
   db: SQLite,
   table: string,
-  initialData: T[],
-  primaryKeys: [NoInfer<keyof T & string>, "asc" | "desc"][],
+  shape: Shape<T>,
+  initialData: T[] = [],
 ) {
-  const columns = Object.keys(initialData[0]);
-
   // For debugging
   // const orig = sqlite.query;
   // sqlite.query = (...args) => (
   //   console.log("SQL:", args[0]), orig.call(sqlite, ...args)
   // );
-  const encodedOrder = encodeOrder(columns, ...primaryKeys);
+
+  const primaryKeys = shape.keys.filter(
+    (_, i) => shape.types[i] & TYPE.PRIMARY,
+  );
 
   // Autocreating for testing convenience (TODO: remove later)
   db.run(
-    `CREATE TABLE IF NOT EXISTS ${table} (${columns.join(",")}, PRIMARY KEY (${primaryKeys.map((x) => x[0]).join(",")}))`,
+    `CREATE TABLE IF NOT EXISTS ${table} (${shape.keys}, PRIMARY KEY (${primaryKeys}))`,
   );
   db.run(
-    `INSERT OR IGNORE INTO ${table} VALUES ${initialData.map(() => `(${columns.map(() => "?").join(",")})`)}`,
+    `INSERT OR IGNORE INTO ${table} VALUES ${initialData.map(() => `(${shape.keys.map(() => "?").join(",")})`)}`,
     initialData.flatMap((x) => Object.values(x)),
   );
 
@@ -42,11 +43,7 @@ function sqlite<T extends object>(
             .all()
         : db.query(`SELECT * FROM ${table}`).all();
 
-      return [
-        scan,
-        Array(scan.length).fill(1),
-        encodedOrder as any[],
-      ] as ZSet<T>;
+      return [scan, Array(scan.length).fill(1), shape] as ZSet<T>;
     },
     push: (x?: ZSet<T>) => {
       for (let i = 0; i < x![0].length; i++) {
@@ -58,12 +55,12 @@ function sqlite<T extends object>(
           );
         } else if (op > 0) {
           db.run(
-            `INSERT OR IGNORE INTO ${table} VALUES (${columns.map(() => "?").join(",")})`,
+            `INSERT OR IGNORE INTO ${table} VALUES (${shape.keys.map(() => "?").join(",")})`,
             Object.values(x![0][i]) as any[], // TODO: this is a hack for POC
           );
         } else {
           db.run(
-            `UPDATE ${table} SET ${columns.map((x) => `${x} = ?`).join(",")} WHERE id = ?`,
+            `UPDATE ${table} SET ${shape.keys.map((x) => `${x.toString()} = ?`).join(",")} WHERE id = ?`,
             Object.values(x![0][i]) as any[], // TODO: this is a hack for POC
             (x![0][i] as any).id, // TODO: this is a hack for POC
           );

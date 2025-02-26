@@ -1,39 +1,25 @@
+import { either, nest, type Shape } from "./shape";
+
 type ZMetadata<T> = number[] & {
   [K in keyof T as T[K] extends any[] ? K : never]?: T[K] extends (infer U)[] ?
     ZMetadata<U>[]
   : never;
 };
 
-type Order<T> = number[] & {
-  [K in keyof T as T[K] extends any[] ? K : never]?: T[K] extends (infer U)[] ?
-    Order<U>[]
-  : never;
-};
-
-type ZSet<T> = [data: T[], metadata: ZMetadata<T>, order?: Order<T>];
+type ZSet<T> = [data: T[], metadata: ZMetadata<T>, shape?: Shape<T>];
 
 function add<T>(a: ZSet<T>, b: ZSet<T>) {
-  const [aData, aMetadata, aOrder] = a;
-  const [bData, bMetadata, bOrder] = b;
-  const keys =
-    typeof aData[0] === "object" && aData[0] ?
-      (Object.keys(aData[0]) as (keyof T)[])
-    : undefined;
-  const bMetadataKeys = Object.keys(bMetadata).filter(
-    (key) => !Number.isInteger(+key),
-  );
+  const [aData, aMetadata, aShape] = a;
+  const [bData, bMetadata, bShape] = b;
+  const shape = either(aShape, bShape);
 
-  if (!aOrder) throw new Error("Destination must be ordered!");
-  if (bOrder?.length && bOrder.toString() !== aOrder.toString()) {
-    throw new Error(`Mismatched order: ${aOrder} and ${bOrder}`);
-  }
+  const childrenKeys = Object.keys(shape.children ?? {});
 
   let i = 0;
   let j = 0;
 
   while (j < bData.length) {
-    const equality =
-      i < aData.length ? compare(aData[i], bData[j], aOrder, keys) : 1;
+    const equality = i < aData.length ? compare(aData[i], bData[j], shape) : 1;
     if (equality < 0) {
       i++;
       continue;
@@ -42,25 +28,18 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
       if (bMetadata[j] === 0 || aMetadata[j] === 0) {
         for (const key in bData[j]) {
           if (key in bMetadata) {
-            if (aMetadata[key]?.[i] == null) {
-              (aData as any)[i][key] = bData[j][key];
-              (aMetadata as any)[key] ??= [];
-              (aMetadata as any)[key][i] = bMetadata[key]?.[j].slice() ?? [];
-              (aOrder as any)[key] ??= bOrder?.[key]?.slice();
-            } else {
-              add(
-                [
-                  aData[i][key] as unknown[],
-                  (aMetadata as any)[key][i],
-                  (aOrder as any)[key],
-                ],
-                [
-                  bData[j][key] as unknown[],
-                  bMetadata[key]?.[j] ?? [],
-                  (bOrder as any)?.[key],
-                ],
-              );
-            }
+            add(
+              [
+                aData[i][key] as any[],
+                (aMetadata as any)[key][i],
+                aShape?.children?.[key],
+              ],
+              [
+                bData[j][key] as any[],
+                bMetadata[key]?.[j] ?? [],
+                bShape?.children?.[key],
+              ],
+            );
           } else {
             aData[i][key] = bData[j][key];
           }
@@ -74,7 +53,7 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
       aMetadata.splice(i, 0, bMetadata[j]);
 
       // Copy metadata. TODO: Should be recursive?
-      bMetadataKeys.forEach((key) => {
+      childrenKeys.forEach((key) => {
         if (Number.isInteger(+key)) return;
         aMetadata[key].splice(i, 0, bMetadata[key][j]);
       });
@@ -108,7 +87,7 @@ function multiply<A, B, K extends string>(
     (a[0][i] as any)[relationship] = matches.map((x) => b[0][x]);
     ((a[1] as any)[relationship] ??= [])[i] = matches.map((x) => b[1][x]);
   }
-  ((a[2] as any) ??= [])[relationship] ??= b[2];
+  a[2] = nest(a[2], relationship, b[2]);
 
   return a as ZSet<A & { [_ in K]: B[] }>;
 }
@@ -121,18 +100,18 @@ function distinct<T>(item: ZSet<T>) {
       item[1][index++] = 1;
     }
   });
+
   item[0].length = index;
   item[1].length = index;
 
-  Object.keys(item[1]).forEach((key) => {
-    if (Number.isInteger(+key)) return;
-    item[0].forEach((x, i) => x[key] && distinct([x[key], item[1][key][i]]));
+  Object.keys(item[2]?.children ?? {}).forEach((key) => {
+    item[0].forEach((x, i) => distinct([x[key], item[1][key][i]]));
   });
   return item;
 }
 
 function zero<T>(item?: ZSet<T>) {
-  if (!item) return [[], [], []] as ZSet<T>;
+  if (!item) return [[], []] as ZSet<T>;
 
   item[1].fill(0);
   // TODO: test whether this is actually needed
@@ -146,7 +125,6 @@ function zero<T>(item?: ZSet<T>) {
 function copy<T>(item: ZSet<T>) {
   const items = item[0].slice();
   const metadata = item[1].slice();
-  const order = item[2]?.slice();
 
   const bMetadataKeys = Object.keys(item[1]).filter(
     (key) => !Number.isInteger(+key),
@@ -157,17 +135,16 @@ function copy<T>(item: ZSet<T>) {
       const clone = copy([x[key], item[1][key][i], item[2]?.[key]]);
       x[key] = clone[0];
       (metadata[key] ??= [])[i] = clone[1];
-      if (order) order[key] = clone[2];
     });
   });
 
-  return [items, metadata, order] as unknown as ZSet<T>;
+  return [items, metadata, item[2]] as unknown as ZSet<T>;
 }
 
-function compare<T>(a: T, b: T, order: number[], keys?: (keyof T)[]) {
-  for (let i = 0; i < order.length; i++) {
-    const direction = order[i] & 1 ? -1 : 1;
-    const key = keys?.[order[i] >> 1];
+function compare<T>(a: T, b: T, shape: Shape<T>) {
+  for (let i = 0; i < shape.order.length; i++) {
+    const direction = shape.order[i] & 1 ? -1 : 1;
+    const key = shape.keys[shape.order[i] >> 1];
     const x = key ? a[key] : a;
     const y = key ? b[key] : b;
 

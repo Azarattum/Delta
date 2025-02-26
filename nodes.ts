@@ -9,28 +9,25 @@ import {
 } from "./datastructure";
 import { Stream, stream } from "./stream";
 import { SyncPromise } from "./sync-promise";
-import { encodeOrder } from "./util";
 import type { CLMetadata, CLSet } from "./crdt";
+import { either, Shape, TYPE } from "./shape";
 
 /** Stateful */
 function memory<T>(
-  initialData: T[],
-  ...order: [NoInfer<keyof T & string>, "asc" | "desc"][]
+  shape: Shape<T>,
+  initialData: T[] = [],
   // TODO: allow memory to accept downstream (e.g. to allow pushes to it)
 ) {
-  if (!initialData[0]) {
-    throw new Error("Must have at least one item to infer order");
-  }
-  const keys =
-    typeof initialData[0] === "object" && initialData[0] ?
-      (Object.keys(initialData[0]) as (keyof T)[])
-    : undefined;
-  const encodedOrder = encodeOrder(keys, ...order);
   const data = [
-    initialData.sort((a, b) => compare(a, b, encodedOrder, keys)),
+    initialData.sort((a, b) => compare(a, b, shape)),
     Array(initialData.length).fill(1),
-    encodedOrder as any[],
+    shape,
   ] as ZSet<T>;
+
+  Object.keys(shape.children ?? {}).forEach((key) => {
+    data[1][key] ??= [];
+    data[0].forEach((x, i) => (data[1][key][i] = Array(x[key].length).fill(1)));
+  });
 
   return stream({
     pull: (options) => {
@@ -51,7 +48,7 @@ function memory<T>(
         options?.constraints ?
           Array(scan.length).fill(1)
         : structuredClone(data[1]),
-        structuredClone(data[2]),
+        shape,
       ] as ZSet<T>;
     },
     push: (x: ZSet<T>) => (distinct(add(data, x!)), x!),
@@ -170,10 +167,8 @@ function fork<S extends Stream<ZSet<any> | Promise<ZSet<any>>>>(
   downstream: S,
   count = 2,
 ) {
-  // TODO: this should not be a promise....
   const clone = stream({ push: (x: ZSet<unknown>) => copy(x) });
   const forks = Array.from({ length: count }).map(() => clone(downstream));
-  // TODO: this should be inferred automatically
   return forks as unknown as S[];
 }
 
@@ -191,25 +186,22 @@ function memoryMergeMetadata<T>(
   return stream({
     pull(options) {
       return SyncPromise.one(dataStream.pull(options)).then((zset) => {
-        const [data, _, order] = zset;
+        const [data, _, shape] = zset;
 
-        // TODO: put this away from here
-        const keys =
-          typeof data[0] === "object" && data[0] ?
-            (Object.keys(data[0]).filter((_, i) =>
-              order ? order.every((y) => y >> 1 !== i) : true,
-            ) as (keyof T)[])
-          : undefined;
+        const emptyCols =
+          shape?.keys
+            .filter((_, i) => !(shape.types[i] & TYPE.PRIMARY))
+            .flatMap(() => [0, clientID]) ?? [];
 
-        const emptyCols = keys?.flatMap(() => [0, clientID]) || [];
         // TODO: do not use the ID, but actual key!
         const metadata = data.map(
           (x) =>
             // TODO: I'm not sure if fallback here is a good idea...
             meta.get((x as any).id) ?? [version, 0, ...emptyCols],
         );
+        Object.assign(metadata, { version, peer: clientID });
 
-        return [data, metadata, order] as unknown as CLSet<T>;
+        return [data, metadata, shape] as unknown as CLSet<T>;
       });
     },
   })(null);
@@ -220,7 +212,6 @@ function memoryMergeMetadata<T>(
 function z2cl<T>(
   downstreamA: Stream<ZSet<T> | Promise<ZSet<T>>>,
   downstreamB: Stream<CLSet<T> | Promise<CLSet<T>>>,
-  clientID: number,
 ) {
   return stream({
     push(a: ZSet<T>) {
@@ -230,24 +221,21 @@ function z2cl<T>(
         .map((x) => ({ id: x["id"] }));
 
       // TODO: CLSet should also have a zero type (or maybe unite them?)
-      if (!keysA) return [[], [], []] as CLSet<T>;
+      if (!keysA) return [[], []] as CLSet<T>;
       return SyncPromise.one(downstreamB.pull({ constraints: keysA })).then(
         (pulled) => {
-          // TODO: put this away from here
-          const keys =
-            typeof a[0][0] === "object" && a[0][0] ?
-              (Object.keys(a[0][0]).filter((_, i) =>
-                pulled[2] ? pulled[2].every((y) => y >> 1 !== i) : true,
-              ) as (keyof T)[])
-            : undefined;
-          const initCols = keys?.flatMap(() => [1, clientID]) || [];
+          const keys = pulled[2]?.keys.filter(
+            (_, i) => !(pulled[2]!.types[i] & TYPE.PRIMARY),
+          );
+          const nextVersion = (pulled[1].version ?? 0) + 1;
 
           let j = 0;
           for (let i = 0; i < a[0].length; i++) {
             // Create
             if (a[1][i] > 0) {
-              // TODO: embed version in CLSet and client
-              (a[1][i] as any) = [Infinity, 1, ...initCols];
+              const initCols =
+                keys?.flatMap(() => [1, pulled[1].peer ?? 0]) ?? [];
+              (a[1][i] as any) = [nextVersion, 1, ...initCols];
               continue;
             }
 
@@ -275,20 +263,18 @@ function z2cl<T>(
               }
               (a[1][i] as any) = referenceMeta;
 
-              // TODO: use real version here
-              a[1][i][0] = Infinity;
+              a[1][i][0] = nextVersion;
               for (let j = 2; j < referenceMeta.length; j += 2) {
                 const key = keys[(j - 2) / 2];
                 if (a[0][i][key] !== referenceItem[key]) {
-                  a[1][i][j + 1] = clientID;
+                  a[1][i][j + 1] = pulled[1].peer ?? 0;
                   a[1][i][j]++;
                 }
               }
             }
           }
 
-          // TODO: make sure the order types are compatible in the future
-          (a[2] as any) ??= pulled[2];
+          a[2] = either(a[2], pulled[2]);
           return a as unknown as CLSet<T>;
         },
       );

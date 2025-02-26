@@ -1,22 +1,19 @@
+import { either, TYPE, type Shape } from "./shape";
+
 type CLMetadata = [version: number, causality: number, ...clocks: number[]];
 
 type CLSet<T> = [
   data: (T | undefined)[],
-  metadata: (CLMetadata | undefined)[],
-  order?: number[],
+  metadata: (CLMetadata | undefined)[] & { version?: number; peer?: number },
+  shape?: Shape<T>,
 ];
 
 function merge<T>(a: CLSet<T>, b: CLSet<T>) {
-  const order = a[2];
-  const keys =
-    typeof a[0][0] === "object" && a[0][0] ?
-      (Object.keys(a[0][0]).filter((_, i) =>
-        order ? order.every((y) => y >> 1 !== i) : true,
-      ) as (keyof T)[])
-    : undefined;
+  const shape = either(a[2], b[2]);
+  const keys = shape.keys.filter((_, i) => !(shape.types[i] & TYPE.PRIMARY));
 
-  // TODO: `aVersion` should be global
-  const nextVersion = a[1].reduce((a, b) => Math.max(a, b?.[0] ?? 0), 0) + 1;
+  const nextVersion =
+    a[1].version ?? a[1].reduce((a, b) => Math.max(a, b?.[0] ?? 0), 0) + 1;
 
   const length = Math.max(a[1].length, b[1].length);
   for (let i = 0; i < length; i++) {
@@ -39,7 +36,7 @@ function merge<T>(a: CLSet<T>, b: CLSet<T>) {
 
     // Update values and clocks
     let updated = reinserted;
-    if (keys && aMeta[1] % 2) {
+    if (keys.length && aMeta[1] % 2) {
       const fields = Math.max(aMeta.length, bMeta.length);
       for (let j = 2; j < fields; j += 2) {
         const compare = aMeta[j] - bMeta[j] || aMeta[j + 1] - bMeta[j + 1];
@@ -60,5 +57,17 @@ function merge<T>(a: CLSet<T>, b: CLSet<T>) {
   return a;
 }
 
-export { merge };
+function copy<T>(item: CLSet<T>) {
+  const data = item[0].slice();
+  const meta = item[1].slice();
+
+  data.forEach((x, i) => {
+    if (data[i]) data[i] = { ...x } as (typeof data)[number];
+    if (meta[i]) meta[i] = meta[i].slice() as (typeof meta)[number];
+  });
+
+  return [data, meta, item[2]] as CLSet<T>;
+}
+
+export { merge, copy };
 export type { CLSet, CLMetadata };

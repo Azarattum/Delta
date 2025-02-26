@@ -1,43 +1,43 @@
 import { expect, it } from "bun:test";
 import { join, sink } from "./nodes";
-import { idb } from "./idb";
+import { createStore, idb } from "./idb";
 import "./type-test";
 import "fake-indexeddb/auto";
 import { mock } from "bun:test";
+import { shape } from "./shape";
 
 it("works with indexed DB", async () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY, t.RELATION(1)),
+    name: t.STRING,
+  }));
+
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    text: t.STRING,
+    user: t(t.INT, t.RELATION(1)),
+  }));
+
   const idbRequest = indexedDB.open("test1", 1);
   idbRequest.onupgradeneeded = () => {
-    idbRequest.result.createObjectStore("users", { keyPath: ["id"] });
-    idbRequest.result
-      .createObjectStore("messages", { keyPath: ["id"] })
-      .createIndex("user", ["user"]);
+    createStore(idbRequest.result, "users", user);
+    createStore(idbRequest.result, "messages", message);
   };
 
   const db = await new Promise<IDBDatabase>(
     (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
   );
 
-  const users = await idb(
-    db,
-    "users",
-    [
-      { id: 0, name: "Bob" },
-      { id: 1, name: "Alice" },
-    ],
-    [["id", "asc"]],
-  );
-  const messages = await idb(
-    db,
-    "messages",
-    [
-      { id: 0, text: "Hello", user: 0 },
-      { id: 1, text: "I'm Bob", user: 0 },
-      { id: 2, text: "And I'm Alice!", user: 1 },
-      { id: 3, text: "I'll be here!", user: 2 },
-    ],
-    [["id", "asc"]],
-  );
+  const users = await idb(db, "users", user, [
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+  ]);
+  const messages = await idb(db, "messages", message, [
+    { id: 0, text: "Hello", user: 0 },
+    { id: 1, text: "I'm Bob", user: 0 },
+    { id: 2, text: "And I'm Alice!", user: 1 },
+    { id: 3, text: "I'll be here!", user: 2 },
+  ]);
 
   expect(users.flush).toHaveReturnTypeOf<Promise<void>>();
   expect(messages.flush).toHaveReturnTypeOf<Promise<void>>();
@@ -166,24 +166,24 @@ it("works with indexed DB", async () => {
 });
 
 it("pushes synchronously when possible", async () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    name: t.STRING,
+  }));
+
   const idbRequest = indexedDB.open("test2", 1);
   idbRequest.onupgradeneeded = () => {
-    idbRequest.result.createObjectStore("users", { keyPath: ["id"] });
+    createStore(idbRequest.result, "users", user);
   };
 
   const db = await new Promise<IDBDatabase>(
     (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
   );
 
-  const users = await idb(
-    db,
-    "users",
-    [
-      { id: 0, name: "Bob" },
-      { id: 1, name: "Alice" },
-    ],
-    [["id", "asc"]],
-  );
+  const users = await idb(db, "users", user, [
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+  ]);
 
   const view = sink(users);
 
@@ -223,7 +223,7 @@ it("pushes synchronously when possible", async () => {
       { id: 3, name: "John" },
     ],
     [1, 1, 1, 1],
-    [0],
+    user,
   ]);
   expect(promise).toBeInstanceOf(Promise);
   await promise;
