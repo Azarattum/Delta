@@ -16,9 +16,6 @@
         "fake-indexeddb": "^6.0.0",
         "typotest": "workspace:*",
       },
-      "peerDependencies": {
-        "typescript": "^5",
-      },
     },
     "packages/deltaquery": {
       "name": "deltaquery",
