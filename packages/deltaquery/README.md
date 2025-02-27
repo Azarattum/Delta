@@ -1,6 +1,6 @@
 # Deltaquery
 
-A compiler for [delta](https://github.com/azarattum/delta) to compile your queries to a [deltaflow](https://github.com/azarattum/delta/packages/deltaflow) pipeline.
+A compiler for [delta](https://github.com/Azarattum/Delta) to compile your queries to a [deltaflow](https://github.com/Azarattum/Delta/tree/main/packages/deltaflow) pipeline.
 
 ### Concept
 
