@@ -2,7 +2,7 @@ import type { ZSet } from "../datastructure/zset";
 import { stream, type Stream } from "../stream";
 
 export function filter<T>(
-  downstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
+  upstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
   predicate: (x: T) => boolean,
 ) {
   return stream({
@@ -18,5 +18,5 @@ export function filter<T>(
       x[1].length = index;
       return x;
     },
-  })(downstream);
+  })(upstream);
 }

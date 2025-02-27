@@ -6,7 +6,7 @@ import { stream, SyncPromise, type Stream } from "../../stream";
 export function memory<T>(
   shape: Shape<T>,
   initialData: T[] = [],
-  // TODO: allow memory to accept downstream (e.g. to allow pushes to it)
+  // TODO: allow memory to accept upstream (e.g. to allow pushes to it)
 ) {
   const data = [
     initialData.sort((a, b) => compare(a, b, shape)),

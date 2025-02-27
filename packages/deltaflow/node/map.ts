@@ -2,7 +2,7 @@ import type { ZSet } from "../datastructure/zset";
 import { stream, type Stream } from "../stream";
 
 export function map<T, U>(
-  downstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
+  upstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
   mapping: (x: T) => U,
 ) {
   return stream({
@@ -10,5 +10,5 @@ export function map<T, U>(
       x[0].forEach((y, i) => ((x[0] as any)[i] = mapping(y)));
       return x as unknown as ZSet<U>;
     },
-  })(downstream);
+  })(upstream);
 }

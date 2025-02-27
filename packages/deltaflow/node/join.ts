@@ -2,51 +2,51 @@ import { add, copy, multiply, zero, type ZSet } from "../datastructure/zset";
 import { stream, SyncPromise, type Stream } from "../stream";
 
 export function join<A, B, const K extends string>(
-  downstreamA: Stream<ZSet<A> | Promise<ZSet<A>>>,
-  keyA: keyof A,
-  downstreamB: Stream<ZSet<B> | Promise<ZSet<B>>>,
-  keyB: keyof B,
+  aUpstream: Stream<ZSet<A> | Promise<ZSet<A>>>,
+  aKey: keyof A,
+  bUpstream: Stream<ZSet<B> | Promise<ZSet<B>>>,
+  bKey: keyof B,
   relationship: K,
 ) {
   type C = ReturnType<typeof multiply<A, B, K>>;
   return stream({
     push(a?: ZSet<A>, b?: ZSet<B>) {
-      const keysB = b?.[0].map((x) => ({ [keyA]: x[keyB] }));
-      const keysA = a?.[0]
+      const bKeys = b?.[0].map((x) => ({ [aKey]: x[bKey] }));
+      const aKeys = a?.[0]
         .filter((_, i) => a[1][i] > 0)
-        .map((x) => ({ [keyB]: x[keyA] }));
+        .map((x) => ({ [bKey]: x[aKey] }));
 
       return SyncPromise.all([
-        keysB?.length && downstreamA.pull({ constraints: keysB }),
-        keysA?.length && downstreamB.pull({ constraints: keysA }),
-      ] as const).then(([pulledA, pulledB]) => {
-        if (pulledA) zero(pulledA);
-        if (pulledA && a) add(pulledA, a);
-        else if (a) pulledA = a;
+        bKeys?.length && aUpstream.pull({ constraints: bKeys }),
+        aKeys?.length && bUpstream.pull({ constraints: aKeys }),
+      ] as const).then(([aPulled, bPulled]) => {
+        if (aPulled) zero(aPulled);
+        if (aPulled && a) add(aPulled, a);
+        else if (a) aPulled = a;
 
-        if (pulledA && b) multiply(pulledA, keyA, b, keyB, relationship);
-        if (pulledA && pulledB) {
-          const refA = pulledA === a ? a : zero(copy(a!));
-          multiply(refA, keyA, pulledB, keyB, relationship);
-          if (pulledA !== a) add(refA, pulledA);
-          return refA as C;
+        if (aPulled && b) multiply(aPulled, aKey, b, bKey, relationship);
+        if (aPulled && bPulled) {
+          const aRef = aPulled === a ? a : zero(copy(a!));
+          multiply(aRef, aKey, bPulled, bKey, relationship);
+          if (aPulled !== a) add(aRef, aPulled);
+          return aRef as C;
         }
 
-        return (pulledA || zero()) as C;
+        return (aPulled || zero()) as C;
       });
     },
     pull(options) {
-      return SyncPromise.one(downstreamA.pull(options)).then((a) =>
+      return SyncPromise.one(aUpstream.pull(options)).then((a) =>
         SyncPromise.all([
           a,
-          downstreamB.pull({
+          bUpstream.pull({
             ...options,
-            constraints: a[0].map((x) => ({ [keyB]: x[keyA] })),
+            constraints: a[0].map((x) => ({ [bKey]: x[aKey] })),
           }),
         ]).then(([a, b]) => {
-          return multiply(a, keyA, b, keyB, relationship);
+          return multiply(a, aKey, b, bKey, relationship);
         }),
       );
     },
-  })(downstreamA, downstreamB);
+  })(aUpstream, bUpstream);
 }

@@ -2,12 +2,12 @@ import { add, distinct, zero, type ZSet } from "../datastructure/zset";
 import { stream, SyncPromise, type Stream } from "../stream";
 
 export function sink<T>(
-  downstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
+  upstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
   initial = zero<T>(),
 ) {
   let view: Promise<ZSet<T>> | ZSet<T>;
   const pullView = () =>
-    (view = SyncPromise.one(downstream.pull()).then((x) => (view = x)));
+    (view = SyncPromise.one(upstream.pull()).then((x) => (view = x)));
 
   return stream({
     push: (x: ZSet<T>) => {
@@ -20,5 +20,5 @@ export function sink<T>(
       return view;
     },
     flush: () => SyncPromise.one(view ?? pullView()).then(() => void 0),
-  })(downstream);
+  })(upstream);
 }

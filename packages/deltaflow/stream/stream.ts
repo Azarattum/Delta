@@ -7,28 +7,28 @@ function stream<
   TIn extends any[] = [Awaited<TPull>],
   TFlush extends MaybePromise<void> = void,
 >(options: StreamOptions<TPush, TPull, TIn, TFlush>) {
-  type Downstreams = { [K in keyof TIn]: Stream<unknown, [TIn[K]]> | null };
+  type Upstreams = { [K in keyof TIn]: Stream<unknown, [TIn[K]]> | null };
 
   return <
-    TDownstreams extends Downstreams,
-    TOut = InferOut<TPush, TPull, TDownstreams>,
+    TUpstreams extends Upstreams,
+    TOut = InferOut<TPush, TPull, TUpstreams>,
   >(
-    ...downstreams: TDownstreams
-  ): Stream<TOut, TIn, InferFlush<TPush, TFlush, TDownstreams>> => {
+    ...upstreams: TUpstreams
+  ): Stream<TOut, TIn, InferFlush<TPush, TFlush, TUpstreams>> => {
     const push = options.push ?? ((...entity: TIn) => entity[0]);
     const pull =
       options.pull ??
       ((options?) => {
-        const entities = downstreams.map((x) => x?.pull(options));
+        const entities = upstreams.map((x) => x?.pull(options));
         return SyncPromise.all(entities).then((x) => push(...(x as TIn)));
       });
 
     let flushing: void | Promise<void> | null = null;
     const queue: PartialEntities<TIn>[] = [];
-    const upstream: Set<(entity: Awaited<TOut>) => void> = new Set();
+    const downstreams: Set<(entity: Awaited<TOut>) => void> = new Set();
 
-    downstreams.forEach((downstream, i) => {
-      downstream?.connect((entity: TIn[number]) => {
+    upstreams.forEach((upstream, i) => {
+      upstream?.connect((entity: TIn[number]) => {
         const entities = new Array() as PartialEntities<TIn>;
         entities[i] = entity;
         forward(entities);
@@ -36,8 +36,8 @@ function stream<
     });
 
     function connect(fn: (entity: Awaited<TOut>) => void) {
-      upstream.add(fn);
-      return () => upstream.delete(fn);
+      downstreams.add(fn);
+      return () => downstreams.delete(fn);
     }
 
     function forward(entities: PartialEntities<TIn>) {
@@ -56,7 +56,7 @@ function stream<
       const previousFlush = flushing;
 
       return (flushing = SyncPromise.all(
-        downstreams.map((x) => (x?.flush as typeof flush)(true)),
+        upstreams.map((x) => (x?.flush as typeof flush)(true)),
       ).then((pending) => {
         try {
           const nonBlocking = SyncPromise.all([
@@ -68,7 +68,7 @@ function stream<
           return SyncPromise.all(
             queue.map((entities) =>
               SyncPromise.one(push(...entities)).then((x) =>
-                upstream.forEach((fn) => fn(x)),
+                downstreams.forEach((fn) => fn(x)),
               ),
             ),
           )
@@ -93,32 +93,32 @@ function stream<
         return !!(
           queue.length > 0 ||
           flushing instanceof Promise ||
-          downstreams.some((x) => x?.isDirty)
+          upstreams.some((x) => x?.isDirty)
         );
       },
     };
   };
 }
 
-type InferFlush<TPush, TFlush, TDownstreams extends any[]> =
-  // Check if the push, flush or any downstream TFlush has a Promise
+type InferFlush<TPush, TFlush, TUpstreams extends any[]> =
+  // Check if the push, flush or any upstream TFlush has a Promise
   HasPromise<
     | TFlush
     | (unknown extends TPush ? void : TPush)
-    | (TDownstreams[number] extends Stream<any, any, infer TFlush> ? TFlush
+    | (TUpstreams[number] extends Stream<any, any, infer TFlush> ? TFlush
       : never),
     Promise<void>,
     void
   >;
 
-type InferOut<TPush, TPull, TDownstreams extends any[]> =
+type InferOut<TPush, TPull, TUpstreams extends any[]> =
   // Check if TPull is exactly T | Promise<T> for some T
   (<U>() => U extends TPull ? 1 : 2) extends (
     <U>() => U extends MaybePromise<TPull> ? 1 : 2
   ) ?
-    // Check if the push or any downstream TOut has a Promise
+    // Check if the push or any upstream TOut has a Promise
     HasPromise<
-      TDownstreams[number] extends Stream<infer TOut, any, any> ? TOut | TPush
+      TUpstreams[number] extends Stream<infer TOut, any, any> ? TOut | TPush
       : never,
       Promise<Awaited<TPull>>,
       Awaited<TPull>

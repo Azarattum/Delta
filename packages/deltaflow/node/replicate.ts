@@ -4,19 +4,19 @@ import type { ZSet } from "../datastructure/zset";
 import { stream, SyncPromise, type Stream } from "../stream";
 
 export function replicate<T>(
-  downstreamA: Stream<ZSet<T> | Promise<ZSet<T>>>,
-  downstreamB: Stream<CLSet<T> | Promise<CLSet<T>>>,
+  aUpstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
+  bUpstream: Stream<CLSet<T> | Promise<CLSet<T>>>,
 ) {
   return stream({
     push(a: ZSet<T>) {
       // TODO: don't use id here!
-      const keysA = a?.[0]
+      const aKeys = a?.[0]
         .filter((_, i) => a[1][i] <= 0)
         .map((x) => ({ id: x["id"] }));
 
       // TODO: CLSet should also have a zero type (or maybe unite them?)
-      if (!keysA) return [[], []] as CLSet<T>;
-      return SyncPromise.one(downstreamB.pull({ constraints: keysA })).then(
+      if (!aKeys) return [[], []] as CLSet<T>;
+      return SyncPromise.one(bUpstream.pull({ constraints: aKeys })).then(
         (pulled) => {
           const keys = pulled[2]?.keys.filter(
             (_, i) => !(pulled[2]!.types[i] & TYPE.PRIMARY),
@@ -77,5 +77,5 @@ export function replicate<T>(
       // TODO: implement pulling with version constraint
       throw new Error("Pulling for changes is not implemented yet");
     },
-  })(downstreamA);
+  })(aUpstream);
 }
