@@ -1,16 +1,16 @@
 {
-  "name": "asymptote",
-  "version": "0.0.1",
-  "author": {
-    "name": "Azarattum",
-    "homepage": "https://github.com/Azarattum"
+  "name": "delta",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "verify": "bun test && bun run -F '*' check"
   },
-  "scripts": {},
-  "type": "module",
   "dependencies": {},
   "devDependencies": {
     "@types/bun": "^1.2.2",
-    "fake-indexeddb": "^6.0.0",
-    "prettier": "^3.5.1"
+    "prettier": "^3.5.1",
+    "typescript": "^5.7.3"
   }
 }

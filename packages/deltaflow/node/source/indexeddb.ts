@@ -1,9 +1,9 @@
-import { stream } from "./stream";
-import { type ZSet } from "./datastructure";
-import { Shape, TYPE } from "./shape";
+import { TYPE, type Shape } from "../../datastructure/shape";
+import type { ZSet } from "../../datastructure/zset";
+import { stream } from "../../stream";
 
-/** Stateful IDB source node (prototype) */
-async function idb<T extends object>(
+/** TODO: this is just a prototype */
+export async function indexeddb<T extends object>(
   db: IDBDatabase,
   table: string,
   shape: Shape<T>,
@@ -82,7 +82,7 @@ async function idb<T extends object>(
 
 // TODO: this is a temporary solution for testing purposes,
 //  we should use a proper schema and source create in the future
-function createStore(
+export function createStore(
   db: IDBDatabase,
   name: string,
   shape: Shape<Record<string, any>>,
@@ -94,5 +94,3 @@ function createStore(
   );
   relations.forEach((x) => store.createIndex(x, [x]));
 }
-
-export { idb, createStore };

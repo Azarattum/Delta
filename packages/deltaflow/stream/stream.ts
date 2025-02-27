@@ -1,5 +1,5 @@
-import type { HasPromise, MaybePromise } from "./sync-promise";
-import { SyncPromise } from "./sync-promise";
+import type { HasPromise, MaybePromise } from "./promise";
+import { SyncPromise } from "./promise";
 
 function stream<
   TPush,

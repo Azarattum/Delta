@@ -1,10 +1,10 @@
-import SQLite from "bun:sqlite";
-import { stream } from "./stream";
-import { ZSet } from "./datastructure";
-import { Shape, TYPE } from "./shape";
+import type SQLite from "bun:sqlite";
+import { TYPE, type Shape } from "../../datastructure/shape";
+import { stream } from "../../stream";
+import type { ZSet } from "../../datastructure/zset";
 
-/** Stateless SQLite source node (prototype) */
-function sqlite<T extends object>(
+/** TODO: this is just a prototype */
+export function sqlite<T extends object>(
   db: SQLite,
   table: string,
   shape: Shape<T>,
@@ -70,5 +70,3 @@ function sqlite<T extends object>(
     },
   })(null);
 }
-
-export { sqlite };

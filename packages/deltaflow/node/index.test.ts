@@ -5,11 +5,11 @@ import {
   join,
   map,
   memory,
-  memoryMergeMetadata,
+  memoryReplication,
   sink,
-  z2cl,
-} from "./nodes";
-import { nest, reorder, shape } from "./shape";
+  replicate,
+} from ".";
+import { nest, reorder, shape } from "../datastructure/shape";
 
 it("fails with invalid data", () => {
   const user = shape((t) => ({
@@ -693,7 +693,7 @@ it("converts ZSet to CLSet", async () => {
   ]);
 
   const peer = 42;
-  const metadata = memoryMergeMetadata(users, peer, [
+  const metadata = memoryReplication(users, peer, [
     [0, [1, 1, 1, peer, 1, peer]],
   ]);
 
@@ -703,7 +703,7 @@ it("converts ZSet to CLSet", async () => {
 
   // Fork changes to copy them to 2 streams
   const [users1, users2] = fork(users);
-  const changes = z2cl(users1, metadata);
+  const changes = replicate(users1, metadata);
   const view = sink(users2);
 
   // Materialize view

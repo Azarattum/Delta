@@ -1,6 +1,6 @@
 import { expect, it, mock } from "bun:test";
-import { Stream, stream } from "./stream";
-import "./type-test";
+import { type Stream, stream } from "./stream";
+import "typotest";
 
 it("streams lazily", () => {
   const spyPull = mock(() => 123);
@@ -119,7 +119,7 @@ it("merges batched changes", async () => {
   expect(source1).toBeOfType<Stream<number, [number]>>();
 
   {
-    const spy = mock((a?: number, b?: number) => 0 as const);
+    const spy = mock((_1?: number, _2?: number) => 0 as const);
     const joined = stream({ push: spy })(source1, source2);
 
     expect(joined.flush).toHaveReturnTypeOf<void>();
@@ -145,7 +145,7 @@ it("merges batched changes", async () => {
     expect(spy).toHaveBeenNthCalledWith(4, undefined, 5);
   }
   {
-    const spy = mock(async (a?: number, b?: number) => 0 as const);
+    const spy = mock(async (_1?: number, _2?: number) => 0 as const);
     const joined = stream({ push: spy })(source1, source2);
 
     expect(joined.flush).toHaveReturnTypeOf<Promise<void>>();

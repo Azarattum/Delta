@@ -1,3 +1,11 @@
 {
-  "cSpell.words": ["downstreams", "Streamify", "syncify", "zset"]
+  "cSpell.words": [
+    "datastructure",
+    "deltaflow",
+    "deltaquery",
+    "downstreams",
+    "indexeddb",
+    "typotest",
+    "zset"
+  ]
 }

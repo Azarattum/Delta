@@ -1,10 +1,11 @@
 import { expect, it } from "bun:test";
-import { join, sink } from "./nodes";
-import { createStore, idb } from "./idb";
-import "./type-test";
-import "fake-indexeddb/auto";
 import { mock } from "bun:test";
-import { shape } from "./shape";
+import { shape } from "../../datastructure/shape";
+import { createStore, indexeddb } from "./indexeddb";
+import { join, sink } from "..";
+
+import "fake-indexeddb/auto";
+import "typotest";
 
 it("works with indexed DB", async () => {
   const user = shape((t) => ({
@@ -28,11 +29,11 @@ it("works with indexed DB", async () => {
     (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
   );
 
-  const users = await idb(db, "users", user, [
+  const users = await indexeddb(db, "users", user, [
     { id: 0, name: "Bob" },
     { id: 1, name: "Alice" },
   ]);
-  const messages = await idb(db, "messages", message, [
+  const messages = await indexeddb(db, "messages", message, [
     { id: 0, text: "Hello", user: 0 },
     { id: 1, text: "I'm Bob", user: 0 },
     { id: 2, text: "And I'm Alice!", user: 1 },
@@ -180,7 +181,7 @@ it("pushes synchronously when possible", async () => {
     (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
   );
 
-  const users = await idb(db, "users", user, [
+  const users = await indexeddb(db, "users", user, [
     { id: 0, name: "Bob" },
     { id: 1, name: "Alice" },
   ]);

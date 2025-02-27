@@ -1,6 +1,6 @@
 import { it, expect } from "bun:test";
-import { copy, merge, type CLSet } from "./crdt";
 import { shape } from "./shape";
+import { copy, merge, type CLSet } from "./clset";
 
 const user = shape((t) => ({
   id: t(t.INT, t.PRIMARY),

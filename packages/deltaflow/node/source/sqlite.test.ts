@@ -1,9 +1,9 @@
 import { it, expect, afterAll } from "bun:test";
 import { rm } from "node:fs/promises";
-import { join, sink } from "./nodes";
+import { join, sink } from "..";
 import { sqlite } from "./sqlite";
 import SQLite from "bun:sqlite";
-import { shape } from "./shape";
+import { shape } from "../../datastructure/shape";
 
 const db = new SQLite("test.db");
 
