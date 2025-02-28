@@ -52,31 +52,39 @@ function stream<
       if (shouldSchedule) queueMicrotask(flush);
     }
 
+    function process(queue: PartialEntities<TIn>[]) {
+      try {
+        return SyncPromise.all(
+          queue.map((entities) =>
+            SyncPromise.one(push(...entities)).then((x) =>
+              downstreams.forEach((fn) => fn(x)),
+            ),
+          ),
+        );
+      } finally {
+        queue.length = 0;
+      }
+    }
+
     function flush(cascade = false) {
       const previousFlush = flushing;
 
       return (flushing = SyncPromise.all(
         upstreams.map((x) => (x?.flush as typeof flush)(true)),
-      ).then((pending) => {
-        try {
-          const nonBlocking = SyncPromise.all([
-            ...pending.flat(),
-            options.flush?.(queue.slice()),
-            previousFlush,
-          ]).then(() => {});
+      ).then((upstreamFlushes) => {
+        const queueCopy = options.flush ? queue.slice() : [];
+        upstreamFlushes = upstreamFlushes.flat();
+        upstreamFlushes.push(() =>
+          SyncPromise.one(previousFlush).then(() => options.flush?.(queueCopy)),
+        );
 
-          return SyncPromise.all(
-            queue.map((entities) =>
-              SyncPromise.one(push(...entities)).then((x) =>
-                downstreams.forEach((fn) => fn(x)),
-              ),
-            ),
-          )
-            .then(() => SyncPromise.one(cascade ? [nonBlocking] : nonBlocking))
-            .finally(() => (flushing = null));
-        } finally {
-          queue.length = 0;
-        }
+        return process(queue)
+          .then(() => {
+            if (cascade) return SyncPromise.one(upstreamFlushes);
+            const flushes = SyncPromise.all(upstreamFlushes.map((x) => x?.()));
+            return flushes.then(() => SyncPromise.one(undefined));
+          })
+          .finally(() => (flushing = null));
       }));
     }
 

@@ -255,3 +255,44 @@ it("calls external flush", async () => {
   noop.flush();
   expect(flush).toHaveBeenCalledTimes(2);
 });
+
+it("calls flush after all async pushes", async () => {
+  let resolveFlush = () => {};
+  const flush = mock(() => new Promise<void>((r) => (resolveFlush = r)));
+  let resolvePush = () => {};
+  const push = mock(() => new Promise<void>((r) => (resolvePush = r)));
+
+  const source = stream({ push, flush })();
+
+  source.push();
+  expect(flush).not.toHaveBeenCalled();
+  expect(push).not.toHaveBeenCalled();
+
+  const result = source.flush();
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(flush).not.toHaveBeenCalled();
+
+  expect(await Promise.race([result, Promise.resolve(1)])).toBe(1);
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(flush).not.toHaveBeenCalled();
+
+  await Promise.resolve().then(() => Promise.resolve());
+  expect(flush).not.toHaveBeenCalled();
+
+  resolvePush();
+  await Promise.resolve().then(() => Promise.resolve());
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(flush).toHaveBeenCalledTimes(1);
+
+  expect(await Promise.race([result, Promise.resolve(1)])).toBe(1);
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(flush).toHaveBeenCalledTimes(1);
+
+  resolveFlush();
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(flush).toHaveBeenCalledTimes(1);
+
+  expect(await result).toBe(undefined);
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(flush).toHaveBeenCalledTimes(2);
+});
