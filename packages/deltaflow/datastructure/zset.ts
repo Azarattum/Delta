@@ -9,6 +9,7 @@ type ZMetadata<T> = number[] & {
 type ZSet<T> = [data: T[], metadata: ZMetadata<T>, shape?: Shape<T>];
 
 function add<T>(a: ZSet<T>, b: ZSet<T>) {
+  if (!b[0].length) return a;
   const [aData, aMetadata, aShape] = a;
   const [bData, bMetadata, bShape] = b;
   const shape = either(aShape, bShape);
@@ -122,7 +123,8 @@ function zero<T>(item?: ZSet<T>) {
   return item;
 }
 
-function copy<T>(item: ZSet<T>) {
+function copy<T>(item?: ZSet<T>) {
+  if (!item) return item;
   const items = item[0].slice();
   const metadata = item[1].slice();
 
@@ -133,18 +135,18 @@ function copy<T>(item: ZSet<T>) {
     items[i] = { ...x };
     bMetadataKeys.forEach((key) => {
       const clone = copy([x[key], item[1][key][i], item[2]?.[key]]);
-      x[key] = clone[0];
-      (metadata[key] ??= [])[i] = clone[1];
+      x[key] = clone![0];
+      (metadata[key] ??= [])[i] = clone![1];
     });
   });
 
   return [items, metadata, item[2]] as unknown as ZSet<T>;
 }
 
-function compare<T>(a: T, b: T, shape: Shape<T>) {
-  for (let i = 0; i < shape.order.length; i++) {
-    const direction = shape.order[i] & 1 ? -1 : 1;
-    const key = shape.keys[shape.order[i] >> 1];
+function compare<T>(a: T, b: T, shape?: Shape<T>) {
+  for (let i = 0; i < (shape?.order.length ?? 1); i++) {
+    const direction = shape && shape.order[i] & 1 ? -1 : 1;
+    const key = shape?.keys[shape.order[i] >> 1];
     const x = key ? a[key] : a;
     const y = key ? b[key] : b;
 
