@@ -168,5 +168,17 @@ function compare<T>(a: T, b: T, shape?: Shape<T>) {
   return 0;
 }
 
-export { add, distinct, zero, copy, compare, multiply };
+function sort<T>(item: ZSet<T>, compare: (a: T, b: T) => number) {
+  item[0]
+    .map((x, i) => [x, item[1][i]] as const)
+    .sort((x, y) => compare(x[0], y[0]))
+    .forEach((x, i) => {
+      item[0][i] = x[0];
+      item[1][i] = x[1];
+    });
+
+  return item;
+}
+
+export { add, sort, distinct, zero, copy, compare, multiply };
 export type { ZMetadata, ZSet };
