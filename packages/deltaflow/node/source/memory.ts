@@ -41,7 +41,7 @@ export function memory<T>(
         shape,
       ] as ZSet<T>;
     },
-    push: (x: ZSet<T>) => (distinct(add(data, x!)), x!),
+    flush: (changes) => changes.forEach(([x]) => distinct(add(data, x))),
   })(null);
 }
 
