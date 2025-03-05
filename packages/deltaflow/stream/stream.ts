@@ -72,10 +72,10 @@ function stream<
       return (flushing = SyncPromise.all(
         upstreams.map((x) => (x?.flush as typeof flush)(true)),
       ).then((upstreamFlushes) => {
-        const queueCopy = options.flush ? queue.slice() : [];
+        const snapshot = options.flush ? structuredClone(queue) : [];
         upstreamFlushes = upstreamFlushes.flat();
         upstreamFlushes.push(() =>
-          SyncPromise.one(previousFlush).then(() => options.flush?.(queueCopy)),
+          SyncPromise.one(previousFlush).then(() => options.flush?.(snapshot)),
         );
 
         return process(queue)
