@@ -73,23 +73,27 @@ function multiply<A, B, K extends string>(
   keyB: keyof B,
   relationship: K,
 ) {
-  // TODO: this would go through a precision fetch, and no longer manual index be needed
-  const rightIndex = new Map<A[keyof A] | B[keyof B], number[]>(); // TODO: Would be good to cache
+  const [aData, aMetadata, aShape] = a;
+  const [bData, bMetadata, bShape] = b;
 
-  for (let i = 0; i < b[0].length; i++) {
-    const key = b[0][i][keyB];
-    if (!rightIndex.has(key)) rightIndex.set(key, []);
-    rightIndex.get(key)!.push(i);
+  for (let i = 0; i < aData.length; i++) {
+    (aData[i] as any)[relationship] = [];
+    ((aMetadata as any)[relationship] ??= [])[i] = [];
   }
 
-  for (let i = 0; i < a[0].length; i++) {
-    const matches = rightIndex.get(a[0][i][keyA]) || [];
-    // TODO: refactor
-    (a[0][i] as any)[relationship] = matches.map((x) => b[0][x]);
-    ((a[1] as any)[relationship] ??= [])[i] = matches.map((x) => b[1][x]);
-  }
-  a[2] = nest(a[2], relationship, b[2]);
+  let i = 0;
+  let j = 0;
 
+  while (i < aData.length && j < bData.length) {
+    if (compare<unknown>(aData[i][keyA], bData[j][keyB])) i++;
+    else {
+      (aData[i] as any)[relationship].push(bData[j]);
+      (aMetadata as any)[relationship][i].push(bMetadata[j]);
+      j++;
+    }
+  }
+
+  a[2] = nest(aShape, relationship, bShape);
   return a as ZSet<A & { [_ in K]: B[] }>;
 }
 

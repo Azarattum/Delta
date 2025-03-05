@@ -568,6 +568,8 @@ it("orders items", () => {
 it("joins changes correctly", () => {
   const parent = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
   const child = shape((t) => ({ id: t.PRIMARY, ref: t.INT }));
+  // TODO: pulls from sources should return correct order
+  // const both = nest(parent, "item", reorder(child, "ref"));
   const both = nest(parent, "item", child);
 
   const input1 = memory(parent, [{ id: 0 }]);
@@ -727,4 +729,144 @@ it("converts ZSet to CLSet", async () => {
     { id: 1, name: "Alice", age: 22 },
     { id: 2, name: "Eve", age: 20 },
   ]);
+});
+
+it("sorts streams for join", () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    name: t.STRING,
+  }));
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    text: t.STRING,
+    user: t.INT,
+  }));
+
+  const users = memory(user);
+  const messages = memory(message);
+  const joined = join(users, "id", messages, "user", "messages");
+
+  users.push([
+    [
+      { id: 0, name: "Alice" },
+      { id: 1, name: "Bob" },
+    ],
+    [1, 1],
+    user,
+  ]);
+
+  messages.push([
+    [
+      { id: 0, text: "I'm Bob", user: 1 },
+      { id: 1, text: "I'm Alice", user: 0 },
+    ],
+    [1, 2],
+    message,
+  ]);
+
+  const spy = mock();
+  joined.connect(spy);
+  joined.flush();
+
+  {
+    const [data, metadata, shape] = spy.mock.lastCall?.[0] ?? [];
+
+    expect(data).toEqual([
+      {
+        id: 0,
+        name: "Alice",
+        messages: [{ id: 1, text: "I'm Alice", user: 0 }],
+      },
+      { id: 1, name: "Bob", messages: [{ id: 0, text: "I'm Bob", user: 1 }] },
+    ]);
+
+    expect({ ...metadata }).toEqual({
+      0: 1,
+      1: 1,
+      messages: [[2], [1]],
+    });
+
+    expect(shape).toEqual(nest(user, "messages", message));
+  }
+
+  users.push([
+    [
+      { id: 3, name: "Dave" },
+      { id: 2, name: "Clare" },
+    ],
+    [1, 1],
+    user,
+  ]);
+
+  messages.push([
+    [
+      { id: 2, text: "I'm Clare", user: 2 },
+      { id: 3, text: "I'm Dave", user: 3 },
+    ],
+    [1, 2],
+    message,
+  ]);
+
+  joined.flush();
+  {
+    const [data, metadata, shape] = spy.mock.lastCall?.[0] ?? [];
+
+    expect(data).toEqual([
+      { id: 3, name: "Dave", messages: [{ id: 3, text: "I'm Dave", user: 3 }] },
+      {
+        id: 2,
+        name: "Clare",
+        messages: [{ id: 2, text: "I'm Clare", user: 2 }],
+      },
+    ]);
+
+    expect({ ...metadata }).toEqual({
+      0: 1,
+      1: 1,
+      messages: [[2], [1]],
+    });
+
+    expect(shape).toEqual(nest(user, "messages", message));
+  }
+
+  users.push([[{ id: 4, name: "Edward" }], [1], user]);
+
+  messages.push([
+    [
+      { id: 4, text: "I'm Edward", user: 4 },
+      { id: 5, text: "Alice still here", user: 0 },
+      { id: 6, text: "The Edward", user: 4 },
+    ],
+    [1, 1, 1],
+    message,
+  ]);
+
+  joined.flush();
+  {
+    const [data, metadata, shape] = spy.mock.lastCall?.[0] ?? [];
+
+    expect(data).toEqual([
+      {
+        id: 0,
+        name: "Alice",
+        messages: [{ id: 5, text: "Alice still here", user: 0 }],
+      },
+      {
+        id: 4,
+        name: "Edward",
+        messages: [
+          { id: 4, text: "I'm Edward", user: 4 },
+          { id: 6, text: "The Edward", user: 4 },
+        ],
+      },
+    ]);
+
+    expect({ ...metadata }).toEqual({
+      0: 0,
+      1: 1,
+      messages: [[1], [1, 1]],
+    });
+
+    expect(shape).toEqual(nest(user, "messages", message));
+  }
 });

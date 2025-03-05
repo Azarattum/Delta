@@ -1,4 +1,5 @@
-import { add, copy, multiply, zero, type ZSet } from "../datastructure/zset";
+import type { ZSet } from "../datastructure/zset";
+import { add, copy, multiply, sort, zero } from "../datastructure/zset";
 import { stream, SyncPromise, type Stream } from "../stream";
 
 export function join<A, B, const K extends string>(
@@ -24,9 +25,21 @@ export function join<A, B, const K extends string>(
         if (aPulled && a) add(aPulled, a);
         else if (a) aPulled = a;
 
-        if (aPulled && b) multiply(aPulled, aKey, b, bKey, relationship);
+        if (aPulled && b) {
+          const aOrder = new Map<unknown, number>(
+            aPulled[0].map((x, i) => [x[aKey], i]),
+          );
+
+          const compare = (x: B, y: B) =>
+            (aOrder.get(x[bKey]) ?? Infinity) -
+            (aOrder.get(y[bKey]) ?? Infinity);
+
+          sort(b, compare);
+          multiply(aPulled, aKey, b, bKey, relationship);
+        }
+
         if (aPulled && bPulled) {
-          const aRef = aPulled === a ? a : zero(copy(a!));
+          const aRef = aPulled === a ? a : zero(copy(a));
           multiply(aRef, aKey, bPulled, bKey, relationship);
           if (aPulled !== a) add(aRef, aPulled);
           return aRef as C;
