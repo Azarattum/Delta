@@ -1,32 +1,58 @@
-function all<const T extends any[]>(items: T): SyncPromises<T> {
-  const hasPromise = items.some((x) => x instanceof Promise);
-  if (hasPromise) return Promise.all(items) as any;
+function all<const T extends any[]>(values: T): SyncPromises<T> {
+  const hasPromise = values.some((x) => x instanceof Promise);
+  if (hasPromise) return Promise.all(values) as any;
   return {
-    then: (fn) => fn(items as any) as any,
-    finally: (fn) => (fn(), items),
+    then: (fn): any => fn(values as any),
+    finally: (fn): any => (fn(), values),
   };
 }
 
-function one<const T>(item: T): SyncPromise<T> {
-  if (item instanceof Promise) return item as any;
+function one<const T>(value: T): SyncPromise<T> {
+  if (value instanceof Promise) return value as any;
   return {
-    then: (fn) => fn(item as any) as any,
-    finally: (fn) => (fn(), item),
+    then: (fn): any => fn(value as Awaited<T>),
+    finally: (fn): any => (fn(), value),
   };
 }
 
-export const SyncPromise = { all, one };
+function create<const T = void>(
+  executor: (resolve: (x: Awaited<T>) => void) => void,
+): SyncPromise<T> {
+  const nothing = Symbol();
+  let value: Awaited<T> | typeof nothing = nothing;
+  let resolve: ((x: Awaited<T>) => void) | undefined;
+  let promise: Promise<Awaited<T>> | undefined;
+
+  executor((x) => (resolve ? resolve(x) : (value = x)));
+
+  return {
+    then: (fn): any => {
+      if (value !== nothing) return fn(value);
+      return (promise ??= new Promise((r) => (resolve = r))).then(fn);
+    },
+    finally: (fn): any => {
+      if (value !== nothing) return fn(), value;
+      return (promise ??= new Promise((r) => (resolve = r))).finally(fn);
+    },
+  };
+}
+
+export const SyncPromise = { all, one, new: create };
 
 export type SyncPromise<T> = {
   then: <R>(fn: (x: Awaited<T>) => R) => IsPromise<T, Promise<R>, R>;
-  finally: (fn: () => void) => void;
+  finally: (fn: () => void) => IsPromise<T, Promise<T>, T>;
 };
 
 export type SyncPromises<T extends any[]> = {
-  then: <R>(
-    fn: (x: { [K in keyof T]: Awaited<T[K]> }) => R,
-  ) => IsPromise<T, Promise<R>, R>;
-  finally: (fn: () => void) => void;
+  then: <R>(fn: (x: AwaitedAll<T>) => R) => IsPromise<T, Promise<R>, R>;
+  finally: (
+    fn: () => void,
+  ) => HasPromise<T[keyof T], Promise<AwaitedAll<T>>, AwaitedAll<T>>;
+};
+
+export type AwaitedAll<T extends any[]> = {
+  [K in keyof T]: Awaited<T[K]>;
 };
 
 export type IsPromise<T, TTrue = true, TFalse = false> =
