@@ -23,7 +23,7 @@ function stream<
         return SyncPromise.all(entities).then((x) => push(...(x as TIn)));
       });
 
-    let flushing: void | Promise<void> | null = null;
+    let flushing: unknown[] | Promise<unknown[]> | null = null;
     const queue: PartialEntities<TIn>[] = [];
     const downstreams: Set<(entity: Awaited<TOut>) => void> = new Set();
 
