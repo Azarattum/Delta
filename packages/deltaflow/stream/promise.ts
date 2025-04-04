@@ -15,29 +15,7 @@ function one<const T>(value: T | Promise<T>): SyncPromise<T> {
   };
 }
 
-function create<const T = void>(
-  executor: (resolve: (x: Awaited<T>) => void) => void,
-): SyncPromise<T> {
-  const nothing = Symbol();
-  let value: Awaited<T> | typeof nothing = nothing;
-  let resolve: ((x: Awaited<T>) => void) | undefined;
-  let promise: Promise<Awaited<T>> | undefined;
-
-  executor((x) => (resolve ? resolve(x) : (value = x)));
-
-  return {
-    then: (fn): any => {
-      if (value !== nothing) return fn(value);
-      return (promise ??= new Promise((r) => (resolve = r))).then(fn);
-    },
-    finally: (fn): any => {
-      if (value !== nothing) return fn(), value;
-      return (promise ??= new Promise((r) => (resolve = r))).finally(fn);
-    },
-  };
-}
-
-export const SyncPromise = { all, one, new: create };
+export const SyncPromise = { all, one };
 
 export type SyncPromise<T> = {
   then: <R>(fn: (x: Awaited<T>) => R) => IsPromise<T, Promise<R>, R>;
