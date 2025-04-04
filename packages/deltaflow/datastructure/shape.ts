@@ -40,13 +40,12 @@ function nest<
 }
 
 function either<T>(aShape?: Shape<T>, bShape?: Shape<T>) {
-  if (!aShape && !bShape) throw new Error("Unable to infer shape!");
   if (aShape && bShape && aShape.order.toString() !== bShape.order.toString()) {
     const aShapeString = JSON.stringify(aShape, null, 2);
     const bShapeString = JSON.stringify(bShape, null, 2);
     throw new Error(`Incompatible shapes:\n${aShapeString}\n${bShapeString}`);
   }
-  return (aShape ?? bShape) as Shape<T>;
+  return aShape ?? bShape;
 }
 
 const RELATION = (id: number) => id << 16;

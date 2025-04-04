@@ -14,7 +14,7 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
   const [bData, bMetadata, bShape] = b;
   const shape = either(aShape, bShape);
 
-  const childrenKeys = Object.keys(shape.children ?? {});
+  const childrenKeys = Object.keys(shape?.children ?? {});
 
   let i = 0;
   let j = 0;

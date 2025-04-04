@@ -10,7 +10,7 @@ type CLSet<T> = [
 
 function merge<T>(a: CLSet<T>, b: CLSet<T>) {
   const shape = either(a[2], b[2]);
-  const keys = shape.keys.filter((_, i) => !(shape.types[i] & TYPE.PRIMARY));
+  const keys = shape?.keys.filter((_, i) => !(shape.types[i] & TYPE.PRIMARY));
 
   const nextVersion =
     a[1].version ?? a[1].reduce((a, b) => Math.max(a, b?.[0] ?? 0), 0) + 1;
@@ -36,7 +36,7 @@ function merge<T>(a: CLSet<T>, b: CLSet<T>) {
 
     // Update values and clocks
     let updated = reinserted;
-    if (keys.length && aMeta[1] % 2) {
+    if (keys?.length && aMeta[1] % 2) {
       const fields = Math.max(aMeta.length, bMeta.length);
       for (let j = 2; j < fields; j += 2) {
         const compare = aMeta[j] - bMeta[j] || aMeta[j + 1] - bMeta[j + 1];
