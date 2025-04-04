@@ -353,3 +353,18 @@ it("handles pulling with downstream flushes", () => {
   source.push(3);
   expect(source.pull()).toBe(6);
 });
+
+it("merges partial entities correctly", () => {
+  const source = stream({ push: (x?: number, y?: number) => [x, y] })(
+    null,
+    null,
+  );
+  const spy = mock();
+  source.connect(spy);
+  source.push(1, undefined);
+  source.push(undefined, 2);
+  source.flush();
+
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(spy).toHaveBeenLastCalledWith([1, 2]);
+});

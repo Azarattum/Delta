@@ -53,7 +53,7 @@ function stream<
       const canMerge =
         last && entities.every((x, i) => x == null || last[i] == null);
 
-      if (canMerge) entities.forEach((x, i) => (last[i] = x));
+      if (canMerge) entities.forEach((x, i) => x != null && (last[i] = x));
       else queue.push(entities);
 
       if (!scheduled && queue.length && upstreams.every((x) => !x?.isDirty)) {
