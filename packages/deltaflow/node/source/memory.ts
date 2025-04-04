@@ -1,7 +1,8 @@
+import { add, compare, distinct, type ZSet } from "../../datastructure/zset";
 import type { CLMetadata, CLSet } from "../../datastructure/clset";
 import { TYPE, type Shape } from "../../datastructure/shape";
-import { add, compare, distinct, type ZSet } from "../../datastructure/zset";
-import { stream, SyncPromise, type Stream } from "../../stream";
+import { stream, SyncPromise } from "../../stream";
+import type { OfZStream, ZStream } from "../type";
 
 export function memory<T>(
   shape: Shape<T>,
@@ -45,8 +46,11 @@ export function memory<T>(
   })(null);
 }
 
-export function memoryReplication<T>(
-  dataStream: Stream<ZSet<T> | Promise<ZSet<T>>>,
+export function memoryReplication<
+  TStream extends ZStream<T>,
+  T = OfZStream<TStream>,
+>(
+  dataStream: TStream,
   clientID: number,
   initialData: [number, CLMetadata][] = [],
 ) {

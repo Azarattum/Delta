@@ -1,12 +1,14 @@
-import type { CLSet } from "../datastructure/clset";
+import type { CLStream, OfZStream, ZStream } from "./type";
 import { either, TYPE } from "../datastructure/shape";
+import type { CLSet } from "../datastructure/clset";
 import type { ZSet } from "../datastructure/zset";
-import { stream, SyncPromise, type Stream } from "../stream";
+import { stream, SyncPromise } from "../stream";
 
-export function replicate<T>(
-  aUpstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
-  bUpstream: Stream<CLSet<T> | Promise<CLSet<T>>>,
-) {
+export function replicate<
+  AStream extends ZStream<T>,
+  BStream extends CLStream<T>,
+  T = OfZStream<AStream>,
+>(aUpstream: AStream, bUpstream: BStream) {
   return stream({
     push(a: ZSet<T>) {
       // TODO: don't use id here!

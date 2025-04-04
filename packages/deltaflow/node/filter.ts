@@ -1,9 +1,10 @@
 import type { ZSet } from "../datastructure/zset";
-import { stream, type Stream } from "../stream";
+import type { OfZStream, ZStream } from "./type";
+import { stream } from "../stream";
 
-export function filter<T>(
-  upstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
-  predicate: (x: T) => boolean,
+export function filter<TStream extends ZStream<T>, T = OfZStream<TStream>>(
+  upstream: TStream,
+  predicate: (x: NoInfer<T>) => boolean,
 ) {
   return stream({
     push: (x: ZSet<T>) => {

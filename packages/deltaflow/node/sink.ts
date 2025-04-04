@@ -1,8 +1,9 @@
 import { add, distinct, zero, type ZSet } from "../datastructure/zset";
-import { stream, SyncPromise, type Stream } from "../stream";
+import type { OfZStream, ZStream } from "./type";
+import { stream, SyncPromise } from "../stream";
 
-export function sink<T>(
-  upstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
+export function sink<TStream extends ZStream<T>, T = OfZStream<TStream>>(
+  upstream: TStream,
   initial = zero<T>(),
 ) {
   let view: Promise<ZSet<T>> | ZSet<T>;

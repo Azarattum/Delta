@@ -1,11 +1,9 @@
 import { copy, type ZSet } from "../datastructure/zset";
-import { stream, type Stream } from "../stream";
+import type { ZStream } from "./type";
+import { stream } from "../stream";
 
-export function fork<S extends Stream<ZSet<any> | Promise<ZSet<any>>>>(
-  upstream: S,
-  count = 2,
-) {
+export function fork<TStream extends ZStream>(upstream: TStream, count = 2) {
   const clone = stream({ push: (x: ZSet<unknown>) => copy(x) });
-  const forks = Array.from({ length: count }).map(() => clone(upstream));
-  return forks as unknown as S[];
+  const forks = Array.from({ length: count }, () => clone(upstream));
+  return forks as unknown as TStream[];
 }

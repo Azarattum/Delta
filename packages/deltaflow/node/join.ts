@@ -1,12 +1,19 @@
-import type { ZSet } from "../datastructure/zset";
 import { add, copy, multiply, sort, zero } from "../datastructure/zset";
-import { stream, SyncPromise, type Stream } from "../stream";
+import type { ZSet } from "../datastructure/zset";
+import type { OfZStream, ZStream } from "./type";
+import { stream, SyncPromise } from "../stream";
 
-export function join<A, B, const K extends string>(
-  aUpstream: Stream<ZSet<A> | Promise<ZSet<A>>>,
-  aKey: keyof A,
-  bUpstream: Stream<ZSet<B> | Promise<ZSet<B>>>,
-  bKey: keyof B,
+export function join<
+  const AStream extends ZStream<A>,
+  const BStream extends ZStream<B>,
+  const K extends string = string,
+  A = OfZStream<AStream>,
+  B = OfZStream<BStream>,
+>(
+  aUpstream: AStream,
+  aKey: NoInfer<keyof A>,
+  bUpstream: BStream,
+  bKey: NoInfer<keyof B>,
   relationship: K,
 ) {
   type C = ReturnType<typeof multiply<A, B, K>>;

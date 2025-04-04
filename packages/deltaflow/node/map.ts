@@ -1,9 +1,10 @@
 import type { ZSet } from "../datastructure/zset";
-import { stream, type Stream } from "../stream";
+import type { OfZStream, ZStream } from "./type";
+import { stream } from "../stream";
 
-export function map<T, U>(
-  upstream: Stream<ZSet<T> | Promise<ZSet<T>>>,
-  mapping: (x: T) => U,
+export function map<U, TStream extends ZStream<T>, T = OfZStream<TStream>>(
+  upstream: TStream,
+  mapping: (x: NoInfer<T>) => U,
 ) {
   return stream({
     push: (x: ZSet<T>) => {
