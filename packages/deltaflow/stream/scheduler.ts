@@ -32,14 +32,12 @@ export class Scheduler {
 
   flush(): MaybePromise<void> {
     if (this.#level !== undefined) return this.#flushing;
-    return (this.#flushing = Object.keys(this.#tasks)
-      .reduce((promise, level) => {
+    return (this.#flushing = this.#tasks
+      .reduce((promise, tasks, level) => {
         return promise.then(() => {
-          const tasks = this.#tasks[level].slice();
-          this.#tasks[level].length = 0;
-          this.#level = +level;
-
+          this.#level = level;
           tasks.forEach((task) => this.#execute(task));
+          this.#tasks[level].length = 0;
 
           const process = (): Promise<void> => {
             if (!this.#pending.size) return Promise.resolve();
