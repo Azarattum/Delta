@@ -1,5 +1,8 @@
 import type { HasPromise, MaybePromise } from "./promise";
 import { SyncPromise } from "./promise";
+import { Scheduler } from "./scheduler";
+
+const internal = Symbol();
 
 function stream<
   TPush,
@@ -23,9 +26,14 @@ function stream<
         return SyncPromise.all(entities).then((x) => push(...(x as TIn)));
       });
 
-    let flushing: unknown[] | Promise<unknown[]> | null = null;
-    const queue: PartialEntities<TIn>[] = [];
+    let queue: PartialEntities<TIn>[] = [];
     const downstreams: Set<(entity: Awaited<TOut>) => void> = new Set();
+
+    let scheduled = false;
+    const scheduler = Scheduler.join(
+      upstreams.map((x) => x?.[internal].scheduler).filter((x) => !!x),
+      2,
+    );
 
     upstreams.forEach((upstream, i) => {
       upstream?.connect((entity: TIn[number]) => {
@@ -41,7 +49,6 @@ function stream<
     }
 
     function forward(entities: PartialEntities<TIn>) {
-      const shouldSchedule = queue.length === 0;
       const last = queue[queue.length - 1];
       const canMerge =
         last && entities.every((x, i) => x == null || last[i] == null);
@@ -49,48 +56,34 @@ function stream<
       if (canMerge) entities.forEach((x, i) => (last[i] = x));
       else queue.push(entities);
 
-      if (shouldSchedule) queueMicrotask(flush);
-    }
-
-    function process(queue: PartialEntities<TIn>[]) {
-      try {
-        return SyncPromise.all(
-          queue.map((entities) =>
-            SyncPromise.one(push(...entities)).then((x) =>
-              downstreams.forEach((fn) => fn(x)),
-            ),
-          ),
-        );
-      } finally {
-        queue.length = 0;
+      if (!scheduled && queue.length && upstreams.every((x) => !x?.isDirty)) {
+        scheduled = true;
+        scheduler.current.enqueue(() => {
+          scheduled = false;
+          if (options.flush) {
+            const snapshot = structuredClone(queue);
+            scheduler.current.enqueue(() => options.flush!(snapshot), 1);
+          }
+          return process().then(() => undefined);
+        }, 0);
       }
     }
 
-    function flush(cascade = false) {
-      const previousFlush = flushing;
-
-      return (flushing = SyncPromise.all(
-        upstreams.map((x) => (x?.flush as typeof flush)(true)),
-      ).then((upstreamFlushes) => {
-        const snapshot = options.flush ? structuredClone(queue) : [];
-        upstreamFlushes = upstreamFlushes.flat();
-        upstreamFlushes.push(() =>
-          SyncPromise.one(previousFlush).then(() => options.flush?.(snapshot)),
-        );
-
-        return process(queue)
-          .then(() => {
-            if (cascade) return SyncPromise.one(upstreamFlushes);
-            const flushes = SyncPromise.all(upstreamFlushes.map((x) => x?.()));
-            return flushes.then(() => SyncPromise.one(undefined));
-          })
-          .finally(() => (flushing = null));
-      }));
+    function process() {
+      const toProcess = queue;
+      queue = [];
+      return SyncPromise.all(
+        toProcess.map((entities) =>
+          SyncPromise.one(push(...entities)).then((x) =>
+            downstreams.forEach((fn) => fn(x)),
+          ),
+        ),
+      );
     }
 
     return {
-      flush,
-      pull: (options) => (flush(), pull(options)),
+      flush: () => scheduler.current.flush() as any, // TODO: consider MaybePromise here
+      pull: (options) => (scheduler.current.flush(), pull(options)),
       push: (...entities) => forward(entities),
       connect,
       subscribe: (fn) => {
@@ -98,16 +91,15 @@ function stream<
         return connect(fn);
       },
       get isDirty() {
-        return !!(
-          queue.length > 0 ||
-          flushing instanceof Promise ||
-          upstreams.some((x) => x?.isDirty)
-        );
+        return !!(queue.length > 0 || upstreams.some((x) => x?.isDirty));
       },
+      [internal]: { scheduler },
     };
   };
 }
 
+// TODO: consider that flush should always be MaybePromise, since we cannot
+//   really guarantee its type because it also depends on the downstream
 type InferFlush<TPush, TFlush, TUpstreams extends any[]> =
   // Check if the push, flush or any upstream TFlush has a Promise
   HasPromise<
@@ -153,6 +145,8 @@ type Stream<
   flush(): TFlush;
   /** Checks if the stream has pending changes */
   get isDirty(): boolean;
+
+  [internal]: any;
 };
 
 type StreamOptions<

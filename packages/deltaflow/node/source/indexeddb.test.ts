@@ -47,7 +47,7 @@ it("works with indexed DB", async () => {
 
   expect(joined.flush).toHaveReturnTypeOf<Promise<void>>();
 
-  await joined.flush();
+  await joined.preload();
   expect(joined.pull()[0]).toEqual([
     {
       id: 0,
@@ -191,7 +191,7 @@ it("pushes synchronously when possible", async () => {
   expect(users.flush).toHaveReturnTypeOf<Promise<void>>();
 
   expect(view.pull()[0]).toHaveLength(0);
-  await view.flush();
+  await view.preload();
   expect(view.pull()[0]).toEqual([
     { id: 0, name: "Bob" },
     { id: 1, name: "Alice" },
@@ -228,4 +228,45 @@ it("pushes synchronously when possible", async () => {
   ]);
   expect(promise).toBeInstanceOf(Promise);
   await promise;
+});
+
+it("subscribes and handles pushes", async () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY, t.RELATION(1)),
+    name: t.STRING,
+  }));
+
+  const idbRequest = indexedDB.open("test3", 1);
+  idbRequest.onupgradeneeded = () => {
+    createStore(idbRequest.result, "users", user);
+  };
+
+  const db = await new Promise<IDBDatabase>(
+    (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
+  );
+
+  const users = await indexeddb(db, "users", user, [
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+  ]);
+
+  const view = sink(users);
+
+  const spy = mock();
+  view.subscribe(spy);
+  users.push([[{ id: 2, name: "John" }], [1]]);
+
+  expect(spy).toHaveBeenLastCalledWith([[], []]);
+
+  await view.preload();
+
+  expect(spy).toHaveBeenLastCalledWith([
+    [
+      { id: 0, name: "Bob" },
+      { id: 1, name: "Alice" },
+      { id: 2, name: "John" },
+    ],
+    [1, 1, 1],
+    user,
+  ]);
 });

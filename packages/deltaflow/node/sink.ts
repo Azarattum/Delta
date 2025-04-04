@@ -1,25 +1,38 @@
 import { add, distinct, zero, type ZSet } from "../datastructure/zset";
+import { stream, SyncPromise, type MaybePromise } from "../stream";
 import type { OfZStream, ZStream } from "./type";
-import { stream, SyncPromise } from "../stream";
 
 export function sink<TStream extends ZStream<T>, T = OfZStream<TStream>>(
   upstream: TStream,
   initial = zero<T>(),
 ) {
-  let view: Promise<ZSet<T>> | ZSet<T>;
-  const pullView = () =>
-    (view = SyncPromise.one(upstream.pull()).then((x) => (view = x)));
+  let pulling: MaybePromise<void> | undefined;
+  let view: ZSet<T> | undefined;
+  let queue: ZSet<T>[] = [];
 
-  return stream({
+  const preload = () =>
+    (pulling ??= SyncPromise.one(upstream.pull()).then((data) => {
+      queue.unshift(data);
+      node.push(data);
+      return node.flush();
+    }) as MaybePromise<void>);
+
+  const node = stream({
     push: (x: ZSet<T>) => {
-      if (!view) return initial;
-      return SyncPromise.one(view).then((view) => distinct(add(view, x)));
+      if (view) return distinct(add(view, x));
+      if (x !== queue[0]) return queue.push(x), initial;
+
+      try {
+        return (view = distinct(queue.reduce((a, b) => add(a, b))));
+      } finally {
+        queue = [];
+      }
     },
     pull: () => {
-      if (!view) pullView();
-      if (view instanceof Promise) return initial;
-      return view;
+      if (!view) preload();
+      return view ?? initial;
     },
-    flush: () => SyncPromise.one(view ?? pullView()).then(() => void 0),
   })(upstream);
+
+  return Object.assign(node, { preload });
 }

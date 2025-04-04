@@ -7,7 +7,7 @@ function all<const T extends any[]>(values: T): SyncPromises<T> {
   };
 }
 
-function one<const T>(value: T): SyncPromise<T> {
+function one<const T>(value: T | Promise<T>): SyncPromise<T> {
   if (value instanceof Promise) return value as any;
   return {
     then: (fn): any => fn(value as Awaited<T>),

@@ -195,8 +195,8 @@ it("handles async pushes", async () => {
   expect(view.push).toHaveReturnTypeOf<void>();
 
   source.push(1);
-  expect(view.pull()).toBe(0);
   expect(view.isDirty).toBe(true);
+  expect(view.pull()).toBe(0);
   await view.flush();
   expect(view.pull()).toBe(1);
   expect(view.isDirty).toBe(false);
@@ -238,11 +238,12 @@ it("calls external flush", async () => {
 
   expect(source).toBeOfType<Stream<never, [number], Promise<void>>>();
   expect(source.flush).toHaveReturnTypeOf<Promise<void>>();
+  source.push(0);
 
   expect(flush).not.toHaveBeenCalled();
   const result = source.flush();
   expect(result).toBeInstanceOf(Promise);
-  expect(flush).toHaveBeenLastCalledWith([]);
+  expect(flush).toHaveBeenLastCalledWith([[0]]);
   expect(flush).toHaveBeenCalledTimes(1);
 
   expect(Promise.race([result, Promise.resolve(1)])).resolves.toBe(1);
@@ -250,6 +251,7 @@ it("calls external flush", async () => {
   expect(Promise.race([result, Promise.resolve(1)])).resolves.toBe(undefined);
 
   const noop = stream({})(source);
+  source.push(1);
 
   expect(noop).toBeOfType<Stream<unknown, [unknown], Promise<void>>>();
   noop.flush();
@@ -276,11 +278,11 @@ it("calls flush after all async pushes", async () => {
   expect(push).toHaveBeenCalledTimes(1);
   expect(flush).not.toHaveBeenCalled();
 
-  await Promise.resolve().then(() => Promise.resolve());
+  await new Promise((r) => setTimeout(r));
   expect(flush).not.toHaveBeenCalled();
 
   resolvePush();
-  await Promise.resolve().then(() => Promise.resolve());
+  await new Promise((r) => setTimeout(r));
   expect(push).toHaveBeenCalledTimes(1);
   expect(flush).toHaveBeenCalledTimes(1);
 
@@ -294,5 +296,60 @@ it("calls flush after all async pushes", async () => {
 
   expect(await result).toBe(undefined);
   expect(push).toHaveBeenCalledTimes(1);
-  expect(flush).toHaveBeenCalledTimes(2);
+  expect(flush).toHaveBeenCalledTimes(1);
+});
+
+it("calls flush after all downstream pushes", async () => {
+  let resolveFlush = () => {};
+  const flush = mock(() => new Promise<void>((r) => (resolveFlush = r)));
+  let resolvePush = () => {};
+  const push = mock(
+    (x) => new Promise<void>((r) => (resolvePush = () => r(x))),
+  );
+
+  const source = stream({ flush })(null);
+  const sink = stream({ push, flush: () => {} })(source);
+
+  source.push(42);
+  expect(flush).not.toHaveBeenCalled();
+  expect(push).not.toHaveBeenCalled();
+
+  await new Promise((r) => setTimeout(r));
+  expect(push).toHaveBeenLastCalledWith(42);
+  expect(flush).not.toHaveBeenCalled();
+
+  await new Promise((r) => setTimeout(r));
+  expect(flush).not.toHaveBeenCalled();
+
+  resolvePush();
+  await new Promise((r) => setTimeout(r));
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(flush).toHaveBeenCalledTimes(1);
+  await new Promise((r) => setTimeout(r));
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(flush).toHaveBeenCalledTimes(1);
+
+  const result = sink.flush();
+  expect(result).toBeInstanceOf(Promise);
+  expect(await Promise.race([result, Promise.resolve(1)])).toBe(1);
+  resolveFlush(), await result;
+  expect(await Promise.race([result, Promise.resolve(1)])).toBe(undefined);
+});
+
+it("handles pulling with downstream flushes", () => {
+  let count = 0;
+  const source = stream({
+    flush: (x) => x.forEach(([y]) => (count += y)),
+    pull: () => count,
+  })(null);
+
+  source.push(1);
+  source.push(2);
+  expect(source.pull()).toBe(3);
+
+  // Add a downstream
+  stream({})(source);
+
+  source.push(3);
+  expect(source.pull()).toBe(6);
 });

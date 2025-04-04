@@ -1,15 +1,17 @@
-import { expect, it, mock } from "bun:test";
+import { nest, reorder, shape } from "../datastructure/shape";
+import { expect, it, mock, spyOn } from "bun:test";
+import type { ZSet } from "../datastructure/zset";
+import { stream } from "../stream";
 import {
+  memoryReplication,
+  replicate,
   filter,
+  memory,
   fork,
   join,
   map,
-  memory,
-  memoryReplication,
   sink,
-  replicate,
 } from ".";
-import { nest, reorder, shape } from "../datastructure/shape";
 
 it("fails with invalid data", () => {
   const user = shape((t) => ({
@@ -20,7 +22,11 @@ it("fails with invalid data", () => {
 
   const users = memory(user, [{ id: 0, name: "Bob" }]);
   users.push([[{ id: 1, name: "Alice" }], [1], userReverse]);
-  expect(() => users.flush()).toThrowError("Incompatible shapes");
+
+  const consoleErrorMock = spyOn(console, "error").mockImplementation(() => {});
+  users.flush();
+  expect(consoleErrorMock).toHaveBeenCalledTimes(1);
+  consoleErrorMock.mockRestore();
 });
 
 it("performs basic CRUD", () => {
@@ -869,4 +875,87 @@ it("sorts streams for join", () => {
 
     expect(shape).toEqual(nest(user, "messages", message));
   }
+});
+
+it("joins with sync flush", async () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    name: t.STRING,
+  }));
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    text: t.STRING,
+    user: t.INT,
+  }));
+
+  const users = memory(user);
+  const messages = memory(message);
+  const joined = join(users, "id", messages, "user", "messages");
+
+  users.push([
+    [
+      { id: 0, name: "Alice" },
+      { id: 1, name: "Bob" },
+    ],
+    [1, 1],
+    user,
+  ]);
+
+  messages.push([
+    [
+      { id: 0, text: "I'm Bob", user: 1 },
+      { id: 1, text: "I'm Alice", user: 0 },
+    ],
+    [1, 2],
+    message,
+  ]);
+
+  const spy = mock();
+  joined.connect(spy);
+  await new Promise((r) => setTimeout(r));
+
+  {
+    const [data, metadata] = spy.mock.lastCall?.[0] ?? [];
+    expect(data).toEqual([
+      {
+        id: 0,
+        name: "Alice",
+        messages: [{ id: 1, text: "I'm Alice", user: 0 }],
+      },
+      { id: 1, name: "Bob", messages: [{ id: 0, text: "I'm Bob", user: 1 }] },
+    ]);
+    expect({ ...(metadata as any) }).toEqual({
+      0: 1,
+      1: 1,
+      messages: [[2], [1]],
+    });
+  }
+  {
+    expect(users.pull()).toEqual([
+      [
+        { id: 0, name: "Alice" },
+        { id: 1, name: "Bob" },
+      ],
+      [1, 1],
+      user,
+    ]);
+  }
+});
+
+it("sinks with long initial pull", async () => {
+  let resolvePull = (_: ZSet<number>) => {};
+  const pull = mock(() => new Promise<ZSet<number>>((r) => (resolvePull = r)));
+
+  const source = stream({ pull })(null);
+  const view = sink(source);
+
+  const loading = view.preload();
+  expect(await Promise.race([loading, Promise.resolve(1)])).toBe(1);
+  view.push([[1], [-1] as any]);
+
+  resolvePull([[1], [1] as any]);
+  await new Promise((r) => setTimeout(r));
+  expect(await Promise.race([loading, Promise.resolve(1)])).toBe(undefined);
+
+  expect(view.pull()).toEqual([[], [] as any]);
 });
