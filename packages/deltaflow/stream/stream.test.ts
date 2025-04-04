@@ -1,4 +1,4 @@
-import { expect, it, mock } from "bun:test";
+import { expect, it, mock, spyOn } from "bun:test";
 import { type Stream, stream } from "./stream";
 import "typotest";
 
@@ -367,4 +367,27 @@ it("merges partial entities correctly", () => {
 
   expect(spy).toHaveBeenCalledTimes(1);
   expect(spy).toHaveBeenLastCalledWith([1, 2]);
+});
+
+it("calls all downstreams even if one throws", () => {
+  const source = stream({
+    push: (x: number) => x,
+  })(null);
+
+  const spy1 = mock(() => {
+    throw new Error("error");
+  });
+  const spy2 = mock();
+
+  source.connect(spy1);
+  source.connect(spy2);
+
+  source.push(42);
+  const consoleErrorMock = spyOn(console, "error").mockImplementation(() => {});
+  source.flush();
+  expect(consoleErrorMock).toHaveBeenCalledTimes(1);
+  consoleErrorMock.mockRestore();
+
+  expect(spy1).toHaveBeenCalledTimes(1);
+  expect(spy2).toHaveBeenCalledTimes(1);
 });

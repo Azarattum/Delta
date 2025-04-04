@@ -75,7 +75,11 @@ function stream<
       return SyncPromise.all(
         toProcess.map((entities) =>
           SyncPromise.one(push(...entities)).then((x) =>
-            downstreams.forEach((fn) => fn(x)),
+            downstreams.forEach((fn) => {
+              SyncPromise.try(() => fn(x)).catch((error) =>
+                console.error("Unhandled error in downstream handler", error),
+              );
+            }),
           ),
         ),
       );

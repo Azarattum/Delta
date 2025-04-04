@@ -55,18 +55,13 @@ export class Scheduler {
   }
 
   #execute(task: () => void | Promise<void>) {
-    try {
-      const result = task();
-      if (result instanceof Promise) {
-        const handled = result
-          .catch((error) =>
-            console.error("Unhandled error during async task execution", error),
-          )
-          .finally(() => this.#pending.delete(handled));
-        this.#pending.add(handled);
-      }
-    } catch (error) {
+    const result = SyncPromise.try(task).catch((error) => {
       console.error("Unhandled error during task execution", error);
+    });
+
+    if (result instanceof Promise) {
+      this.#pending.add(result);
+      result.finally(() => this.#pending.delete(result));
     }
   }
 }

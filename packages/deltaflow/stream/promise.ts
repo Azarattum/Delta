@@ -4,6 +4,7 @@ function all<const T extends any[]>(values: T): SyncPromises<T> {
   return {
     then: (fn): any => fn(values as any),
     finally: (fn): any => (fn(), values),
+    catch: (): any => values,
   };
 }
 
@@ -12,17 +13,33 @@ function one<const T>(value: T | Promise<T>): SyncPromise<T> {
   return {
     then: (fn): any => fn(value as Awaited<T>),
     finally: (fn): any => (fn(), value),
+    catch: (): any => value,
   };
 }
 
-export const SyncPromise = { all, one };
+function wrap<const T>(valueFn: () => T) {
+  try {
+    const value = valueFn();
+    return one(value);
+  } catch (error) {
+    return {
+      then: (): any => {},
+      catch: (fn): any => fn(error),
+      finally: (fn): any => (fn(), error),
+    } as SyncPromise<unknown>;
+  }
+}
+
+export const SyncPromise = { all, one, try: wrap };
 
 export type SyncPromise<T> = {
+  catch: <R>(fn: (error: unknown) => R) => IsPromise<T, Promise<R>, R>;
   then: <R>(fn: (x: Awaited<T>) => R) => IsPromise<T, Promise<R>, R>;
   finally: (fn: () => void) => IsPromise<T, Promise<T>, T>;
 };
 
 export type SyncPromises<T extends any[]> = {
+  catch: <R>(fn: (error: unknown) => R) => IsPromise<T, Promise<R>, R>;
   then: <R>(fn: (x: AwaitedAll<T>) => R) => IsPromise<T, Promise<R>, R>;
   finally: (
     fn: () => void,
