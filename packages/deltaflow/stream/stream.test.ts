@@ -1,5 +1,6 @@
 import { expect, it, mock, spyOn } from "bun:test";
 import { type Stream, stream } from "./stream";
+import type { MaybePromise } from "./promise";
 import "typotest";
 
 it("streams lazily", () => {
@@ -122,7 +123,7 @@ it("merges batched changes", async () => {
     const spy = mock((_1?: number, _2?: number) => 0 as const);
     const joined = stream({ push: spy })(source1, source2);
 
-    expect(joined.flush).toHaveReturnTypeOf<void>();
+    expect(joined.flush).toHaveReturnTypeOf<MaybePromise<void>>();
     expect(joined.pull).toHaveReturnTypeOf<0>();
 
     source1.push(1);
@@ -148,7 +149,7 @@ it("merges batched changes", async () => {
     const spy = mock(async (_1?: number, _2?: number) => 0 as const);
     const joined = stream({ push: spy })(source1, source2);
 
-    expect(joined.flush).toHaveReturnTypeOf<Promise<void>>();
+    expect(joined.flush).toHaveReturnTypeOf<MaybePromise<void>>();
     expect(joined.pull).toHaveReturnTypeOf<Promise<0>>();
 
     source1.push(1);
@@ -177,7 +178,7 @@ it("handles async pushes", async () => {
     push: (x: number) => Promise.resolve(x),
   })(null);
 
-  expect(source).toBeOfType<Stream<never, [number], Promise<void>>>();
+  expect(source).toBeOfType<Stream<never, [number]>>();
 
   let count = 0;
   const view = stream({
@@ -185,12 +186,12 @@ it("handles async pushes", async () => {
     pull: () => count,
   })(source);
 
-  expect(view).toBeOfType<Stream<number, [number], Promise<void>>>();
+  expect(view).toBeOfType<Stream<number, [number]>>();
 
   expect(source.pull).toHaveReturnTypeOf<never>();
-  expect(source.flush).toHaveReturnTypeOf<Promise<void>>();
+  expect(source.flush).toHaveReturnTypeOf<MaybePromise<void>>();
   expect(view.pull).toHaveReturnTypeOf<number>();
-  expect(view.flush).toHaveReturnTypeOf<Promise<void>>();
+  expect(view.flush).toHaveReturnTypeOf<MaybePromise<void>>();
   expect(source.push).toHaveReturnTypeOf<void>();
   expect(view.push).toHaveReturnTypeOf<void>();
 
@@ -217,7 +218,7 @@ it("handles async pushes", async () => {
 
   source1.push(1);
   source2.push(2);
-  expect(joined.flush).toHaveReturnTypeOf<Promise<void>>();
+  expect(joined.flush).toHaveReturnTypeOf<MaybePromise<void>>();
   const promise = joined.flush();
   expect(promise).toBeInstanceOf(Promise);
   expect(count).toBe(0);
@@ -236,8 +237,8 @@ it("calls external flush", async () => {
     flush,
   })(null);
 
-  expect(source).toBeOfType<Stream<never, [number], Promise<void>>>();
-  expect(source.flush).toHaveReturnTypeOf<Promise<void>>();
+  expect(source).toBeOfType<Stream<never, [number]>>();
+  expect(source.flush).toHaveReturnTypeOf<MaybePromise<void>>();
   source.push(0);
 
   expect(flush).not.toHaveBeenCalled();
@@ -253,7 +254,7 @@ it("calls external flush", async () => {
   const noop = stream({})(source);
   source.push(1);
 
-  expect(noop).toBeOfType<Stream<unknown, [unknown], Promise<void>>>();
+  expect(noop).toBeOfType<Stream<unknown, [unknown]>>();
   noop.flush();
   expect(flush).toHaveBeenCalledTimes(2);
 });
@@ -390,4 +391,30 @@ it("calls all downstreams even if one throws", () => {
 
   expect(spy1).toHaveBeenCalledTimes(1);
   expect(spy2).toHaveBeenCalledTimes(1);
+});
+
+it("flushes async with async downstreams", async () => {
+  const spy = mock(async (_) => {});
+
+  const source = stream({ push: (x: number) => x })(null);
+  expect(source.flush).toHaveReturnTypeOf<MaybePromise<void>>();
+
+  expect(source.flush()).toBe(undefined);
+  source.push(42);
+  expect(source.flush()).toBe(undefined);
+
+  const view = stream({ flush: spy })(source);
+  expect(view.flush).toHaveReturnTypeOf<MaybePromise<void>>();
+
+  expect(source.flush()).toBe(undefined);
+  source.push(42);
+  expect(source.flush()).toBeInstanceOf(Promise);
+  await source.flush();
+
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(spy).toHaveBeenLastCalledWith([[42]]);
+
+  expect(view.flush()).toBe(undefined);
+  source.push(42);
+  expect(view.flush()).toBeInstanceOf(Promise);
 });

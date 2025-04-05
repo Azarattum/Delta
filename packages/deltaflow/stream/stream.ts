@@ -8,8 +8,7 @@ function stream<
   TPush,
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends any[] = [Awaited<TPull>],
-  TFlush extends MaybePromise<void> = void,
->(options: StreamOptions<TPush, TPull, TIn, TFlush>) {
+>(options: StreamOptions<TPush, TPull, TIn>) {
   type Upstreams = { [K in keyof TIn]: Stream<unknown, [TIn[K]]> | null };
 
   return <
@@ -17,7 +16,7 @@ function stream<
     TOut = InferOut<TPush, TPull, TUpstreams>,
   >(
     ...upstreams: TUpstreams
-  ): Stream<TOut, TIn, InferFlush<TPush, TFlush, TUpstreams>> => {
+  ): Stream<TOut, TIn> => {
     const push = options.push ?? ((...entity: TIn) => entity[0]);
     const pull =
       options.pull ??
@@ -86,9 +85,9 @@ function stream<
     }
 
     return {
-      flush: () => scheduler.current.flush() as any, // TODO: consider MaybePromise here
       pull: (options) => (scheduler.current.flush(), pull(options)),
       push: (...entities) => forward(entities),
+      flush: () => scheduler.current.flush(),
       connect,
       subscribe: (fn) => {
         SyncPromise.one(pull()).then(fn);
@@ -102,19 +101,6 @@ function stream<
   };
 }
 
-// TODO: consider that flush should always be MaybePromise, since we cannot
-//   really guarantee its type because it also depends on the downstream
-type InferFlush<TPush, TFlush, TUpstreams extends any[]> =
-  // Check if the push, flush or any upstream TFlush has a Promise
-  HasPromise<
-    | TFlush
-    | (unknown extends TPush ? void : TPush)
-    | (TUpstreams[number] extends Stream<any, any, infer TFlush> ? TFlush
-      : never),
-    Promise<void>,
-    void
-  >;
-
 type InferOut<TPush, TPull, TUpstreams extends any[]> =
   // Check if TPull is exactly T | Promise<T> for some T
   (<U>() => U extends TPull ? 1 : 2) extends (
@@ -122,8 +108,7 @@ type InferOut<TPush, TPull, TUpstreams extends any[]> =
   ) ?
     // Check if the push or any upstream TOut has a Promise
     HasPromise<
-      TUpstreams[number] extends Stream<infer TOut, any, any> ? TOut | TPush
-      : never,
+      TUpstreams[number] extends Stream<infer TOut, any> ? TOut | TPush : never,
       Promise<Awaited<TPull>>,
       Awaited<TPull>
     >
@@ -132,11 +117,7 @@ type InferOut<TPush, TPull, TUpstreams extends any[]> =
 type PartialEntities<T extends any[]> =
   T extends [any] ? [Awaited<T[0]>] : { [K in keyof T]?: Awaited<T[K]> };
 
-type Stream<
-  TOut,
-  TIn extends any[] = unknown[],
-  TFlush extends MaybePromise<void> = void,
-> = {
+type Stream<TOut, TIn extends any[] = unknown[]> = {
   /** Subscribes to changes and immediately pulls the current state */
   subscribe(fn: (entity: Awaited<TOut>) => void): () => void;
   /** Subscribes to future changes without side-effects */
@@ -146,7 +127,7 @@ type Stream<
   /** Pulls from the stream */
   pull(options?: PullOptions): TOut;
   /** Immediately flushes all the pending stream pushes */
-  flush(): TFlush;
+  flush(): MaybePromise<void>;
   /** Checks if the stream has pending changes */
   get isDirty(): boolean;
 
@@ -157,14 +138,13 @@ type StreamOptions<
   TOut,
   TPull extends MaybePromise<TOut> = MaybePromise<TOut>,
   TIn extends any[] = [Awaited<TPull>],
-  TFlush extends MaybePromise<void> = void,
 > = {
   /** Describes the behavior when somebody tries to pull from the stream */
   pull?: (options?: PullOptions) => TPull;
   /** Describes the behavior when somebody pushes to the stream */
   push?: (...entities: PartialEntities<TIn>) => TOut;
   /** Describes any additional flush behavior */
-  flush?: (entities: PartialEntities<TIn>[]) => TFlush;
+  flush?: (entities: PartialEntities<TIn>[]) => MaybePromise<void>;
 };
 
 /** TODO: these should be datatype specific */

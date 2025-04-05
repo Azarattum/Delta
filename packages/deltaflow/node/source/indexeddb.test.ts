@@ -1,7 +1,8 @@
+import { createStore, indexeddb } from "./indexeddb";
+import { shape } from "../../datastructure/shape";
+import type { MaybePromise } from "../../stream";
 import { expect, it } from "bun:test";
 import { mock } from "bun:test";
-import { shape } from "../../datastructure/shape";
-import { createStore, indexeddb } from "./indexeddb";
 import { join, sink } from "..";
 
 import "fake-indexeddb/auto";
@@ -40,12 +41,13 @@ it("works with indexed DB", async () => {
     { id: 3, text: "I'll be here!", user: 2 },
   ]);
 
-  expect(users.flush).toHaveReturnTypeOf<Promise<void>>();
-  expect(messages.flush).toHaveReturnTypeOf<Promise<void>>();
+  expect(users.flush).toHaveReturnTypeOf<MaybePromise<void>>();
+  expect(messages.flush).toHaveReturnTypeOf<MaybePromise<void>>();
 
   const joined = sink(join(users, "id", messages, "user", "messages"));
 
-  expect(joined.flush).toHaveReturnTypeOf<Promise<void>>();
+  expect(joined.flush).toHaveReturnTypeOf<MaybePromise<void>>();
+  expect(joined.flush()).toBe(undefined);
 
   await joined.preload();
   expect(joined.pull()[0]).toEqual([
@@ -65,7 +67,7 @@ it("works with indexed DB", async () => {
   ]);
 
   messages.push([[{ id: 4, text: "Nice to meet you!", user: 1 }], [1]]);
-  await joined.flush();
+  await expect(joined.flush()).resolves.toBe(undefined);
   expect(joined.pull()[0]).toEqual([
     {
       id: 0,
@@ -188,7 +190,7 @@ it("pushes synchronously when possible", async () => {
 
   const view = sink(users);
 
-  expect(users.flush).toHaveReturnTypeOf<Promise<void>>();
+  expect(users.flush).toHaveReturnTypeOf<MaybePromise<void>>();
 
   expect(view.pull()[0]).toHaveLength(0);
   await view.preload();
