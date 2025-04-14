@@ -7,6 +7,7 @@ import {
   replicate,
   filter,
   memory,
+  order,
   fork,
   join,
   map,
@@ -958,4 +959,70 @@ it("sinks with long initial pull", async () => {
   expect(await Promise.race([loading, Promise.resolve(1)])).toBe(undefined);
 
   expect(view.pull()).toEqual([[], [] as any]);
+});
+
+it("reorders items", () => {
+  let user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    name: t.STRING,
+  }));
+
+  const users = memory(user, [
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+  ]);
+
+  const view = sink(order(users, "name"));
+
+  expect(users.pull()[0]).toEqual([
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+  ]);
+
+  expect(view.pull()[0]).toEqual([
+    { id: 1, name: "Alice" },
+    { id: 0, name: "Bob" },
+  ]);
+
+  users.push([
+    [
+      { id: 2, name: "Brain" },
+      { id: 3, name: "Alex" },
+    ],
+    [1, 1],
+    user,
+  ]);
+
+  expect(users.pull()[0]).toEqual([
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+    { id: 2, name: "Brain" },
+    { id: 3, name: "Alex" },
+  ]);
+
+  expect(view.pull()[0]).toEqual([
+    { id: 3, name: "Alex" },
+    { id: 1, name: "Alice" },
+    { id: 0, name: "Bob" },
+    { id: 2, name: "Brain" },
+  ]);
+
+  users.push([[{ id: 4, name: "Alice" }], [1], user]);
+  expect(users.pull()[0]).toEqual([
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+    { id: 2, name: "Brain" },
+    { id: 3, name: "Alex" },
+    { id: 4, name: "Alice" },
+  ]);
+  expect(view.pull()[0]).toEqual([
+    { id: 3, name: "Alex" },
+    { id: 1, name: "Alice" },
+    { id: 4, name: "Alice" },
+    { id: 0, name: "Bob" },
+    { id: 2, name: "Brain" },
+  ]);
+
+  expect(users.pull()[2]).toBe(user);
+  expect(view.pull()[2]?.order).toEqual([2, 0]);
 });

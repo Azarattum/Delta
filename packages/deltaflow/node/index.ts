@@ -1,6 +1,7 @@
 export * from "./source/memory";
 
 export * from "./filter";
+export * from "./order";
 export * from "./fork";
 export * from "./join";
 export * from "./map";

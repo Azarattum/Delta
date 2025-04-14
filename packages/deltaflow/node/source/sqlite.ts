@@ -30,18 +30,23 @@ export function sqlite<T extends object>(
   );
 
   return stream({
-    pull: (options) => {
+    pull: ({ constraints, ordering } = {}) => {
+      const orderBy =
+        ordering ?
+          `ORDER BY ${ordering?.map((x) => (Array.isArray(x) ? x.join(" ") : x)).join(", ")}`
+        : "";
+
       let scan =
-        options?.constraints ?
+        constraints ?
           db
             .query(
-              `SELECT ${table}.* FROM (VALUES ${options.constraints.map((x) => `(${Object.values(x).join(",")})`).join(",")}) ` +
-                `INNER JOIN ${table} ON ${Object.keys(options.constraints[0])
+              `SELECT ${table}.* FROM (VALUES ${constraints.map((x) => `(${Object.values(x).join(",")})`).join(",")}) ` +
+                `INNER JOIN ${table} ON ${Object.keys(constraints[0])
                   .map((key, i) => `column${i + 1} = ${key}`)
                   .join(" AND ")}`,
             )
             .all()
-        : db.query(`SELECT * FROM ${table}`).all();
+        : db.query(`SELECT * FROM ${table} ${orderBy}`).all();
 
       return [scan, Array(scan.length).fill(1), shape] as ZSet<T>;
     },

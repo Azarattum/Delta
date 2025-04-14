@@ -10,15 +10,26 @@ function shape<T extends Template>(template: T): Shape<FromTemplate<T>> {
   return { keys, types, order } as any;
 }
 
-function reorder<T>(
-  shape: Shape<T>,
-  ...ordering: (NoInfer<keyof T> | [NoInfer<keyof T>, ("asc" | "desc")?])[]
-) {
+function reorder<TShape extends Shape<any> | undefined>(
+  shape: TShape,
+  ...ordering: TShape extends Shape<infer T> ?
+    (NoInfer<keyof T> | [NoInfer<keyof T>, ("asc" | "desc")?])[]
+  : []
+): TShape {
+  if (!shape) return shape;
+
+  const primary = shape.types.map((x, i) => (x & TYPE.PRIMARY ? i << 1 : null));
   const order = ordering.map((entry) => {
     const [key, dir = "asc"] = Array.isArray(entry) ? entry : [entry];
-    return (shape.keys.indexOf(key as keyof T) << 1) | (dir === "desc" ? 1 : 0);
+    const index = shape.keys.indexOf(key);
+    primary[index] = null;
+    return (index << 1) | (dir === "desc" ? 1 : 0);
   });
 
+  // Append unused primary keys to ensure uniqueness
+  order.push(...primary.filter((x) => x !== null));
+
+  if (order.toString() === shape.order.toString()) return shape;
   return { ...shape, order };
 }
 

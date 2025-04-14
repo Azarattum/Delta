@@ -1,6 +1,7 @@
-import { add, compare, distinct, type ZSet } from "../../datastructure/zset";
+import { add, sort, compare, distinct } from "../../datastructure/zset";
+import { reorder, TYPE, type Shape } from "../../datastructure/shape";
 import type { CLMetadata, CLSet } from "../../datastructure/clset";
-import { TYPE, type Shape } from "../../datastructure/shape";
+import type { ZSet } from "../../datastructure/zset";
 import { stream, SyncPromise } from "../../stream";
 import type { OfZStream, ZStream } from "../type";
 
@@ -21,10 +22,10 @@ export function memory<T>(
   });
 
   return stream({
-    pull: (options) => {
-      let scan =
-        options?.constraints ?
-          options.constraints.flatMap((constraint) => {
+    pull: ({ ordering, constraints } = {}) => {
+      const scan =
+        constraints ?
+          constraints.flatMap((constraint) => {
             return structuredClone(
               // This will be faster with a real DB
               data[0].filter((x) =>
@@ -34,13 +35,13 @@ export function memory<T>(
           })
         : structuredClone(data[0]);
 
-      return [
-        scan,
-        options?.constraints ?
-          Array(scan.length).fill(1)
-        : structuredClone(data[1]),
-        shape,
-      ] as ZSet<T>;
+      const scanShape = ordering ? reorder(shape, ...(ordering as any)) : shape;
+      const scanMeta =
+        constraints ? Array(scan.length).fill(1) : structuredClone(data[1]);
+      const scanSet = [scan, scanMeta, scanShape] as ZSet<T>;
+
+      if (ordering) sort(scanSet, (a, b) => compare(a, b, scanShape));
+      return scanSet;
     },
     flush: (changes) => changes.forEach(([x]) => distinct(add(data, x))),
   })(null);

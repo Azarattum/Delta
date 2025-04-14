@@ -19,15 +19,14 @@ export async function indexeddb<T extends object>(
   );
 
   return stream({
-    pull: async (options) => {
+    pull: async ({ constraints, ordering } = {}) => {
       const store = db.transaction([table], "readonly").objectStore(table);
-      const request = store.getAll();
       let scan: T[];
 
-      const constraintColumns = Object.keys(options?.constraints?.[0] ?? {});
+      const constraintColumns = Object.keys(constraints?.[0] ?? {});
       if (constraintColumns.toString() === store.keyPath.toString()) {
         scan = await Promise.all(
-          options!.constraints!.map(
+          constraints!.map(
             (x) =>
               new Promise<T>(
                 (r) =>
@@ -40,7 +39,7 @@ export async function indexeddb<T extends object>(
       } else if (store.indexNames.contains(constraintColumns.toString())) {
         const index = store.index(constraintColumns.toString());
         scan = (await Promise.all(
-          options!.constraints!.map(
+          constraints!.map(
             (x) =>
               new Promise<T>(
                 (r) =>
@@ -52,7 +51,27 @@ export async function indexeddb<T extends object>(
         )) as T[];
         if (!index.unique) scan = scan.flat() as T[];
         // console.log("INDEX SCAN:", scan);
+      } else if (ordering) {
+        const indexName = ordering
+          .map((x) => (Array.isArray(x) ? x[0] : x))
+          .join(",");
+
+        if (!store.indexNames.contains(indexName)) {
+          throw new Error(
+            `Attempting to order by non-existent index: ${indexName}`,
+          );
+        }
+
+        const index = store.index(indexName);
+        const request = index.getAll();
+        scan = (await new Promise<T>(
+          (r) => (request.onsuccess = (e: any) => r(e.target.result)),
+        )) as T[];
+        // TODO: this is horrible, use cursor with reverse order instead!
+        if (ordering[0][1] === "desc") scan = scan.reverse();
+        // console.log("INDEX SCAN:", scan);
       } else {
+        const request = store.getAll();
         scan = (await new Promise<T>(
           (r) => (request.onsuccess = (e: any) => r(e.target.result)),
         )) as T[];
@@ -82,15 +101,19 @@ export async function indexeddb<T extends object>(
 
 // TODO: this is a temporary solution for testing purposes,
 //  we should use a proper schema and source create in the future
-export function createStore(
+export function createStore<T extends string>(
   db: IDBDatabase,
   name: string,
-  shape: Shape<Record<string, any>>,
+  shape: Shape<Record<T, any>>,
+  indexed: T[] = [],
 ) {
   const keyPath = shape.keys.filter((_, i) => shape.types[i] & TYPE.PRIMARY);
   const store = db.createObjectStore(name, { keyPath });
   const relations = shape.keys.filter(
     (_, i) => shape.types[i] >> 16 && !(shape.types[i] & TYPE.PRIMARY),
   );
-  relations.forEach((x) => store.createIndex(x, [x]));
+
+  // TODO: support compound indexes somehow...
+  const indexes = new Set([...indexed, ...relations]);
+  indexes.forEach((x) => store.createIndex(x, [x]));
 }

@@ -1,6 +1,6 @@
 import { it, expect, afterAll } from "bun:test";
 import { rm } from "node:fs/promises";
-import { join, sink } from "..";
+import { join, order, sink } from "..";
 import { sqlite } from "./sqlite";
 import SQLite from "bun:sqlite";
 import { shape } from "../../datastructure/shape";
@@ -91,6 +91,15 @@ it("works with sqlite", async () => {
       name: "Emily",
       messages: [{ id: 3, text: "I'll be here!", user: 2 }],
     },
+  ]);
+
+  const messagesByUser = order(messages, ["user", "desc"]);
+  expect(messagesByUser.pull()[0]).toEqual([
+    { id: 3, text: "I'll be here!", user: 2 },
+    { id: 2, text: "And I'm Alice!", user: 1 },
+    { id: 4, text: "Nice to meet you!", user: 1 },
+    { id: 0, text: "Hello", user: 0 },
+    { id: 1, text: "I'm Bob", user: 0 },
   ]);
 });
 

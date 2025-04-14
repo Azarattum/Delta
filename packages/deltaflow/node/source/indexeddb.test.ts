@@ -3,7 +3,7 @@ import { shape } from "../../datastructure/shape";
 import type { MaybePromise } from "../../stream";
 import { expect, it } from "bun:test";
 import { mock } from "bun:test";
-import { join, sink } from "..";
+import { join, order, sink } from "..";
 
 import "fake-indexeddb/auto";
 import "typotest";
@@ -165,6 +165,15 @@ it("works with indexed DB", async () => {
       name: "Emilia",
       messages: [{ id: 3, text: "I'll be here!", user: 2 }],
     },
+  ]);
+
+  const messagesByUser = order(messages, ["user", "desc"]);
+  expect((await messagesByUser.pull())[0]).toEqual([
+    { id: 3, text: "I'll be here!", user: 2 },
+    { id: 4, text: "I'm glad to meet you!", user: 1 },
+    { id: 2, text: "And I'm Alice!", user: 1 },
+    { id: 1, text: "I'm Bob", user: 0 },
+    { id: 0, text: "Hello", user: 0 },
   ]);
 });
 
