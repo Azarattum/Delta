@@ -36,17 +36,14 @@ export function sqlite<T extends object>(
           `ORDER BY ${ordering?.map((x) => (Array.isArray(x) ? x.join(" ") : x)).join(", ")}`
         : "";
 
-      let scan =
+      const where =
         constraints ?
-          db
-            .query(
-              `SELECT ${table}.* FROM (VALUES ${constraints.map((x) => `(${Object.values(x).join(",")})`).join(",")}) ` +
-                `INNER JOIN ${table} ON ${Object.keys(constraints[0])
-                  .map((key, i) => `column${i + 1} = ${key}`)
-                  .join(" AND ")}`,
-            )
-            .all()
-        : db.query(`SELECT * FROM ${table} ${orderBy}`).all();
+          `WHERE ${Object.entries(constraints)
+            .map(([k, v]) => `${k} IN (${[...v]})`)
+            .join(" AND ")}`
+        : "";
+
+      const scan = db.query(`SELECT * FROM ${table} ${where} ${orderBy}`).all();
 
       return [scan, Array(scan.length).fill(1), shape] as ZSet<T>;
     },

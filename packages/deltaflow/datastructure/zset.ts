@@ -75,22 +75,23 @@ function multiply<A, B, K extends string>(
 ) {
   const [aData, aMetadata, aShape] = a;
   const [bData, bMetadata, bShape] = b;
+  const seen = new Map<A[keyof A] | B[keyof B], number>();
 
   for (let i = 0; i < aData.length; i++) {
-    (aData[i] as any)[relationship] = [];
-    ((aMetadata as any)[relationship] ??= [])[i] = [];
+    const key = aData[i][keyA];
+    const cached = seen.get(key) ?? (seen.set(key, i), undefined);
+
+    (aData[i] as any)[relationship] =
+      cached === undefined ? [] : (aData[cached] as any)[relationship];
+    ((aMetadata as any)[relationship] ??= [])[i] =
+      cached === undefined ? [] : (aMetadata as any)[relationship][cached];
   }
 
-  let i = 0;
-  let j = 0;
-
-  while (i < aData.length && j < bData.length) {
-    if (compare<unknown>(aData[i][keyA], bData[j][keyB])) i++;
-    else {
-      (aData[i] as any)[relationship].push(bData[j]);
-      (aMetadata as any)[relationship][i].push(bMetadata[j]);
-      j++;
-    }
+  for (let i = 0; i < bData.length; i++) {
+    const id = seen.get(bData[i][keyB]);
+    if (id === undefined) continue;
+    (aData[id] as any)[relationship].push(bData[i]);
+    (aMetadata as any)[relationship][id].push(bMetadata[i]);
   }
 
   a[2] = nest(aShape, relationship, bShape);

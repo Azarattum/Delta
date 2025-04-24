@@ -12,9 +12,9 @@ export function replicate<
   return stream({
     push(a: ZSet<T>) {
       // TODO: don't use id here!
-      const aKeys = a?.[0]
-        .filter((_, i) => a[1][i] <= 0)
-        .map((x) => ({ id: x["id"] }));
+      const aKeys = a && {
+        id: new Set(a[0].filter((_, i) => a[1][i] <= 0).map((x) => x["id"])),
+      };
 
       // TODO: CLSet should also have a zero type (or maybe unite them?)
       if (!aKeys) return [[], []] as CLSet<T>;

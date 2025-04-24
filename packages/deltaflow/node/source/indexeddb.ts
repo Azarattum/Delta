@@ -19,11 +19,12 @@ export async function indexeddb<T extends object>(
   );
 
   return stream({
-    pull: async ({ constraints, ordering } = {}) => {
+    pull: async ({ ordering } = {}) => {
       const store = db.transaction([table], "readonly").objectStore(table);
       let scan: T[];
 
-      const constraintColumns = Object.keys(constraints?.[0] ?? {});
+      // TODO: reimplement with https://web.archive.org/web/20250212202423/https://www.codeproject.com/Articles/744986/How-to-do-some-magic-with-indexedDB
+      /*const constraintColumns = Object.keys(constraints ?? {});
       if (constraintColumns.toString() === store.keyPath.toString()) {
         scan = await Promise.all(
           constraints!.map(
@@ -51,7 +52,7 @@ export async function indexeddb<T extends object>(
         )) as T[];
         if (!index.unique) scan = scan.flat() as T[];
         // console.log("INDEX SCAN:", scan);
-      } else if (ordering) {
+      } else */ if (ordering) {
         const indexName = ordering
           .map((x) => (Array.isArray(x) ? x[0] : x))
           .join(",");

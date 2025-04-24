@@ -23,17 +23,12 @@ export function memory<T>(
 
   return stream({
     pull: ({ ordering, constraints } = {}) => {
-      const scan =
-        constraints ?
-          constraints.flatMap((constraint) => {
-            return structuredClone(
-              // This will be faster with a real DB
-              data[0].filter((x) =>
-                Object.entries(constraint).every(([k, v]) => x[k] === v),
-              ),
-            );
-          })
-        : structuredClone(data[0]);
+      const checks = constraints && Object.entries(constraints);
+      const scan = structuredClone(
+        checks ?
+          data[0].filter((x) => checks.every(([k, v]) => v.has(x[k])))
+        : data[0],
+      );
 
       const scanShape = ordering ? reorder(shape, ...(ordering as any)) : shape;
       const scanMeta =

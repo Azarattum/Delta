@@ -150,7 +150,7 @@ type StreamOptions<
 /** TODO: these should be datatype specific */
 type PullOptions = {
   /** Lookup and order by provided keys */
-  constraints?: Record<keyof any, unknown>[];
+  constraints?: Record<keyof any, Set<unknown>>;
   /** Order to pull in */
   ordering?: (keyof any | [keyof any, ("asc" | "desc")?])[];
 };
