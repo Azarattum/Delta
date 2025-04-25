@@ -150,10 +150,12 @@ type StreamOptions<
 /** TODO: these should be datatype specific */
 type PullOptions = {
   /** Lookup and order by provided keys */
-  constraints?: Record<keyof any, Set<unknown>>;
+  constraints?: Record<keyof any, Set<ValidKey>>;
   /** Order to pull in */
   ordering?: (keyof any | [keyof any, ("asc" | "desc")?])[];
 };
 
+type ValidKey = number | string | Date | BufferSource;
+
 export { stream };
-export type { Stream, StreamOptions };
+export type { Stream, StreamOptions, ValidKey };

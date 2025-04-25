@@ -1,7 +1,7 @@
 import { add, copy, multiply, zero } from "../datastructure/zset";
+import { stream, SyncPromise, type ValidKey } from "../stream";
 import type { ZSet } from "../datastructure/zset";
 import type { OfZStream, ZStream } from "./type";
-import { stream, SyncPromise } from "../stream";
 
 export function join<
   const AStream extends ZStream<A>,
@@ -11,17 +11,21 @@ export function join<
   B = OfZStream<BStream>,
 >(
   aUpstream: AStream,
-  aKey: NoInfer<keyof A> & string,
+  aKey: NoInfer<ValidKeysOf<A>>,
   bUpstream: BStream,
-  bKey: NoInfer<keyof B> & string,
+  bKey: NoInfer<ValidKeysOf<B>>,
   relationship: K,
 ) {
   type C = ReturnType<typeof multiply<A, B, K>>;
   return stream({
     push(a?: ZSet<A>, b?: ZSet<B>) {
-      const bKeys = b && { [aKey]: new Set(b?.[0].map((x) => x[bKey])) };
+      const bKeys = b && {
+        [aKey]: new Set(b?.[0].map((x) => x[bKey] as ValidKey)),
+      };
       const aKeys = a && {
-        [bKey]: new Set(a[0].filter((_, i) => a[1][i] > 0).map((x) => x[aKey])),
+        [bKey]: new Set(
+          a[0].filter((_, i) => a[1][i] > 0).map((x) => x[aKey] as ValidKey),
+        ),
       };
 
       return SyncPromise.all([
@@ -50,7 +54,9 @@ export function join<
           a,
           bUpstream.pull({
             ...options,
-            constraints: { [bKey]: new Set(a[0].map((x) => x[aKey])) },
+            constraints: {
+              [bKey]: new Set(a[0].map((x) => x[aKey] as ValidKey)),
+            },
           }),
         ]).then(([a, b]) => {
           return multiply(a, aKey, b, bKey, relationship);
@@ -59,3 +65,8 @@ export function join<
     },
   })(aUpstream, bUpstream);
 }
+
+type ValidKeysOf<T> = {
+  [K in keyof T]: T[K] extends ValidKey ? K : never;
+}[keyof T] &
+  string;

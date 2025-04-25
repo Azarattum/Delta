@@ -281,3 +281,59 @@ it("subscribes and handles pushes", async () => {
     user,
   ]);
 });
+
+it("pulls with constraints", async () => {
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    text: t.STRING,
+    user: t(t.INT, t.RELATION(1)),
+  }));
+
+  const idbRequest = indexedDB.open("test4", 1);
+  idbRequest.onupgradeneeded = () => {
+    createStore(idbRequest.result, "messages", message, ["text"]);
+  };
+
+  const db = await new Promise<IDBDatabase>(
+    (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
+  );
+
+  const messages = await indexeddb(db, "messages", message, [
+    { id: 0, text: "Hello", user: 0 },
+    { id: 1, text: "I'm Bob", user: 1 },
+    { id: 2, text: "And I'm Alice!", user: 2 },
+    { id: 3, text: "I'll be here!", user: 3 },
+    { id: 4, text: "I'm Bob too", user: 1 },
+  ]);
+
+  {
+    const result = await messages.pull({
+      constraints: { id: new Set([1, 2]) },
+    });
+
+    expect(result[0]).toEqual([
+      { id: 1, text: "I'm Bob", user: 1 },
+      { id: 2, text: "And I'm Alice!", user: 2 },
+    ]);
+  }
+
+  {
+    const result = await messages.pull({
+      constraints: { user: new Set([1, 2]) },
+    });
+
+    expect(result[0]).toEqual([
+      { id: 1, text: "I'm Bob", user: 1 },
+      { id: 4, text: "I'm Bob too", user: 1 },
+      { id: 2, text: "And I'm Alice!", user: 2 },
+    ]);
+  }
+
+  {
+    const result = await messages.pull({
+      constraints: { text: new Set(["Hello", "Non-existent"]) },
+    });
+
+    expect(result[0]).toEqual([{ id: 0, text: "Hello", user: 0 }]);
+  }
+});
