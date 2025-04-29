@@ -1,9 +1,10 @@
 import { either, nest, type Shape } from "./shape";
 
+type AsRecord<T> = T extends Record<keyof any, any> ? T : {};
+
 type ZMetadata<T> = number[] & {
-  [K in keyof T as T[K] extends any[] ? K : never]?: T[K] extends (infer U)[] ?
-    ZMetadata<U>[]
-  : never;
+  [K in keyof AsRecord<T> as AsRecord<T>[K] extends any[] ? K
+  : never]?: AsRecord<T>[K] extends (infer U)[] ? ZMetadata<U>[] : never;
 };
 
 type ZSet<T> = [data: T[], metadata: ZMetadata<T>, shape?: Shape<T>];
@@ -24,7 +25,19 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
     if (equality < 0) {
       i++;
       continue;
-    } else if (equality === 0) {
+    } else if (equality > 0) {
+      // Create
+      aData.splice(i, 0, bData[j]);
+      aMetadata.splice(i, 0, bMetadata[j]);
+
+      // Copy metadata. TODO: Should be recursive?
+      childrenKeys.forEach((key) => {
+        if (Number.isInteger(+key)) return;
+        (aMetadata[key] ??= []).splice(i, 0, bMetadata[key][j]);
+      });
+    } else if (
+      !(aData[i] === bData[j] && typeof aData[i] === "object" && aData[i])
+    ) {
       // Update
       if (bMetadata[j] === 0 || aMetadata[j] === 0) {
         for (const key in bData[j]) {
@@ -48,16 +61,6 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
       }
 
       aMetadata[i] = (aMetadata[i] ?? 0) + bMetadata[j];
-    } else {
-      // Create
-      aData.splice(i, 0, bData[j]);
-      aMetadata.splice(i, 0, bMetadata[j]);
-
-      // Copy metadata. TODO: Should be recursive?
-      childrenKeys.forEach((key) => {
-        if (Number.isInteger(+key)) return;
-        aMetadata[key].splice(i, 0, bMetadata[key][j]);
-      });
     }
 
     i++;

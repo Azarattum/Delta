@@ -1,4 +1,4 @@
-import { multiply, type ZSet } from "./zset";
+import { add, multiply, type ZSet } from "./zset";
 import { nest, shape } from "./shape";
 import { expect, it } from "bun:test";
 
@@ -139,4 +139,19 @@ it("performs out of order multiplication", () => {
     [1, 1],
     both,
   ]);
+});
+
+it("avoids double counting with shared references", () => {
+  const shared = { id: 1 };
+  const base: ZSet<{ id: number }> = [[shared], [1]];
+  const added = add(base, base);
+  expect(added[1]).toEqual([1]);
+  expect(added[0].length).toBe(1);
+});
+
+it("properly adds primitive values", () => {
+  const base: ZSet<number> = [[1], [1]];
+  const added = add(base, base);
+  expect(added[1]).toEqual([2]);
+  expect(added[0].length).toBe(1);
 });
