@@ -9,14 +9,16 @@ export function join<
   const K extends string = string,
   A = OfZStream<AStream>,
   B = OfZStream<BStream>,
+  S extends boolean = false,
 >(
   aUpstream: AStream,
   aKey: NoInfer<ValidKeysOf<A>>,
   bUpstream: BStream,
   bKey: NoInfer<ValidKeysOf<B>>,
   relationship: K,
+  single = false as S,
 ) {
-  type C = ReturnType<typeof multiply<A, B, K>>;
+  type C = ReturnType<typeof multiply<A, B, K, S>>;
   return stream({
     push(a?: ZSet<A>, b?: ZSet<B>) {
       const bKeys = b && {
@@ -36,11 +38,13 @@ export function join<
         if (aPulled && a) add(aPulled, a);
         else if (a) aPulled = a;
 
-        if (aPulled && b) multiply(aPulled, aKey, b, bKey, relationship);
+        if (aPulled && b) {
+          multiply(aPulled, aKey, b, bKey, relationship, single);
+        }
 
         if (aPulled && bPulled) {
-          const aRef = aPulled === a ? a : zero(copy(a));
-          multiply(aRef, aKey, bPulled, bKey, relationship);
+          const aRef = aPulled === a ? a : zero(a && copy(a));
+          multiply(aRef, aKey, bPulled, bKey, relationship, single);
           if (aPulled !== a) add(aRef, aPulled);
           return aRef as C;
         }
@@ -59,7 +63,7 @@ export function join<
             },
           }),
         ]).then(([a, b]) => {
-          return multiply(a, aKey, b, bKey, relationship);
+          return multiply(a, aKey, b, bKey, relationship, single);
         }),
       );
     },

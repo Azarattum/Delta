@@ -37,20 +37,23 @@ function nest<
   TShape extends Shape<any> | undefined,
   TChild extends Shape<any> | undefined,
   TRelation extends string,
+  TSingle extends boolean = false,
 >(
   shape: TShape,
   relation: TRelation,
   child: TChild,
-): undefined extends TShape | TChild ? undefined
-: NestedShape<NonNullable<TShape>, NonNullable<TChild>, TRelation> {
+  single = false as TSingle,
+): undefined extends TShape | TChild ? TShape
+: NestedShape<NonNullable<TShape>, NonNullable<TChild>, TRelation, TSingle> {
   if (!shape || !child) return shape as any;
   return {
     ...shape,
-    children: { ...shape.children, [relation]: child },
+    children: { ...shape.children, [relation]: { single, shape: child } },
   } as any;
 }
 
 function either<T>(aShape?: Shape<T>, bShape?: Shape<T>) {
+  // TODO: maybe check shape hash?
   if (aShape && bShape && aShape.order.toString() !== bShape.order.toString()) {
     const aShapeString = JSON.stringify(aShape, null, 2);
     const bShapeString = JSON.stringify(bShape, null, 2);
@@ -84,7 +87,7 @@ type Shape<T = any> = Readonly<{
   keys: readonly (keyof T)[];
   order: readonly number[];
   types: readonly (typeof TYPE)[keyof typeof TYPE][];
-  children?: Record<keyof T, Shape<T[keyof T]> | undefined>;
+  children?: Record<keyof T, { single: boolean; shape?: Shape<T[keyof T]> }>;
 }>;
 
 type Template<T = unknown> = (
@@ -97,8 +100,12 @@ type NestedShape<
   TShape extends Shape,
   TChild extends Shape,
   TRelation extends string,
+  TSingle extends boolean,
 > = Shape<
-  (TShape & {})["~type"] & { [_ in TRelation]: (TChild & {})["~type"][] }
+  (TShape & {})["~type"] & {
+    [_ in TRelation]: TSingle extends true ? (TChild & {})["~type"]
+    : (TChild & {})["~type"][];
+  }
 >;
 
 type FromTemplate<T extends Template<unknown>> = {

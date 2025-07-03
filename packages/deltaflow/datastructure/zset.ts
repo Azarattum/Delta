@@ -9,6 +9,9 @@ type ZMetadata<T> = number[] & {
 
 type ZSet<T> = [data: T[], metadata: ZMetadata<T>, shape?: Shape<T>];
 
+// TODO: we need some kind of a traverser for ZSet
+//   to support singles and NESTED singles!
+
 function add<T>(a: ZSet<T>, b: ZSet<T>) {
   if (!b[0].length) return a;
   const [aData, aMetadata, aShape] = a;
@@ -44,13 +47,13 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
           if (key in bMetadata) {
             add(
               [
-                aData[i][key] as any[],
-                (aMetadata as any)[key][i],
+                arrayify(aData[i][key]),
+                arrayify(aMetadata[key]?.[i]),
                 aShape?.children?.[key],
               ],
               [
-                bData[j][key] as any[],
-                bMetadata[key]?.[j] ?? [],
+                arrayify(bData[j][key]),
+                arrayify(bMetadata[key]?.[j]),
                 bShape?.children?.[key],
               ],
             );
@@ -69,38 +72,54 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
   return a;
 }
 
-function multiply<A, B, K extends string>(
+function multiply<A, B, K extends string, S extends boolean = false>(
   a: ZSet<A>,
   keyA: keyof A,
   b: ZSet<B>,
   keyB: keyof B,
   relationship: K,
+  single = false as S,
 ) {
   const [aData, aMetadata, aShape] = a;
   const [bData, bMetadata, bShape] = b;
   const seen = new Map<A[keyof A] | B[keyof B], number>();
+  (aMetadata as any)[relationship] ??= [];
 
-  for (let i = 0; i < aData.length; i++) {
-    const key = aData[i][keyA];
-    const cached = seen.get(key) ?? (seen.set(key, i), undefined);
+  if (single) {
+    for (let i = 0; i < bData.length; i++) {
+      const key = bData[i][keyB];
+      if (!seen.has(key)) seen.set(key, i);
+    }
 
-    (aData[i] as any)[relationship] =
-      cached === undefined ? [] : (aData[cached] as any)[relationship];
-    ((aMetadata as any)[relationship] ??= [])[i] =
-      cached === undefined ? [] : (aMetadata as any)[relationship][cached];
-  }
+    for (let i = 0; i < aData.length && bData.length; i++) {
+      const id = seen.get(aData[i][keyA]);
+      (aData[i] as any)[relationship] ??= id != null ? bData[id] : null;
+      (aMetadata as any)[relationship][i] ??= id != null ? bMetadata[id] : 0;
+    }
+  } else {
+    for (let i = 0; i < aData.length; i++) {
+      const key = aData[i][keyA];
+      const cached = seen.get(key) ?? (seen.set(key, i), undefined);
 
-  for (let i = 0; i < bData.length; i++) {
-    const id = seen.get(bData[i][keyB]);
-    if (id === undefined) continue;
-    (aData[id] as any)[relationship].push(bData[i]);
-    (aMetadata as any)[relationship][id].push(bMetadata[i]);
+      (aData[i] as any)[relationship] =
+        cached === undefined ? [] : (aData[cached] as any)[relationship];
+      (aMetadata as any)[relationship][i] =
+        cached === undefined ? [] : (aMetadata as any)[relationship][cached];
+    }
+
+    for (let i = 0; i < bData.length; i++) {
+      const id = seen.get(bData[i][keyB]);
+      if (id === undefined) continue;
+      (aData[id] as any)[relationship].push(bData[i]);
+      (aMetadata as any)[relationship][id].push(bMetadata[i]);
+    }
   }
 
   a[2] = nest(aShape, relationship, bShape);
-  return a as ZSet<A & { [_ in K]: B[] }>;
+  return a as ZSet<A & { [_ in K]: S extends true ? B | null : B[] }>;
 }
 
+// TODO: make distinct work on ZValues
 function distinct<T>(item: ZSet<T>) {
   let index = 0;
   item[0].forEach((x, i) => {
@@ -126,13 +145,16 @@ function zero<T>(item?: ZSet<T>) {
   // TODO: test whether this is actually needed
   Object.keys(item[1]).forEach((key) => {
     if (Number.isInteger(+key)) return;
-    item[0].forEach((x, i) => x[key] && zero([x[key], item[1][key][i]]));
+    item[0].forEach((x, i) => {
+      if (!x[key]) return;
+      if (!Array.isArray(x[key])) return (item[1][key][i] = 0);
+      zero([x[key], item[1][key][i]]);
+    });
   });
   return item;
 }
 
-function copy<T>(item?: ZSet<T>) {
-  if (!item) return item;
+function copy<T>(item: ZSet<T>) {
   const items = item[0].slice();
   const metadata = item[1].slice();
 
@@ -142,9 +164,14 @@ function copy<T>(item?: ZSet<T>) {
   items.forEach((x, i) => {
     items[i] = { ...x };
     bMetadataKeys.forEach((key) => {
-      const clone = copy([x[key], item[1][key][i], item[2]?.[key]]);
-      x[key] = clone![0];
-      (metadata[key] ??= [])[i] = clone![1];
+      if (!Array.isArray(x[key])) {
+        x[key] = { ...x[key] };
+        (metadata[key] ??= [])[i] = item[1][key]?.[i] ?? 0;
+      } else {
+        const clone = copy([x[key], item[1][key]?.[i] ?? [], item[2]?.[key]]);
+        x[key] = clone![0];
+        (metadata[key] ??= [])[i] = clone![1];
+      }
     });
   });
 
@@ -186,6 +213,13 @@ function sort<T>(item: ZSet<T>, compare: (a: T, b: T) => number) {
     });
 
   return item;
+}
+
+// TODO: move to utils or something
+function arrayify<T>(target: T | null | undefined): T extends any[] ? T : [T] {
+  if (Array.isArray(target)) return target as any;
+  if (target != null) return [target] as any;
+  return [] as any;
 }
 
 export { add, sort, distinct, zero, copy, compare, multiply };

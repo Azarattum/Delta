@@ -1,11 +1,10 @@
-import { add, multiply, type ZSet } from "./zset";
+import { add, copy, distinct, multiply, zero, type ZSet } from "./zset";
 import { nest, shape } from "./shape";
 import { expect, it } from "bun:test";
 
 it("performs one-to-one multiplication", () => {
   const a = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
   const b = shape((t) => ({ id: t(t.INT, t.PRIMARY), age: t.INT }));
-  const both = nest(a, "details", b);
 
   const zsetA: ZSet<(typeof a)["~type"]> = [
     [
@@ -25,14 +24,21 @@ it("performs one-to-one multiplication", () => {
     b,
   ];
 
-  expect(multiply(zsetA, "id", zsetB, "id", "details")).toEqual([
-    [
-      { id: 1, name: "John", details: [{ id: 1, age: 25 }] },
-      { id: 2, name: "Jane", details: [{ id: 2, age: 30 }] },
-    ],
-    [1, 1],
-    both,
+  const zsetC = multiply(copy(zsetA), "id", zsetB, "id", "details");
+  expect(zsetC[0]).toEqual([
+    { id: 1, name: "John", details: [{ id: 1, age: 25 }] },
+    { id: 2, name: "Jane", details: [{ id: 2, age: 30 }] },
   ]);
+  expect({ ...zsetC[1] }).toEqual({ 0: 1, 1: 1, details: [[1], [1]] } as any);
+  expect(zsetC[2]).toEqual(nest(a, "details", b));
+
+  const zsetD = multiply(zsetA, "id", zsetB, "id", "details", true);
+  expect(zsetD[0]).toEqual([
+    { id: 1, name: "John", details: { id: 1, age: 25 } },
+    { id: 2, name: "Jane", details: { id: 2, age: 30 } },
+  ]);
+  expect({ ...zsetD[1] }).toEqual({ 0: 1, 1: 1, details: [1, 1] } as any);
+  expect(zsetD[2]).toEqual(nest(a, "details", b, true));
 });
 
 it("performs grouped multiplication", () => {
@@ -154,4 +160,34 @@ it("properly adds primitive values", () => {
   const added = add(base, base);
   expect(added[1]).toEqual([2]);
   expect(added[0].length).toBe(1);
+});
+
+it("zeroes correctly with one-to-one relationships", () => {
+  const a = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const b = shape((t) => ({ age: t(t.INT, t.PRIMARY) }));
+  const both = nest(a, "details", b, true);
+
+  const zsetA: ZSet<{ id: number; details?: { age: number } }> = [
+    [
+      { id: 1, details: { age: 25 } },
+      { id: 2, details: { age: 30 } },
+    ],
+    Object.assign([1, 1], { details: [2, 1] }),
+    both,
+  ];
+
+  // TODO: test other stuff with single-mode relation set here
+  const zsetB = copy(zsetA);
+  zero(zsetA);
+
+  expect(zsetA[1]).toEqual([0, 0]);
+  expect(zsetA[1]["details"]).toEqual([0, 0]);
+  expect(zsetB[1]).toEqual([1, 1]);
+  expect(zsetB[1]["details"]).toEqual([2, 1]);
+
+  const zsetC = copy(zsetB);
+  distinct(zsetC);
+
+  expect(zsetC[1]).toEqual([1, 1]);
+  expect(zsetC[1]["details"]).toEqual([1, 1]);
 });
