@@ -1,6 +1,6 @@
-import { compare, sort, type ZSet } from "../datastructure/zset";
+import { reorder, compare } from "../datastructure/shape";
+import { sort, type ZSet } from "../datastructure/zset";
 import type { OfZStream, ZStream } from "./type";
-import { reorder } from "../datastructure/shape";
 import { stream } from "../stream";
 
 export function order<TStream extends ZStream<T>, T = OfZStream<TStream>>(

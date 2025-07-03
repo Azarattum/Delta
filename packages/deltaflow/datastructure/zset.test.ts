@@ -77,7 +77,7 @@ it("performs grouped multiplication", () => {
       },
       { id: 2, name: "Jane", details: [{ id: 2, age: 35 }] },
     ],
-    [1, 1],
+    Object.assign([1, 1], { details: [[1], [1]] }),
     both,
   ]);
 });
@@ -108,7 +108,7 @@ it("performs distributed multiplication", () => {
       { id: 1, name: "John", detailsID: 1, details: [{ id: 1, age: 25 }] },
       { id: 2, name: "Jane", detailsID: 1, details: [{ id: 1, age: 25 }] },
     ],
-    [1, 1],
+    Object.assign([1, 1], { details: [[1], [1]] }),
     both,
   ]);
   expect(zsetC[0][0].details).toBe(zsetC[0][1].details);
@@ -142,7 +142,7 @@ it("performs out of order multiplication", () => {
       { id: 1, name: "John", details: [{ id: 1, age: 25 }] },
       { id: 2, name: "Jane", details: [{ id: 2, age: 30 }] },
     ],
-    [1, 1],
+    Object.assign([1, 1], { details: [[1], [1]] }),
     both,
   ]);
 });
@@ -176,7 +176,6 @@ it("zeroes correctly with one-to-one relationships", () => {
     both,
   ];
 
-  // TODO: test other stuff with single-mode relation set here
   const zsetB = copy(zsetA);
   zero(zsetA);
 
@@ -190,4 +189,32 @@ it("zeroes correctly with one-to-one relationships", () => {
 
   expect(zsetC[1]).toEqual([1, 1]);
   expect(zsetC[1]["details"]).toEqual([1, 1]);
+});
+
+it("adds with one-to-one relationships", () => {
+  const a = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const b = shape((t) => ({ age: t(t.INT, t.PRIMARY) }));
+  const both = nest(a, "details", b, true);
+
+  const zsetA: ZSet<{ id: number; details?: { age: number } }> = [
+    [{ id: 1, details: { age: 25 } }],
+    Object.assign([1], { details: [1] }),
+    both,
+  ];
+
+  const zsetB: ZSet<{ id: number; details?: { age: number } }> = [
+    [{ id: 1, details: { age: 42 } }],
+    Object.assign([1], { details: [0] }),
+    both,
+  ];
+
+  add(zsetA, zsetB);
+
+  expect(zsetA[0]).toEqual([{ id: 1, details: { age: 42 } }]);
+  expect({ ...zsetA[1] }).toEqual({ 0: 2, details: [1] } as any);
+
+  add(zsetB, zsetA);
+
+  expect(zsetB[0]).toEqual([{ id: 1, details: { age: 42 } }]);
+  expect({ ...zsetB[1] }).toEqual({ 0: 3, details: [1] } as any);
 });

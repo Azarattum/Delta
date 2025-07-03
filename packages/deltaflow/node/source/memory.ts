@@ -1,6 +1,7 @@
-import { add, sort, compare, distinct } from "../../datastructure/zset";
-import { reorder, TYPE, type Shape } from "../../datastructure/shape";
+import { children, compare, reorder, TYPE } from "../../datastructure/shape";
 import type { CLMetadata, CLSet } from "../../datastructure/clset";
+import { add, sort, distinct } from "../../datastructure/zset";
+import type { Shape } from "../../datastructure/shape";
 import type { ZSet } from "../../datastructure/zset";
 import { stream, SyncPromise } from "../../stream";
 import type { OfZStream, ZStream } from "../type";
@@ -16,8 +17,8 @@ export function memory<T>(
     shape,
   ] as ZSet<T>;
 
-  Object.keys(shape.children ?? {}).forEach((key) => {
-    data[1][key] ??= [];
+  children(shape).forEach(([key]) => {
+    (data[1] as Record<string, unknown>)[key] ??= [];
     data[0].forEach((x, i) => (data[1][key][i] = Array(x[key].length).fill(1)));
   });
 

@@ -5,6 +5,7 @@
     "deltaquery",
     "downstreams",
     "indexeddb",
+    "metaset",
     "typotest",
     "zset"
   ]

@@ -62,6 +62,38 @@ function either<T>(aShape?: Shape<T>, bShape?: Shape<T>) {
   return aShape ?? bShape;
 }
 
+function children<T>(shape: Shape<T> | undefined) {
+  return Object.entries(shape?.children ?? {}) as [
+    string,
+    NonNullable<Shape<T>["children"]>[keyof T],
+  ][];
+}
+
+function compare<T>(a: T, b: T, shape?: Shape<T>) {
+  for (let i = 0; i < (shape?.order.length ?? 1); i++) {
+    const direction = shape && shape.order[i] & 1 ? -1 : 1;
+    const key = shape?.keys[shape.order[i] >> 1];
+    const x = key ? a[key] : a;
+    const y = key ? b[key] : b;
+
+    if (x === y) continue;
+    if (y == null) return 1 * direction;
+    if (x == null) return -1 * direction;
+
+    if (typeof x !== typeof y) {
+      throw new Error(`Mismatched types: ${typeof x} ${typeof y}`);
+    }
+
+    // TODO: ensure it is OK to use localeCompare
+    if (typeof x === "string") return x.localeCompare(y as string) * direction;
+    if (typeof x === "number") return (x - (y as number)) * direction;
+    if (typeof x === "boolean") return (x ? 1 : -1) * direction;
+    throw new Error(`Unsupported compare type: ${typeof x}`);
+  }
+
+  return 0;
+}
+
 const RELATION = (id: number) => id << 16;
 
 const TYPE = {
@@ -131,5 +163,5 @@ type ExtractConstNumbers<T extends any[]> = {
   : never;
 }[number];
 
-export { TYPE, shape, reorder, either, nest };
+export { TYPE, shape, children, compare, reorder, either, nest };
 export type { Shape };
