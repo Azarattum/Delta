@@ -81,11 +81,7 @@ function mergeInto<T extends MetaSet>(
     } else if (cmp > 0) {
       tData.splice(i, 0, sData[j]);
       tMeta.splice(i, 0, sMeta[j]);
-
-      childKeys.forEach(([key, { single }]) => {
-        const metadata = sMeta[key]?.[j] ?? (single ? 0 : []);
-        (tMeta[key] ??= []).splice(i, 0, metadata);
-      });
+      childKeys.forEach(([key]) => tMeta[key].splice(i, 0, sMeta[key][j]));
 
       i++, j++;
     } else i++;

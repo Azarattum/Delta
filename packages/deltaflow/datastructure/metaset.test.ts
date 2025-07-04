@@ -49,17 +49,16 @@ it("merges sets without combine function", () => {
     [2, 4],
     ["b", "d"],
   ];
+  const setC: MetaSet<number, string> = [[5], ["e"]];
 
   const visitors: Visitors<typeof setA> = {
     item: (data, meta) => [data * 10, meta.toUpperCase()],
   };
 
-  traverse(visitors, setA, setB);
+  traverse(visitors, setA, setB, setC);
 
-  expect(setA[0]).toEqual([10, 20, 30, 40]);
-  expect(setA[1]).toEqual(["A", "B", "C", "D"]);
-  expect(setB[0]).toEqual([2, 4]);
-  expect(setB[1]).toEqual(["b", "d"]);
+  expect(setA[0]).toEqual([10, 20, 30, 40, 50]);
+  expect(setA[1]).toEqual(["A", "B", "C", "D", "E"]);
 });
 
 it("merges and combines sets", () => {
@@ -81,6 +80,54 @@ it("merges and combines sets", () => {
 
   expect(setA[0]).toEqual([2, 4, 6]);
   expect(setA[1]).toEqual([11, 21, 61]);
+});
+
+it("merges sets deeply with children", () => {
+  const detailShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const postShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const userShape = nest(
+    nest(idShape, "details", detailShape, true),
+    "posts",
+    postShape,
+  );
+
+  const setA: MetaSet<(typeof userShape)["~type"], number> = [
+    [
+      { id: 1, details: { id: 25 }, posts: [{ id: 100 }, { id: 200 }] },
+      { id: 3, details: { id: 30 }, posts: [{ id: 150 }] },
+    ],
+    Object.assign([1, 2], { details: [3, 4], posts: [[5, 6], [7]] }),
+    userShape,
+  ];
+  const setB: MetaSet<(typeof userShape)["~type"], number> = [
+    [
+      { id: 2, details: { id: 35 }, posts: [{ id: 200 }] },
+      { id: 3, details: { id: 40 }, posts: [{ id: 350 }] },
+    ],
+    Object.assign([1, 2], { details: [3, 4], posts: [[5], [7]] }),
+    userShape,
+  ];
+
+  const visitors: Visitors<typeof setA> = {
+    combine: (aData, aMeta, bData, bMeta) => [
+      { ...aData, id: aData.id + bData.id },
+      aMeta + bMeta,
+    ],
+  };
+
+  traverse(visitors, setA, setB);
+
+  expect(setA[0]).toEqual([
+    { id: 1, details: { id: 25 }, posts: [{ id: 100 }, { id: 200 }] },
+    { id: 2, details: { id: 35 }, posts: [{ id: 200 }] },
+    { id: 6, details: { id: 70 }, posts: [{ id: 150 }, { id: 350 }] },
+  ]);
+  expect({ ...setA[1] }).toEqual({
+    ...Object.assign([1, 1, 4], {
+      posts: [[5, 6], [5], [7, 7]],
+      details: [3, 3, 8],
+    }),
+  });
 });
 
 it("handles nested singular relationships", () => {
