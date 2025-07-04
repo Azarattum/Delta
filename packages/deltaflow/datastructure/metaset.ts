@@ -1,14 +1,15 @@
-import type { MetaSet, Visitors } from "./metaset.types";
+import { shared, type MetaSet, type Visitors } from "./metaset.types";
 import { children, compare, either } from "./shape";
 
 function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
-  let [data, meta, shape] = merge(visitors.combine, ...sets);
-  if (!visitors.item && !visitors.collection) return sets[0];
+  const set = merge(visitors.combine, ...sets);
+  if (!visitors.item && !visitors.collection) return set;
 
   if (visitors.collection) {
-    [data, meta] = visitors.collection(data, meta);
-    sets[0] = [data, meta, shape] as any;
+    [set[0], set[1]] = visitors.collection(set[0], set[1]);
   }
+
+  const [data, meta, shape] = set;
 
   if (visitors.item) {
     data.forEach((x, i) => {
@@ -26,27 +27,27 @@ function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
       if (single) {
         [x[key], meta[key][i]] = visitors.item!(x[key], meta[key][i]);
       } else {
-        const y = traverse(visitors, subset(sets[0], key, i));
-        if (visitors.collection) [x[key], meta[key][i]] = y;
+        const next = traverse(visitors, subset(set, key, i));
+        if (visitors.collection) [x[key], meta[key][i]] = next;
       }
     });
   });
 
-  return sets[0];
+  return set;
 }
 
 function merge<T extends MetaSet>(
   combine: Visitors<T>["combine"],
-  ...items: T[]
+  ...sets: T[]
 ): T {
   // TODO: consider length optimization
-  if (items.length === 1) return items[0];
-  if (items.length === 2) return mergeInto(items[0], items[1], combine);
-  const mid = Math.floor(items.length / 2);
+  if (sets.length === 1) return sets[0];
+  if (sets.length === 2) return mergeInto(sets[0], sets[1], combine);
+  const mid = Math.floor(sets.length / 2);
 
   return mergeInto(
-    merge(combine, ...items.slice(0, mid)),
-    merge(combine, ...items.slice(mid)),
+    merge(combine, ...sets.slice(0, mid)),
+    merge(combine, ...sets.slice(mid)),
     combine,
   );
 }
@@ -98,4 +99,4 @@ function subset<T extends MetaSet>(set: T, key: string, i: number): T {
   return [(set[0][i][key] ??= []), (set[1][key] ??= [])[i], shape] as any;
 }
 
-export { traverse, type MetaSet };
+export { shared, traverse, type MetaSet, type Visitors };

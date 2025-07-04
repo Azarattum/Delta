@@ -114,7 +114,7 @@ function copy<T>(item: ZSet<T>) {
         Object.assign([], weights),
       ],
     },
-    item,
+    [...item],
   );
 }
 
