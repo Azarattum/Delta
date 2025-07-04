@@ -2,19 +2,19 @@ import type { Shape } from "./shape";
 
 const shared = Symbol("shared");
 
-type Metadata<TData, TMeta, TShared = {}> = TMeta[] & {
-  [K in ArrayKeys<TData>]: Metadata<
+type Meta<TData, TMeta, TShared = {}> = TMeta[] & {
+  [K in ArrayKeys<TData>]: Meta<
     TData[K] extends (infer T)[] ? T : never,
     TMeta,
     TShared
   >[];
 } & {
-  [K in RecordKeys<TData>]: Metadata<TData[K], TMeta, TShared>;
+  [K in RecordKeys<TData>]: Meta<TData[K], TMeta, TShared>;
 } & { [shared]?: TShared } & { [key: string]: any };
 
 type MetaSet<TData = any, TMeta = any, TShared = {}> = [
   TData[],
-  Metadata<TData, TMeta, TShared>,
+  Meta<TData, TMeta, TShared>,
   Shape<TData>?,
 ];
 

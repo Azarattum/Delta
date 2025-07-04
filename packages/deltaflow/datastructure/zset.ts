@@ -7,21 +7,21 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
   if (!b[0].length) return a;
   return traverse(
     {
-      combine: (data1, weight1, data2, weight2) => {
-        const isObject = typeof data1 === "object" && data1;
+      combine(aData, aMeta, bData, bMeta) {
+        const isObject = typeof aData === "object" && aData;
 
-        if (data1 === data2 && isObject) {
-          return [data1, weight1];
+        if (aData === bData && isObject) {
+          return [aData, aMeta];
         }
 
-        if (weight1 === 0 || weight2 === 0) {
-          if (!isObject) return [data2, weight1 + weight2];
-          for (const key in data1) {
-            if (typeof data1[key] !== "object") data1[key] = data2![key];
+        if (aMeta === 0 || bMeta === 0) {
+          if (!isObject) return [bData, aMeta + bMeta];
+          for (const key in aData) {
+            if (typeof aData[key] !== "object") aData[key] = bData![key];
           }
         }
 
-        return [data1, weight1 + weight2];
+        return [aData, aMeta + bMeta];
       },
     },
     a,
@@ -32,44 +32,44 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
 // TODO: consider if multiply can be recursive an any way?
 function multiply<A, B, K extends string, S extends boolean = false>(
   a: ZSet<A>,
-  keyA: keyof A,
+  aKey: keyof A,
   b: ZSet<B>,
-  keyB: keyof B,
+  bKey: keyof B,
   relationship: K,
   single = false as S,
 ) {
-  const [aData, aMetadata, aShape] = a;
-  const [bData, bMetadata, bShape] = b;
+  const [aData, aMeta, aShape] = a;
+  const [bData, bMeta, bShape] = b;
   const seen = new Map<A[keyof A] | B[keyof B], number>();
-  (aMetadata as any)[relationship] ??= [];
+  (aMeta as any)[relationship] ??= [];
 
   if (single) {
     for (let i = 0; i < bData.length; i++) {
-      const key = bData[i][keyB];
+      const key = bData[i][bKey];
       if (!seen.has(key)) seen.set(key, i);
     }
 
     for (let i = 0; i < aData.length && bData.length; i++) {
-      const id = seen.get(aData[i][keyA]);
+      const id = seen.get(aData[i][aKey]);
       (aData[i] as any)[relationship] ??= id != null ? bData[id] : null;
-      (aMetadata as any)[relationship][i] ??= id != null ? bMetadata[id] : 0;
+      (aMeta as any)[relationship][i] ??= id != null ? bMeta[id] : 0;
     }
   } else {
     for (let i = 0; i < aData.length; i++) {
-      const key = aData[i][keyA];
+      const key = aData[i][aKey];
       const cached = seen.get(key) ?? (seen.set(key, i), undefined);
 
       (aData[i] as any)[relationship] =
         cached === undefined ? [] : (aData[cached] as any)[relationship];
-      (aMetadata as any)[relationship][i] =
-        cached === undefined ? [] : (aMetadata as any)[relationship][cached];
+      (aMeta as any)[relationship][i] =
+        cached === undefined ? [] : (aMeta as any)[relationship][cached];
     }
 
     for (let i = 0; i < bData.length; i++) {
-      const id = seen.get(bData[i][keyB]);
+      const id = seen.get(bData[i][bKey]);
       if (id === undefined) continue;
       (aData[id] as any)[relationship].push(bData[i]);
-      (aMetadata as any)[relationship][id].push(bMetadata[i]);
+      (aMeta as any)[relationship][id].push(bMeta[i]);
     }
   }
 
@@ -80,20 +80,20 @@ function multiply<A, B, K extends string, S extends boolean = false>(
 function distinct<T>(item: ZSet<T>) {
   return traverse(
     {
-      collection: (items, weights) => {
-        const length = Math.max(items.length, weights.length);
+      collection(data, meta) {
+        const length = Math.max(data.length, meta.length);
 
         let left = 0;
         for (let i = 0; i < length; i++) {
-          if (i >= weights.length || weights[i] <= 0) continue;
-          if (i < items.length) items[left] = items[i];
-          weights[left++] = 1;
+          if (i >= meta.length || meta[i] <= 0) continue;
+          if (i < data.length) data[left] = data[i];
+          meta[left++] = 1;
         }
 
-        items.length = Math.min(items.length, left);
-        weights.length = Math.min(weights.length, left);
+        data.length = Math.min(data.length, left);
+        meta.length = Math.min(meta.length, left);
 
-        return [items, weights];
+        return [data, meta];
       },
     },
     item,
@@ -102,17 +102,14 @@ function distinct<T>(item: ZSet<T>) {
 
 function zero<T>(item?: ZSet<T>) {
   if (!item) return [[], []] as ZSet<T>;
-  return traverse({ item: (item) => [item, 0] }, item);
+  return traverse({ item: (data) => [data, 0] }, item);
 }
 
 function copy<T>(item: ZSet<T>) {
   return traverse(
     {
-      item: (item, weight) => [{ ...item }, weight],
-      collection: (items, weights) => [
-        items.slice(),
-        Object.assign([], weights),
-      ],
+      item: (data, meta) => [{ ...data }, meta],
+      collection: (data, meta) => [data.slice(), Object.assign([], meta)],
     },
     [...item],
   );

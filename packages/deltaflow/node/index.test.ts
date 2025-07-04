@@ -99,12 +99,12 @@ it("updates children", () => {
     Object.assign([0], { children: [[1]] }),
   ]);
   {
-    const [data, metadata, shape] = users.pull();
+    const [data, meta, shape] = users.pull();
     expect(data).toEqual([
       { id: 0, name: "Bob", children: [] },
       { id: 1, name: "Alice", children: [{ id: 3, name: "Clara" }] },
     ]);
-    expect({ ...metadata } as any).toEqual({
+    expect({ ...meta } as any).toEqual({
       0: 1,
       1: 1,
       children: [[], [1]],
@@ -118,7 +118,7 @@ it("updates children", () => {
     Object.assign([0], { children: [[1]] }),
   ]);
   {
-    const [data, metadata, shape] = users.pull();
+    const [data, meta, shape] = users.pull();
     expect(data).toEqual([
       { id: 0, name: "Bob", children: [] },
       {
@@ -130,7 +130,7 @@ it("updates children", () => {
         ],
       },
     ]);
-    expect({ ...metadata } as any).toEqual({
+    expect({ ...meta } as any).toEqual({
       0: 1,
       1: 1,
       children: [[], [1, 1]],
@@ -144,7 +144,7 @@ it("updates children", () => {
     Object.assign([0], { children: [[0]] }),
   ]);
   {
-    const [data, metadata, shape] = users.pull();
+    const [data, meta, shape] = users.pull();
     expect(data).toEqual([
       { id: 0, name: "Bob", children: [] },
       {
@@ -156,7 +156,7 @@ it("updates children", () => {
         ],
       },
     ]);
-    expect({ ...metadata } as any).toEqual({
+    expect({ ...meta } as any).toEqual({
       0: 1,
       1: 1,
       children: [[], [1, 1]],
@@ -173,12 +173,12 @@ it("updates children", () => {
     Object.assign([0, 0], { children: [[1], [-1]] }),
   ]);
   {
-    const [data, metadata, shape] = users.pull();
+    const [data, meta, shape] = users.pull();
     expect(data).toEqual([
       { id: 0, name: "Bob", children: [{ id: 5, name: "Hank" }] },
       { id: 1, name: "Alice", children: [{ id: 4, name: "Katelyn" }] },
     ]);
-    expect({ ...metadata } as any).toEqual({
+    expect({ ...meta } as any).toEqual({
       0: 1,
       1: 1,
       children: [[1], [1]],
@@ -195,12 +195,12 @@ it("updates children", () => {
     Object.assign([0, 0], { children: [[-1], [-1]] }),
   ]);
   {
-    const [data, metadata, shape] = users.pull();
+    const [data, meta, shape] = users.pull();
     expect(data).toEqual([
       { id: 0, name: "Bob", children: [] },
       { id: 1, name: "Alice", children: [] },
     ]);
-    expect({ ...metadata } as any).toEqual({
+    expect({ ...meta } as any).toEqual({
       0: 1,
       1: 1,
       children: [[], []],
@@ -235,7 +235,7 @@ it("joins streams", () => {
   const joined = sink(join(users, "id", messages, "user", "messages"));
 
   {
-    const [data, metadata, shape] = joined.pull();
+    const [data, meta, shape] = joined.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -251,7 +251,7 @@ it("joins streams", () => {
         messages: [{ id: 2, text: "And I'm Alice!", user: 1 }],
       },
     ]);
-    expect({ ...(metadata as any) }).toEqual({
+    expect({ ...(meta as any) }).toEqual({
       0: 1,
       1: 1,
       messages: [[1, 1], [1]],
@@ -261,7 +261,7 @@ it("joins streams", () => {
 
   messages.push([[{ id: 4, text: "Nice to meet you!", user: 1 }], [1]]);
   {
-    const [data, metadata, shape] = joined.pull();
+    const [data, meta, shape] = joined.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -280,7 +280,7 @@ it("joins streams", () => {
         ],
       },
     ]);
-    expect({ ...(metadata as any) }).toEqual({
+    expect({ ...(meta as any) }).toEqual({
       0: 1,
       1: 1,
       messages: [
@@ -293,7 +293,7 @@ it("joins streams", () => {
 
   users.push([[{ id: 2, name: "Emily" }], [1]]);
   {
-    const [data, metadata, shape] = joined.pull();
+    const [data, meta, shape] = joined.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -317,7 +317,7 @@ it("joins streams", () => {
         messages: [{ id: 3, text: "I'll be here!", user: 2 }],
       },
     ]);
-    expect({ ...(metadata as any) }).toEqual({
+    expect({ ...(meta as any) }).toEqual({
       0: 1,
       1: 1,
       2: 1,
@@ -334,7 +334,7 @@ it("joins streams", () => {
     [-1, 0],
   ]);
   {
-    const [data, metadata, shape] = joined.pull();
+    const [data, meta, shape] = joined.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -355,7 +355,7 @@ it("joins streams", () => {
         messages: [{ id: 3, text: "I am here!", user: 2 }],
       },
     ]);
-    expect({ ...(metadata as any) }).toEqual({
+    expect({ ...(meta as any) }).toEqual({
       0: 1,
       1: 1,
       2: 1,
@@ -373,7 +373,7 @@ it("joins streams", () => {
     [-1, 1],
   ]);
   {
-    const [data, metadata, shape] = joined.pull();
+    const [data, meta, shape] = joined.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -394,7 +394,7 @@ it("joins streams", () => {
         ],
       },
     ]);
-    expect({ ...(metadata as any) }).toEqual({
+    expect({ ...(meta as any) }).toEqual({
       0: 1,
       1: 1,
       2: 1,
@@ -454,7 +454,7 @@ it("processes full pipeline", () => {
   changes.subscribe(spy);
 
   {
-    const [data, metadata, shape] = view.pull();
+    const [data, meta, shape] = view.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -462,7 +462,7 @@ it("processes full pipeline", () => {
         messages: [{ id: 1, text: "i'm bob" }],
       },
     ]);
-    expect({ ...(metadata as any) }).toEqual({
+    expect({ ...(meta as any) }).toEqual({
       0: 1,
       messages: [[1]],
     });
@@ -471,7 +471,7 @@ it("processes full pipeline", () => {
 
   users.push([[{ id: 2, name: "Clara" }], [1]]);
   {
-    const [data, metadata, shape] = view.pull();
+    const [data, meta, shape] = view.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -480,7 +480,7 @@ it("processes full pipeline", () => {
       },
       { id: 2, name: "CLARA", messages: [{ id: 3, text: "i'll be here!" }] },
     ]);
-    expect({ ...(metadata as any) }).toEqual({
+    expect({ ...(meta as any) }).toEqual({
       0: 1,
       1: 1,
       messages: [[1], [1]],
@@ -494,7 +494,7 @@ it("processes full pipeline", () => {
     message,
   ]);
   {
-    const [data, metadata, shape] = view.pull();
+    const [data, meta, shape] = view.pull();
     expect(data).toEqual([
       {
         id: 0,
@@ -510,7 +510,7 @@ it("processes full pipeline", () => {
         ],
       },
     ]);
-    expect({ ...(metadata as any) }).toEqual({
+    expect({ ...(meta as any) }).toEqual({
       0: 1,
       1: 1,
       messages: [[1], [1, 1]],
@@ -702,9 +702,7 @@ it("converts ZSet to CLSet", async () => {
   ]);
 
   const peer = 42;
-  const metadata = memoryReplication(users, peer, [
-    [0, [1, 1, 1, peer, 1, peer]],
-  ]);
+  const meta = memoryReplication(users, peer, [[0, [1, 1, 1, peer, 1, peer]]]);
 
   // TODO: consider forking before pushing to users,
   //  to avoid z2cl node when receiving changes in a full pipeline
@@ -712,7 +710,7 @@ it("converts ZSet to CLSet", async () => {
 
   // Fork changes to copy them to 2 streams
   const [users1, users2] = fork(users);
-  const changes = replicate(users1, metadata);
+  const changes = replicate(users1, meta);
   const view = sink(users2);
 
   // Materialize view
@@ -776,7 +774,7 @@ it("sorts streams for join", () => {
   joined.flush();
 
   {
-    const [data, metadata, shape] = spy.mock.lastCall?.[0] ?? [];
+    const [data, meta, shape] = spy.mock.lastCall?.[0] ?? [];
 
     expect(data).toEqual([
       {
@@ -787,7 +785,7 @@ it("sorts streams for join", () => {
       { id: 1, name: "Bob", messages: [{ id: 0, text: "I'm Bob", user: 1 }] },
     ]);
 
-    expect({ ...metadata }).toEqual({
+    expect({ ...meta }).toEqual({
       0: 1,
       1: 1,
       messages: [[2], [1]],
@@ -816,7 +814,7 @@ it("sorts streams for join", () => {
 
   joined.flush();
   {
-    const [data, metadata, shape] = spy.mock.lastCall?.[0] ?? [];
+    const [data, meta, shape] = spy.mock.lastCall?.[0] ?? [];
 
     expect(data).toEqual([
       { id: 3, name: "Dave", messages: [{ id: 3, text: "I'm Dave", user: 3 }] },
@@ -827,7 +825,7 @@ it("sorts streams for join", () => {
       },
     ]);
 
-    expect({ ...metadata }).toEqual({
+    expect({ ...meta }).toEqual({
       0: 1,
       1: 1,
       messages: [[2], [1]],
@@ -850,7 +848,7 @@ it("sorts streams for join", () => {
 
   joined.flush();
   {
-    const [data, metadata, shape] = spy.mock.lastCall?.[0] ?? [];
+    const [data, meta, shape] = spy.mock.lastCall?.[0] ?? [];
 
     expect(data).toEqual([
       {
@@ -868,7 +866,7 @@ it("sorts streams for join", () => {
       },
     ]);
 
-    expect({ ...metadata }).toEqual({
+    expect({ ...meta }).toEqual({
       0: 0,
       1: 1,
       messages: [[1], [1, 1]],
@@ -916,7 +914,7 @@ it("joins with sync flush", async () => {
   await new Promise((r) => setTimeout(r));
 
   {
-    const [data, metadata] = spy.mock.lastCall?.[0] ?? [];
+    const [data, meta] = spy.mock.lastCall?.[0] ?? [];
     expect(data).toEqual([
       {
         id: 0,
@@ -925,7 +923,7 @@ it("joins with sync flush", async () => {
       },
       { id: 1, name: "Bob", messages: [{ id: 0, text: "I'm Bob", user: 1 }] },
     ]);
-    expect({ ...(metadata as any) }).toEqual({
+    expect({ ...(meta as any) }).toEqual({
       0: 1,
       1: 1,
       messages: [[2], [1]],
