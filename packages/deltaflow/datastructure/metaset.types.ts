@@ -23,7 +23,11 @@ type InferMeta<T> = T extends MetaSet<any, infer TMeta, any> ? TMeta : never;
 type InferShared<T> =
   T extends MetaSet<any, any, infer TShared> ? TShared : never;
 type InferEntry<T> =
-  T extends MetaSet<infer TData, any, any> ? TraverseEntries<TData> : never;
+  T extends MetaSet<infer TData, any, any> ?
+    TData extends object ?
+      TraverseEntries<TData>
+    : TData
+  : never;
 
 type TraverseEntries<T> =
   T extends (infer U)[] ? TraverseEntries<U>
@@ -47,20 +51,17 @@ type RecordKeys<T> =
   : never;
 
 type Visitors<T extends MetaSet> = {
-  item?: <TData extends InferEntry<T>>(
-    data: TData,
+  item?: (
+    data: InferEntry<T>,
     meta: InferMeta<T>,
-  ) => [TData, InferMeta<T>];
-  collection?: <TData extends InferEntry<T>[]>(
-    data: TData,
-    meta: T[1],
-  ) => [TData, T[1]];
-  combine?: <TData extends InferEntry<T>>(
-    aData: TData,
+  ) => [InferEntry<T>, InferMeta<T>];
+  collection?: (data: InferEntry<T>[], meta: T[1]) => [InferEntry<T>[], T[1]];
+  combine?: (
+    aData: InferEntry<T>,
     aMeta: InferMeta<T>,
-    bData: TData,
+    bData: InferEntry<T>,
     bMeta: InferMeta<T>,
-  ) => [TData, InferMeta<T>];
+  ) => [InferEntry<T>, InferMeta<T>];
 };
 
 export { shared };

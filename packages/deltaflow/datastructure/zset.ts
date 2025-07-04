@@ -110,7 +110,7 @@ function copy<T>(item: ZSet<T>) {
     {
       item: (item, weight) => [{ ...item }, weight],
       collection: (items, weights) => [
-        items.slice() as typeof items,
+        items.slice(),
         Object.assign([], weights),
       ],
     },
