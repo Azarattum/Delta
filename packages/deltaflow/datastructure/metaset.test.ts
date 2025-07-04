@@ -1,0 +1,187 @@
+import { traverse, type MetaSet, type Visitors } from "./metaset";
+import { nest, shape } from "./shape";
+import { expect, it } from "bun:test";
+
+const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+
+it("traverses flat numeric set with item visitor", () => {
+  const set: MetaSet<number, string> = [
+    [1, 2, 3],
+    ["a", "b", "c"],
+  ];
+
+  const visitors: Visitors<typeof set> = {
+    item: (data, meta) => [data * 2, meta.toUpperCase()],
+  };
+
+  traverse(visitors, set);
+
+  expect(set[0]).toEqual([2, 4, 6]);
+  expect(set[1]).toEqual(["A", "B", "C"]);
+});
+
+it("applies collection visitor to flat object set", () => {
+  let set: MetaSet<{ id: number }, number> = [
+    [{ id: 1 }, { id: 2 }],
+    [10, 20],
+    idShape,
+  ];
+
+  const visitors: Visitors<typeof set> = {
+    collection: (data, meta) => [
+      data.sort((a, b) => b.id - a.id),
+      meta.map((m) => m * 2),
+    ],
+  };
+
+  traverse(visitors, set);
+
+  expect(set[0]).toEqual([{ id: 2 }, { id: 1 }]);
+  expect(set[1]).toEqual([20, 40]);
+});
+
+it("merges sets without combine function", () => {
+  const setA: MetaSet<number, string> = [
+    [1, 3],
+    ["a", "c"],
+  ];
+  const setB: MetaSet<number, string> = [
+    [2, 4],
+    ["b", "d"],
+  ];
+
+  const visitors: Visitors<typeof setA> = {
+    item: (data, meta) => [data * 10, meta.toUpperCase()],
+  };
+
+  traverse(visitors, setA, setB);
+
+  expect(setA[0]).toEqual([10, 20, 30, 40]);
+  expect(setA[1]).toEqual(["A", "B", "C", "D"]);
+  expect(setB[0]).toEqual([2, 4]);
+  expect(setB[1]).toEqual(["b", "d"]);
+});
+
+it("merges and combines sets", () => {
+  const setA: MetaSet<number, number> = [
+    [1, 3],
+    [10, 30],
+  ];
+  const setB: MetaSet<number, number> = [
+    [2, 3],
+    [20, 30],
+  ];
+
+  const visitors: Visitors<typeof setA> = {
+    combine: (aData, aMeta, bData, bMeta) => [aData ?? bData, aMeta + bMeta],
+    item: (data, meta) => [data * 2, meta + 1],
+  };
+
+  traverse(visitors, setA, setB);
+
+  expect(setA[0]).toEqual([2, 4, 6]);
+  expect(setA[1]).toEqual([11, 21, 61]);
+});
+
+it("handles nested singular relationships", () => {
+  const detailShape = shape((t) => ({ id: t(t.INT) }));
+  const userShape = nest(idShape, "details", detailShape, true);
+
+  const set: MetaSet<(typeof userShape)["~type"], number> = [
+    [
+      { id: 1, details: { id: 25 } },
+      { id: 2, details: { id: 30 } },
+    ],
+    Object.assign([1, 2], { details: [3, 4] }),
+    userShape,
+  ];
+
+  const visitors: Visitors<typeof set> = {
+    item: (data, meta) => [{ ...data, id: data.id * 10 }, meta * 2],
+    collection: (data, meta) => [
+      data,
+      Object.assign(
+        meta,
+        meta.map((m) => m + 1),
+      ),
+    ],
+  };
+
+  traverse(visitors, set);
+
+  expect(set[0]).toEqual([
+    { id: 10, details: { id: 250 } },
+    { id: 20, details: { id: 300 } },
+  ]);
+  expect({ ...set[1] }).toEqual({
+    ...Object.assign([4, 6], { details: [8, 10] }),
+  });
+});
+
+it("handles nested collection relationships", () => {
+  const postShape = shape((t) => ({ content: t.STRING }));
+  const userShape = nest(idShape, "posts", postShape);
+
+  const set: MetaSet<(typeof userShape)["~type"], { count: number }> = [
+    [
+      { id: 1, posts: [{ content: "A" }, { content: "B" }] },
+      { id: 2, posts: [{ content: "C" }] },
+    ],
+    Object.assign([{ count: 1 }, { count: 2 }], {
+      posts: [[{ count: 1 }, { count: 2 }], [{ count: 3 }]],
+    }),
+    userShape,
+  ];
+
+  const visitors: Visitors<typeof set> = {
+    collection: (data, meta) => [
+      data,
+      Object.assign(
+        meta,
+        meta.map((m) => ({ count: m.count * 2 })),
+      ),
+    ],
+    item: (data, meta) => [data, { count: meta.count + 1 }],
+  };
+
+  traverse(visitors, set);
+
+  expect(set[0]).toEqual([
+    { id: 1, posts: [{ content: "A" }, { content: "B" }] },
+    { id: 2, posts: [{ content: "C" }] },
+  ]);
+  expect({ ...set[1] }).toEqual({
+    ...Object.assign([{ count: 3 }, { count: 5 }], {
+      posts: [[{ count: 3 }, { count: 5 }], [{ count: 7 }]],
+    }),
+  });
+});
+
+it("processes empty set without errors", () => {
+  const set: MetaSet<number, string> = [[], []];
+  const visitors: Visitors<typeof set> = {
+    item: (data, meta) => [data, meta],
+    collection: (data, meta) => [data, meta],
+  };
+  expect(() => traverse(visitors, set)).not.toThrow();
+  expect(set[0]).toEqual([]);
+});
+
+it("handles mixed primitive and object metadata", () => {
+  const set: MetaSet<number, number | string> = [
+    [1, 2, 3],
+    [10, "20", 30],
+  ];
+
+  const visitors: Visitors<typeof set> = {
+    item: (data, meta) => [
+      data * 2,
+      typeof meta === "string" ? meta + "!" : meta * 2,
+    ],
+  };
+
+  traverse(visitors, set);
+
+  expect(set[0]).toEqual([2, 4, 6]);
+  expect(set[1]).toEqual([20, "20!", 60]);
+});
