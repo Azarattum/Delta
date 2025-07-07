@@ -2,7 +2,7 @@ import type { Shape } from "./shape";
 
 const shared = Symbol("shared");
 
-type Meta<TData, TMeta, TShared = {}> = TMeta[] & {
+type Meta<TData, TMeta, TShared = undefined> = TMeta[] & {
   [K in ArrayKeys<TData>]: Meta<
     TData[K] extends (infer T)[] ? T : never,
     TMeta,
@@ -10,9 +10,10 @@ type Meta<TData, TMeta, TShared = {}> = TMeta[] & {
   >[];
 } & {
   [K in RecordKeys<TData>]: Meta<TData[K], TMeta, TShared>;
-} & { [shared]?: TShared } & { [key: string]: any };
+} & { [key: string]: any } & (TShared extends undefined ? {}
+  : { [shared]: TShared });
 
-type MetaSet<TData = any, TMeta = any, TShared = {}> = [
+type MetaSet<TData = any, TMeta = any, TShared = undefined> = [
   TData[],
   Meta<TData, TMeta, TShared>,
   Shape<TData>?,
