@@ -1,6 +1,6 @@
 import { traverse, type MetaSet, type Visitors } from "./metaset";
 import { nest, shape } from "./shape";
-import { expect, it } from "bun:test";
+import { expect, it, mock } from "bun:test";
 
 const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
 
@@ -231,4 +231,137 @@ it("handles mixed primitive and object metadata", () => {
 
   expect(set[0]).toEqual([2, 4, 6]);
   expect(set[1]).toEqual([20, "20!", 60]);
+});
+
+it("merges children of singular items", () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    name: t.STRING,
+  }));
+
+  const deep = nest(idShape, "details", nest(idShape, "users", user), true);
+
+  const set1: MetaSet<(typeof deep)["~type"], number> = [
+    [
+      { id: 1, details: { id: 10, users: [{ id: 100, name: "John" }] } },
+      { id: 2, details: { id: 20, users: [{ id: 200, name: "Jane" }] } },
+    ],
+    Object.assign([1, 1], {
+      details: Object.assign([2, 2], { users: [[31], [32]] }),
+    }),
+    deep,
+  ];
+
+  const set2: MetaSet<(typeof deep)["~type"], number> = [
+    [
+      { id: 1, details: { id: 10, users: [{ id: 100, name: "John 2" }] } },
+      { id: 2, details: { id: 20, users: [{ id: 300, name: "Janette" }] } },
+    ],
+    Object.assign([1, 1], {
+      details: Object.assign([2, 2], { users: [[33], [34]] }),
+    }),
+    deep,
+  ];
+
+  const visitors = {
+    combine: mock((data, meta) => [data, meta]),
+  } as unknown as Visitors<typeof set1>;
+
+  traverse(visitors, set1, set2);
+
+  expect(set1).toEqual([
+    [
+      { id: 1, details: { id: 10, users: [{ id: 100, name: "John" }] } },
+      {
+        id: 2,
+        details: {
+          id: 20,
+          users: [
+            { id: 200, name: "Jane" },
+            { id: 300, name: "Janette" },
+          ],
+        },
+      },
+    ],
+    Object.assign([1, 1], {
+      details: Object.assign([2, 2], { users: [[31], [32, 34]] }),
+    }),
+    deep,
+  ]);
+
+  expect(visitors.combine).toHaveBeenCalledTimes(5);
+});
+
+it("merges complex nested structures", () => {
+  const complex = nest(
+    idShape,
+    "inner",
+    nest(nest(idShape, "inner", idShape, true), "posts", idShape),
+    true,
+  );
+
+  const set1: MetaSet<(typeof complex)["~type"], number> = [
+    [
+      {
+        id: 1,
+        inner: {
+          id: 10,
+          inner: { id: 100 },
+          posts: [{ id: 1000 }, { id: 1001 }],
+        },
+      },
+      { id: 2, inner: { id: 20, inner: { id: 200 }, posts: [{ id: 2000 }] } },
+      { id: 3, inner: { id: 30, inner: { id: 300 }, posts: [{ id: 3001 }] } },
+    ],
+    Object.assign([1, 1, 1], {
+      inner: Object.assign([3, 2, 1], {
+        inner: [1, 1, 1],
+        posts: [[1, 1], [1], [1]],
+      }),
+    }),
+    complex,
+  ];
+
+  const set2: MetaSet<(typeof complex)["~type"], number> = [
+    [
+      { id: 2, inner: { id: 20, inner: { id: 200 }, posts: [{ id: 2001 }] } },
+      { id: 4, inner: { id: 40, inner: { id: 400 }, posts: [{ id: 4001 }] } },
+    ],
+    Object.assign([1, 1], {
+      inner: Object.assign([1, 1], { inner: [1, 1], posts: [[1], [1]] }),
+    }),
+    complex,
+  ];
+
+  const visitors: Visitors<typeof set1> = {
+    combine: (data, meta) => [data, meta],
+  };
+
+  traverse(visitors, set1, set2);
+
+  expect(set1[0]).toEqual([
+    {
+      id: 1,
+      inner: {
+        id: 10,
+        inner: { id: 100 },
+        posts: [{ id: 1000 }, { id: 1001 }],
+      },
+    },
+    {
+      id: 2,
+      inner: {
+        id: 20,
+        inner: { id: 200 },
+        posts: [{ id: 2000 }, { id: 2001 }],
+      },
+    },
+    { id: 3, inner: { id: 30, inner: { id: 300 }, posts: [{ id: 3001 }] } },
+    { id: 4, inner: { id: 40, inner: { id: 400 }, posts: [{ id: 4001 }] } },
+  ]);
+
+  expect(set1[1]).toEqual([1, 1, 1, 1] as any);
+  expect(set1[1].inner).toEqual([3, 2, 1, 1] as any);
+  expect(set1[1].inner.inner).toEqual([1, 1, 1, 1]);
+  expect(set1[1].inner.posts).toEqual([[1, 1], [1, 1], [1], [1]]);
 });

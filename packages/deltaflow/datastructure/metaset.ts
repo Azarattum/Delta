@@ -17,7 +17,7 @@ function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
     });
   }
 
-  children(shape).forEach(([key, { single }]) => {
+  children(shape).forEach(([key, { single, shape }]) => {
     if (single && visitors.collection) {
       meta[key] = visitors.collection([], meta[key])[1];
     }
@@ -27,7 +27,8 @@ function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
       if (single) {
         [x[key], meta[key][i]] = visitors.item!(x[key], meta[key][i]);
       } else {
-        const next = traverse(visitors, subset(set, key, i));
+        const subset: any = [data[i][key], meta[key][i], shape];
+        const next = traverse(visitors, subset);
         if (visitors.collection) [x[key], meta[key][i]] = next;
       }
     });
@@ -52,15 +53,15 @@ function merge<T extends MetaSet>(
   );
 }
 
-function mergeInto<T extends MetaSet>(
-  target: T,
-  source: T,
-  combine: Visitors<T>["combine"],
-) {
+// TODO: add types
+function mergeInto(target, source, combine) {
   const [tData, tMeta, tShape] = target;
   const [sData, sMeta, sShape] = source;
   const shape = either(tShape, sShape);
   const childKeys = children(shape);
+
+  const combineDeep = combine && combiner(tMeta, sMeta, childKeys, combine);
+  const insertDeep = inserter(tMeta, sMeta, childKeys);
 
   let i = 0;
   let j = 0;
@@ -69,19 +70,13 @@ function mergeInto<T extends MetaSet>(
     const cmp = i < tData.length ? compare(tData[i], sData[j], shape) : 1;
     if (cmp === 0) {
       if (!combine) continue;
-      [tData[i], tMeta[i]] = combine(tData[i], tMeta[i], sData[j], sMeta[j]);
-
-      childKeys.forEach(([key, { single }]) => {
-        const [a, b]: any[] = [subset(target, key, i), subset(source, key, j)];
-        if (!single) mergeInto(a, b, combine);
-        else [tData[i][key], tMeta[key][i]] = combine(a[0], a[1], b[0], b[1]);
-      });
+      [tData[i], tMeta[i]] = combineDeep(tData[i], sData[j], i, j);
 
       i++, j++;
     } else if (cmp > 0) {
       tData.splice(i, 0, sData[j]);
       tMeta.splice(i, 0, sMeta[j]);
-      childKeys.forEach(([key]) => tMeta[key].splice(i, 0, sMeta[key][j]));
+      insertDeep(i, j);
 
       i++, j++;
     } else i++;
@@ -90,9 +85,35 @@ function mergeInto<T extends MetaSet>(
   return target;
 }
 
-function subset<T extends MetaSet>(set: T, key: string, i: number): T {
-  const shape = set[2]?.children?.[key].shape;
-  return [(set[0][i][key] ??= []), (set[1][key] ??= [])[i], shape] as any;
+// TODO: add types
+function combiner(tMeta, sMeta, childKeys, combine) {
+  return (tItem, sItem, i, j) => {
+    [tItem, tMeta[i]] = combine(tItem, tMeta[i], sItem, sMeta[j]);
+
+    childKeys.forEach(([key, { single, shape }]) => {
+      if (single) {
+        const childKeys = children(shape);
+        const merger = combiner(tMeta[key], sMeta[key], childKeys, combine);
+        [tItem[key], tMeta[key][i]] = merger(tItem[key], sItem[key], i, j);
+      } else if (key in sItem) {
+        const tSubset = [tItem[key], tMeta[key][i], shape];
+        const sSubset = [sItem[key], sMeta[key][j], shape];
+        mergeInto(tSubset, sSubset, combine);
+      }
+    });
+
+    return [tItem, tMeta[i]];
+  };
+}
+
+// TODO: add types
+function inserter(tMeta, sMeta, childKeys) {
+  return (i, j) => {
+    childKeys.forEach(([key, { single, shape }]) => {
+      tMeta[key].splice(i, 0, sMeta[key][j]);
+      if (single) inserter(tMeta[key], sMeta[key], children(shape))(i, j);
+    });
+  };
 }
 
 export { shared, traverse, type MetaSet, type Visitors };
