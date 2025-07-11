@@ -365,3 +365,33 @@ it("merges complex nested structures", () => {
   expect(set1[1].inner.inner).toEqual([1, 1, 1, 1]);
   expect(set1[1].inner.posts).toEqual([[1, 1], [1, 1], [1], [1]]);
 });
+
+it("traverses children of singular items", () => {
+  const deep = nest(
+    idShape,
+    "details",
+    nest(idShape, "details", idShape, true),
+    true,
+  );
+
+  const set: MetaSet<(typeof deep)["~type"], number> = [
+    [
+      { id: 1, details: { id: 10, details: { id: 100 } } },
+      { id: 2, details: { id: 20, details: { id: 200 } } },
+    ],
+    Object.assign([1, 1], {
+      details: Object.assign([2, 2], { details: [3, 3] }),
+    }),
+    deep,
+  ];
+
+  const visitors = {
+    collection: mock((data, meta) => [data, meta]),
+    item: mock((data, meta) => [data, meta]),
+  } as unknown as Visitors<typeof set>;
+
+  traverse(visitors, set);
+  expect(visitors.item).toHaveBeenCalledTimes(6);
+  expect(visitors.collection).toHaveBeenCalledTimes(5);
+  expect(visitors.item).toHaveBeenLastCalledWith({ id: 200 }, 3);
+});

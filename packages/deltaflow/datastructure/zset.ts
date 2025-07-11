@@ -110,6 +110,7 @@ function copy<T>(item: ZSet<T>) {
     {
       item: (data, meta) => [{ ...data }, meta],
       collection: (data, meta) => [data.slice(), Object.assign([], meta)],
+      container: (container) => container.slice(),
     },
     [...item],
   );

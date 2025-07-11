@@ -10,31 +10,43 @@ function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
   }
 
   const [data, meta, shape] = set;
+  const childKeys = children(shape);
 
-  if (visitors.item) {
-    data.forEach((x, i) => {
-      [data[i], meta[i]] = visitors.item!(x, meta[i]);
-    });
+  if (visitors.container) {
+    childKeys.forEach(([key]) => (meta[key] = visitors.container!(meta[key])));
   }
 
-  children(shape).forEach(([key, { single, shape }]) => {
-    if (single && visitors.collection) {
-      meta[key] = visitors.collection([], meta[key])[1];
-    }
-    if (single && !visitors.item) return;
-
-    data.forEach((x, i) => {
-      if (single) {
-        [x[key], meta[key][i]] = visitors.item!(x[key], meta[key][i]);
-      } else {
-        const subset: any = [data[i][key], meta[key][i], shape];
-        const next = traverse(visitors, subset);
-        if (visitors.collection) [x[key], meta[key][i]] = next;
-      }
-    });
-  });
+  const visit = visitor(visitors, meta, childKeys);
+  data.forEach((x, i) => ([data[i], meta[i]] = visit(x, i)));
 
   return set;
+}
+
+// TODO: add types
+function visitor(visitors, meta, childKeys) {
+  return (item, i) => {
+    if (visitors.item) [item, meta[i]] = visitors.item(item, meta[i]);
+
+    childKeys.forEach(([key, { single, shape }]) => {
+      if (single) {
+        if (visitors.collection) {
+          const next = visitors.collection([item[key]], [meta[key][i]]);
+
+          item[key] = next[0][0];
+          if (next[1].length) meta[key][i] = next[1][0];
+          else meta[key].splice(i, 1);
+        }
+
+        const visit = visitor(visitors, meta[key], children(shape));
+        [item[key], meta[key][i]] = visit(item[key], i);
+      } else {
+        const subset: MetaSet = [item[key], meta[key][i], shape];
+        [item[key], meta[key][i]] = traverse(visitors, subset);
+      }
+    });
+
+    return [item, meta[i]];
+  };
 }
 
 function merge<T extends MetaSet>(

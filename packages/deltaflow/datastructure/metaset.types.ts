@@ -57,6 +57,7 @@ type Visitors<T extends MetaSet> = {
     meta: InferMeta<T>,
   ) => [InferEntry<T>, InferMeta<T>];
   collection?: (data: InferEntry<T>[], meta: T[1]) => [InferEntry<T>[], T[1]];
+  container?: (container: T[1][]) => T[1][];
   combine?: (
     aData: InferEntry<T>,
     aMeta: InferMeta<T>,

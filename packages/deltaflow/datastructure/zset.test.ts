@@ -162,7 +162,36 @@ it("properly adds primitive values", () => {
   expect(added[0].length).toBe(1);
 });
 
-it("zeroes correctly with one-to-one relationships", () => {
+it("zeroes & copies multiple items correctly", () => {
+  const a = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const b = shape((t) => ({ age: t(t.INT, t.PRIMARY) }));
+  const both = nest(a, "details", b);
+
+  const zsetA: ZSet<{ id: number; details: { age: number }[] }> = [
+    [
+      { id: 1, details: [{ age: 25 }] },
+      { id: 2, details: [{ age: 30 }] },
+    ],
+    Object.assign([1, 1], { details: [[2], [1]] }),
+    both,
+  ];
+
+  const zsetB = copy(zsetA);
+  zero(zsetA);
+
+  expect(zsetA[1]).toEqual([0, 0] as any);
+  expect(zsetA[1].details).toEqual([[0], [0]]);
+  expect(zsetB[1]).toEqual([1, 1] as any);
+  expect(zsetB[1].details).toEqual([[2], [1]]);
+
+  const zsetC = copy(zsetB);
+  distinct(zsetC);
+
+  expect(zsetC[1]).toEqual([1, 1] as any);
+  expect(zsetC[1].details).toEqual([[1], [1]]);
+});
+
+it("zeroes & copies single items correctly", () => {
   const a = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
   const b = shape((t) => ({ age: t(t.INT, t.PRIMARY) }));
   const both = nest(a, "details", b, true);
