@@ -3,49 +3,62 @@ import { children, compare, either } from "./shape";
 
 function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
   const set = merge(visitors.combine, ...sets);
-  if (!visitors.item && !visitors.collection) return set;
+  if (!visitors.item && !visitors.container) return set;
 
-  if (visitors.collection) {
-    [set[0], set[1]] = visitors.collection(set[0], set[1]);
-  }
-
-  const [data, meta, shape] = set;
-  const childKeys = children(shape);
+  const childKeys = children(set[2]);
 
   if (visitors.container) {
-    childKeys.forEach(([key]) => (meta[key] = visitors.container!(meta[key])));
+    set[0] = visitors.container(set[0], false);
+    set[1] = visitors.container(set[1], !!childKeys.length) as (typeof set)[1];
+    childKeys.forEach(([key, { shape }]) => {
+      set[1][key] = visitors.container!(set[1][key], !!children(shape).length);
+    });
   }
 
-  const visit = visitor(visitors, meta, childKeys);
-  data.forEach((x, i) => ([data[i], meta[i]] = visit(x, i)));
+  let deleted = 0;
+  const visit = visitor(visitors, set[1], childKeys);
+  set[0].forEach((x, i) => {
+    const next = visit(x, i);
+    if (next) [set[0][i - deleted], set[1][i - deleted]] = next;
+    else deleted++;
+  });
+
+  if (deleted) {
+    set[0].length -= deleted;
+    set[1].length -= deleted;
+  }
 
   return set;
 }
 
 // TODO: add types
 function visitor(visitors, meta, childKeys) {
-  return (item, i) => {
-    if (visitors.item) [item, meta[i]] = visitors.item(item, meta[i]);
+  return (item, i, deleted = false) => {
+    if (visitors.item) {
+      const next = visitors.item(item, meta[i]);
+      if (next) [item, meta[i]] = next;
+      else deleted = true;
+    }
 
     childKeys.forEach(([key, { single, shape }]) => {
       if (single) {
-        if (visitors.collection) {
-          const next = visitors.collection([item[key]], [meta[key][i]]);
-
-          item[key] = next[0][0];
-          if (next[1].length) meta[key][i] = next[1][0];
-          else meta[key].splice(i, 1);
-        }
-
+        if (!(i in meta[key])) return;
         const visit = visitor(visitors, meta[key], children(shape));
-        [item[key], meta[key][i]] = visit(item[key], i);
-      } else {
+        const next = visit(item[key], i, deleted);
+        if (next) [item[key], meta[key][i]] = next;
+        else if (!deleted) {
+          item[key] = undefined;
+          delete meta[key][i];
+        }
+      } else if (!deleted) {
         const subset: MetaSet = [item[key], meta[key][i], shape];
         [item[key], meta[key][i]] = traverse(visitors, subset);
       }
+
+      if (deleted) meta[key].splice(i, 1);
     });
 
-    return [item, meta[i]];
+    return deleted ? undefined : [item, meta[i]];
   };
 }
 

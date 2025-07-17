@@ -196,28 +196,28 @@ it("zeroes & copies single items correctly", () => {
   const b = shape((t) => ({ age: t(t.INT, t.PRIMARY) }));
   const both = nest(a, "details", b, true);
 
-  const zsetA: ZSet<{ id: number; details?: { age: number } }> = [
+  const zsetA: ZSet<(typeof both)["~type"]> = [
     [
       { id: 1, details: { age: 25 } },
       { id: 2, details: { age: 30 } },
     ],
-    Object.assign([1, 1], { details: [2, 1] }),
+    Object.assign([1, 0], { details: [2, 1] }),
     both,
   ];
 
   const zsetB = copy(zsetA);
   zero(zsetA);
 
-  expect(zsetA[1]).toEqual([0, 0]);
-  expect(zsetA[1]["details"]).toEqual([0, 0]);
-  expect(zsetB[1]).toEqual([1, 1]);
-  expect(zsetB[1]["details"]).toEqual([2, 1]);
+  expect(zsetA[1]).toEqual([0, 0] as any);
+  expect(zsetA[1].details).toEqual([0, 0]);
+  expect(zsetB[1]).toEqual([1, 0] as any);
+  expect(zsetB[1].details).toEqual([2, 1]);
 
   const zsetC = copy(zsetB);
   distinct(zsetC);
 
-  expect(zsetC[1]).toEqual([1, 1]);
-  expect(zsetC[1]["details"]).toEqual([1, 1]);
+  expect(zsetC[1]).toEqual([1] as any);
+  expect(zsetC[1].details).toEqual([1]);
 });
 
 it("adds with one-to-one relationships", () => {
@@ -246,4 +246,27 @@ it("adds with one-to-one relationships", () => {
 
   expect(zsetB[0]).toEqual([{ id: 1, details: { age: 42 } }]);
   expect({ ...zsetB[1] }).toEqual({ 0: 3, details: [1] } as any);
+});
+
+it("applies distinct on deep items", () => {
+  const a = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const b = shape((t) => ({ age: t(t.INT, t.PRIMARY) }));
+  const both = nest(a, "details", nest(b, "details", b, true), true);
+
+  const zsetA: ZSet<(typeof both)["~type"]> = [
+    [
+      { id: 1, details: { age: 25, details: { age: 17 } } },
+      { id: 2, details: { age: 30, details: { age: 42 } } },
+    ],
+    Object.assign([2, 0], {
+      details: Object.assign([2, 2], { details: [2, 2] }),
+    }),
+    both,
+  ];
+
+  distinct(zsetA);
+
+  expect(zsetA[1]).toEqual([1] as any);
+  expect(zsetA[1].details).toEqual([1] as any);
+  expect(zsetA[1].details.details).toEqual([1] as any);
 });

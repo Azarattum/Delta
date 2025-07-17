@@ -55,9 +55,12 @@ type Visitors<T extends MetaSet> = {
   item?: (
     data: InferEntry<T>,
     meta: InferMeta<T>,
-  ) => [InferEntry<T>, InferMeta<T>];
-  collection?: (data: InferEntry<T>[], meta: T[1]) => [InferEntry<T>[], T[1]];
-  container?: (container: T[1][]) => T[1][];
+  ) => [InferEntry<T>, InferMeta<T>] | undefined;
+  container?: <TDeep extends boolean>(
+    container: TDeep extends true ? Record<string, unknown> & unknown[]
+    : unknown[],
+    deep: TDeep,
+  ) => TDeep extends true ? Record<string, unknown> & unknown[] : unknown[];
   combine?: (
     aData: InferEntry<T>,
     aMeta: InferMeta<T>,

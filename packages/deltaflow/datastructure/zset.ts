@@ -79,23 +79,7 @@ function multiply<A, B, K extends string, S extends boolean = false>(
 
 function distinct<T>(item: ZSet<T>) {
   return traverse(
-    {
-      collection(data, meta) {
-        const length = Math.max(data.length, meta.length);
-
-        let left = 0;
-        for (let i = 0; i < length; i++) {
-          if (i >= meta.length || meta[i] <= 0) continue;
-          if (i < data.length) data[left] = data[i];
-          meta[left++] = 1;
-        }
-
-        data.length = Math.min(data.length, left);
-        meta.length = Math.min(meta.length, left);
-
-        return [data, meta];
-      },
-    },
+    { item: (data, meta) => (meta > 0 ? [data, 1] : undefined) },
     item,
   );
 }
@@ -109,8 +93,8 @@ function copy<T>(item: ZSet<T>) {
   return traverse(
     {
       item: (data, meta) => [{ ...data }, meta],
-      collection: (data, meta) => [data.slice(), Object.assign([], meta)],
-      container: (container) => container.slice(),
+      container: (container, deep): any =>
+        deep ? Object.assign([], container) : container.slice(),
     },
     [...item],
   );

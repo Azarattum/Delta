@@ -20,7 +20,7 @@ it("traverses flat numeric set with item visitor", () => {
   expect(set[1]).toEqual(["A", "B", "C"]);
 });
 
-it("applies collection visitor to flat object set", () => {
+it("applies container visitor to flat object set", () => {
   let set: MetaSet<{ id: number }, number> = [
     [{ id: 1 }, { id: 2 }],
     [10, 20],
@@ -28,16 +28,19 @@ it("applies collection visitor to flat object set", () => {
   ];
 
   const visitors: Visitors<typeof set> = {
-    collection: (data, meta) => [
-      data.sort((a, b) => b.id - a.id),
-      meta.map((m) => m * 2),
-    ],
+    container: (container): any =>
+      container.map((x) =>
+        typeof x === "number" ? x + 1
+        : typeof x === "object" && x && "id" in x && typeof x.id === "number" ?
+          { ...x, id: x.id + 1 }
+        : x,
+      ),
   };
 
   traverse(visitors, set);
 
-  expect(set[0]).toEqual([{ id: 2 }, { id: 1 }]);
-  expect(set[1]).toEqual([20, 40]);
+  expect(set[0]).toEqual([{ id: 2 }, { id: 3 }]);
+  expect(set[1]).toEqual([11, 21]);
 });
 
 it("merges sets without combine function", () => {
@@ -144,14 +147,7 @@ it("handles nested singular relationships", () => {
   ];
 
   const visitors: Visitors<typeof set> = {
-    item: (data, meta) => [{ ...data, id: data.id * 10 }, meta * 2],
-    collection: (data, meta) => [
-      data,
-      Object.assign(
-        meta,
-        meta.map((m) => m + 1),
-      ),
-    ],
+    item: (data, meta) => [{ ...data, id: data.id * 10 }, (meta + 1) * 2],
   };
 
   traverse(visitors, set);
@@ -181,14 +177,7 @@ it("handles nested collection relationships", () => {
   ];
 
   const visitors: Visitors<typeof set> = {
-    collection: (data, meta) => [
-      data,
-      Object.assign(
-        meta,
-        meta.map((m) => ({ count: m.count * 2 })),
-      ),
-    ],
-    item: (data, meta) => [data, { count: meta.count + 1 }],
+    item: (data, meta) => [data, { count: meta.count * 2 + 1 }],
   };
 
   traverse(visitors, set);
@@ -208,7 +197,7 @@ it("processes empty set without errors", () => {
   const set: MetaSet<number, string> = [[], []];
   const visitors: Visitors<typeof set> = {
     item: (data, meta) => [data, meta],
-    collection: (data, meta) => [data, meta],
+    container: (container) => container,
   };
   expect(() => traverse(visitors, set)).not.toThrow();
   expect(set[0]).toEqual([]);
@@ -386,12 +375,12 @@ it("traverses children of singular items", () => {
   ];
 
   const visitors = {
-    collection: mock((data, meta) => [data, meta]),
+    container: mock((container) => container),
     item: mock((data, meta) => [data, meta]),
   } as unknown as Visitors<typeof set>;
 
   traverse(visitors, set);
   expect(visitors.item).toHaveBeenCalledTimes(6);
-  expect(visitors.collection).toHaveBeenCalledTimes(5);
+  expect(visitors.container).toHaveBeenCalledTimes(3);
   expect(visitors.item).toHaveBeenLastCalledWith({ id: 200 }, 3);
 });
