@@ -2,92 +2,78 @@ import { shared, type MetaSet, type Visitors } from "./metaset.types";
 import { children, compare, either } from "./shape";
 
 function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
-  const set = merge(visitors.combine, ...sets);
-  if (!visitors.item && !visitors.container) return set;
-
-  const childKeys = children(set[2]);
-
-  if (visitors.container) {
-    set[0] = visitors.container(set[0], false);
-    set[1] = visitors.container(set[1], !!childKeys.length) as (typeof set)[1];
-    childKeys.forEach(([key, { shape }]) => {
-      set[1][key] = visitors.container!(set[1][key], !!children(shape).length);
-    });
-  }
-
-  let deleted = 0;
-  const visit = visitor(
-    visitors.item,
-    ([meta], [item], [i], shape) =>
-      traverse(visitors, [item, meta[i], shape] as any),
-    [set[1]],
-    childKeys,
-  );
-  set[0].forEach((x, i) => {
-    const next = visit([x], [i]);
-    if (next) [set[0][i - deleted], set[1][i - deleted]] = next;
-    else deleted++;
-  });
-
-  if (deleted) {
-    set[0].length -= deleted;
-    set[1].length -= deleted;
-  }
-
-  return set;
-}
-
-function merge<T extends MetaSet>(
-  combine: Visitors<T>["combine"],
-  ...sets: T[]
-): T {
   // TODO: consider length optimization
-  if (sets.length === 1) return sets[0];
-  if (sets.length === 2) return mergeInto(sets[0], sets[1], combine);
+  if (sets.length === 1) return merge(sets[0], [[], []], visitors);
+  if (sets.length === 2) return merge(sets[0], sets[1], visitors);
   const mid = Math.floor(sets.length / 2);
 
-  return mergeInto(
-    merge(combine, ...sets.slice(0, mid)),
-    merge(combine, ...sets.slice(mid)),
-    combine,
+  const subVisitors = { combine: visitors.combine };
+
+  return merge(
+    traverse(subVisitors, ...sets.slice(0, mid)),
+    traverse(subVisitors, ...sets.slice(mid)),
+    visitors,
   );
 }
 
 // TODO: add types
-function mergeInto(target, source, combine) {
-  const [tData, tMeta, tShape] = target;
-  const [sData, sMeta, sShape] = source;
-  const shape = either(tShape, sShape);
+function merge(target, source, visitors) {
+  const shape = either(target[2], source[2]);
   const childKeys = children(shape);
+  const { container, item, combine } = visitors;
 
-  const combineDeep = visitor(
-    combine,
-    ([tMeta, sMeta], [tItem, sItem], [i, j], shape) =>
-      mergeInto([tItem, tMeta[i], shape], [sItem, sMeta[j], shape], combine),
-    [tMeta, sMeta],
-    childKeys,
-  );
+  if (container) {
+    target[0] = container(target[0], false);
+    target[1] = container(target[1], !!childKeys.length) as (typeof target)[1];
+    childKeys.forEach(([key, { shape }]) => {
+      target[1][key] = container!(target[1][key], !!children(shape).length);
+    });
+  }
+
+  const [sData, sMeta] = source;
+  const [tData, tMeta] = target;
+
+  const recurse = ([tMeta, sMeta], [tData, sData], [i, j], shape) =>
+    merge([tData, tMeta[i], shape], [sData ?? [], sMeta?.[j] ?? []], visitors);
+
+  const combineDeep = visitor(combine, recurse, [tMeta, sMeta], childKeys);
+  const visit = visitor(item, recurse, [tMeta], childKeys);
   const insertDeep = inserter(tMeta, sMeta, childKeys);
 
   let i = 0;
   let j = 0;
   let deleted = 0;
 
-  while (j < sData.length) {
-    const cmp = i < tData.length ? compare(tData[i], sData[j], shape) : 1;
+  while (j < sData.length || i < tData.length) {
+    const cmp =
+      i < tData.length ?
+        j < sData.length ?
+          compare(tData[i], sData[j], shape)
+        : -1
+      : 1;
+
+    let shouldDelete = false;
+
     if (cmp === 0) {
       const next = combineDeep([tData[i], sData[j]], [i, j]);
       if (next) [tData[i - deleted], tMeta[i - deleted]] = next;
-      else deleted++;
-
-      i++, j++;
+      else shouldDelete = true;
     } else if (cmp > 0) {
       tData.splice(i, 0, sData[j]);
       tMeta.splice(i, 0, sMeta[j]);
       insertDeep(i, j);
+    }
 
-      i++, j++;
-    } else i++;
+    if (!shouldDelete && visit) {
+      const next = visit([tData[i]], [i]);
+      if (next) [tData[i - deleted], tMeta[i - deleted]] = next;
+      else shouldDelete = true;
+    }
+
+    if (shouldDelete) deleted++;
+
+    if (cmp >= 0) i++, j++;
+    else i++;
   }
 
   if (deleted) {
