@@ -20,7 +20,7 @@ function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
 function merge(target, source, visitors) {
   const shape = either(target[2], source[2]);
   const childKeys = children(shape);
-  const { container, item, combine } = visitors;
+  const { container, each, combine } = visitors;
 
   if (container) {
     target[0] = container(target[0], false);
@@ -37,7 +37,7 @@ function merge(target, source, visitors) {
     merge([tData, tMeta[i], shape], [sData ?? [], sMeta?.[j] ?? []], visitors);
 
   const combineDeep = visitor(combine, recurse, [tMeta, sMeta], childKeys);
-  const visit = visitor(item, recurse, [tMeta], childKeys);
+  const eachDeep = visitor(each, recurse, [tMeta], childKeys);
   const insertDeep = inserter(tMeta, sMeta, childKeys);
 
   let i = 0;
@@ -64,8 +64,8 @@ function merge(target, source, visitors) {
       insertDeep(i, j);
     }
 
-    if (!shouldDelete && visit) {
-      const next = visit([tData[i]], [i]);
+    if (!shouldDelete) {
+      const next = eachDeep([tData[i]], [i]);
       if (next) [tData[i - deleted], tMeta[i - deleted]] = next;
       else shouldDelete = true;
     }

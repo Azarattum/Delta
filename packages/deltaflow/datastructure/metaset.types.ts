@@ -52,7 +52,7 @@ type RecordKeys<T> =
   : never;
 
 type Visitors<T extends MetaSet> = {
-  item?: (
+  each?: (
     data: InferEntry<T>,
     meta: InferMeta<T>,
   ) => [InferEntry<T>, InferMeta<T>] | undefined;
