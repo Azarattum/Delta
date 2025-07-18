@@ -16,9 +16,15 @@ function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
   }
 
   let deleted = 0;
-  const visit = visitor(visitors, set[1], childKeys);
+  const visit = visitor(
+    visitors.item,
+    ([meta], [item], [i], shape) =>
+      traverse(visitors, [item, meta[i], shape] as any),
+    [set[1]],
+    childKeys,
+  );
   set[0].forEach((x, i) => {
-    const next = visit(x, i);
+    const next = visit([x], [i]);
     if (next) [set[0][i - deleted], set[1][i - deleted]] = next;
     else deleted++;
   });
@@ -29,37 +35,6 @@ function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
   }
 
   return set;
-}
-
-// TODO: add types
-function visitor(visitors, meta, childKeys) {
-  return (item, i, deleted = false) => {
-    if (visitors.item) {
-      const next = visitors.item(item, meta[i]);
-      if (next) [item, meta[i]] = next;
-      else deleted = true;
-    }
-
-    childKeys.forEach(([key, { single, shape }]) => {
-      if (single) {
-        if (!(i in meta[key])) return;
-        const visit = visitor(visitors, meta[key], children(shape));
-        const next = visit(item[key], i, deleted);
-        if (next) [item[key], meta[key][i]] = next;
-        else if (!deleted) {
-          item[key] = undefined;
-          delete meta[key][i];
-        }
-      } else if (!deleted) {
-        const subset: MetaSet = [item[key], meta[key][i], shape];
-        [item[key], meta[key][i]] = traverse(visitors, subset);
-      }
-
-      if (deleted) meta[key].splice(i, 1);
-    });
-
-    return deleted ? undefined : [item, meta[i]];
-  };
 }
 
 function merge<T extends MetaSet>(
@@ -85,17 +60,25 @@ function mergeInto(target, source, combine) {
   const shape = either(tShape, sShape);
   const childKeys = children(shape);
 
-  const combineDeep = combine && combiner(tMeta, sMeta, childKeys, combine);
+  const combineDeep = visitor(
+    combine,
+    ([tMeta, sMeta], [tItem, sItem], [i, j], shape) =>
+      mergeInto([tItem, tMeta[i], shape], [sItem, sMeta[j], shape], combine),
+    [tMeta, sMeta],
+    childKeys,
+  );
   const insertDeep = inserter(tMeta, sMeta, childKeys);
 
   let i = 0;
   let j = 0;
+  let deleted = 0;
 
   while (j < sData.length) {
     const cmp = i < tData.length ? compare(tData[i], sData[j], shape) : 1;
     if (cmp === 0) {
-      if (!combine) continue;
-      [tData[i], tMeta[i]] = combineDeep(tData[i], sData[j], i, j);
+      const next = combineDeep([tData[i], sData[j]], [i, j]);
+      if (next) [tData[i - deleted], tMeta[i - deleted]] = next;
+      else deleted++;
 
       i++, j++;
     } else if (cmp > 0) {
@@ -107,27 +90,44 @@ function mergeInto(target, source, combine) {
     } else i++;
   }
 
+  if (deleted) {
+    tData.length -= deleted;
+    tMeta.length -= deleted;
+  }
+
   return target;
 }
 
 // TODO: add types
-function combiner(tMeta, sMeta, childKeys, combine) {
-  return (tItem, sItem, i, j) => {
-    [tItem, tMeta[i]] = combine(tItem, tMeta[i], sItem, sMeta[j]);
+function visitor(fn, recurse, metas, childKeys) {
+  return (items, idx, deleted = false) => {
+    if (fn) {
+      const next = fn(...items.flatMap((x, i) => [x, metas[i][idx[i]]]));
+      if (next) [items[0], metas[0][idx[0]]] = next;
+      else deleted = true;
+    }
 
     childKeys.forEach(([key, { single, shape }]) => {
-      if (single) {
-        const childKeys = children(shape);
-        const merger = combiner(tMeta[key], sMeta[key], childKeys, combine);
-        [tItem[key], tMeta[key][i]] = merger(tItem[key], sItem[key], i, j);
-      } else if (key in sItem) {
-        const tSubset = [tItem[key], tMeta[key][i], shape];
-        const sSubset = [sItem[key], sMeta[key][j], shape];
-        mergeInto(tSubset, sSubset, combine);
+      if (!(idx[0] in metas[0][key])) return;
+      const metas2 = metas.map((x) => x[key] ?? []);
+      const items2 = items.map((x) => x[key] ?? []);
+
+      const next =
+        single ?
+          visitor(fn, recurse, metas2, children(shape))(items2, idx, deleted)
+        : recurse(metas2, items2, idx, shape);
+
+      if (deleted) metas[0][key].splice(idx[0], 1);
+      else {
+        if (next) [items[0][key], metas[0][key][idx[0]]] = next;
+        else {
+          delete items[0][key];
+          delete metas[0][key][idx[0]];
+        }
       }
     });
 
-    return [tItem, tMeta[i]];
+    return deleted ? undefined : [items[0], metas[0][idx[0]]];
   };
 }
 

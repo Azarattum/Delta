@@ -43,6 +43,27 @@ it("applies container visitor to flat object set", () => {
   expect(set[1]).toEqual([11, 21]);
 });
 
+it("applies container visitor to deep object set", () => {
+  const detailShape = shape((t) => ({ id: t(t.INT) }));
+  const userShape = nest(idShape, "details", detailShape);
+
+  const set: MetaSet<(typeof userShape)["~type"], number> = [
+    [
+      { id: 1, details: [{ id: 25 }] },
+      { id: 2, details: [{ id: 30 }] },
+    ],
+    Object.assign([1, 2], { details: [[3], [4]] }),
+    userShape,
+  ];
+
+  const visitors: Visitors<typeof set> = {
+    container: mock((container) => container),
+  };
+
+  traverse(visitors, set);
+  expect(visitors.container).toHaveReturnedTimes(7);
+});
+
 it("merges sets without combine function", () => {
   const setA: MetaSet<number, string> = [
     [1, 3],
