@@ -11,7 +11,7 @@ it("traverses flat numeric set with item visitor", () => {
   ];
 
   const visitors: Visitors<typeof set> = {
-    each: (data, meta) => [data * 2, meta.toUpperCase()],
+    update: (data, meta) => [data * 2, meta.toUpperCase()],
   };
 
   traverse(visitors, set);
@@ -73,16 +73,16 @@ it("merges sets without combine function", () => {
     [2, 4],
     ["b", "d"],
   ];
-  const setC: MetaSet<number, string> = [[5], ["e"]];
 
   const visitors: Visitors<typeof setA> = {
-    each: (data, meta) => [data * 10, meta.toUpperCase()],
+    update: (data, meta) => [data * 10, meta.toUpperCase()],
+    insert: (data, meta) => [data * 100, meta + "_"],
   };
 
-  traverse(visitors, setA, setB, setC);
+  traverse(visitors, setA, setB);
 
-  expect(setA[0]).toEqual([10, 20, 30, 40, 50]);
-  expect(setA[1]).toEqual(["A", "B", "C", "D", "E"]);
+  expect(setA[0]).toEqual([10, 200, 30, 400]);
+  expect(setA[1]).toEqual(["A", "b_", "C", "d_"]);
 });
 
 it("merges and combines sets", () => {
@@ -97,13 +97,13 @@ it("merges and combines sets", () => {
 
   const visitors: Visitors<typeof setA> = {
     combine: (aData, aMeta, bData, bMeta) => [aData ?? bData, aMeta + bMeta],
-    each: (data, meta) => [data * 2, meta + 1],
+    update: (data, meta) => [data * 2, meta + 1],
   };
 
   traverse(visitors, setA, setB);
 
-  expect(setA[0]).toEqual([2, 4, 6]);
-  expect(setA[1]).toEqual([11, 21, 61]);
+  expect(setA[0]).toEqual([2, 2, 3]);
+  expect(setA[1]).toEqual([11, 20, 60]);
 });
 
 it("merges sets deeply with children", () => {
@@ -168,7 +168,7 @@ it("handles nested singular relationships", () => {
   ];
 
   const visitors: Visitors<typeof set> = {
-    each: (data, meta) => [{ ...data, id: data.id * 10 }, (meta + 1) * 2],
+    update: (data, meta) => [{ ...data, id: data.id * 10 }, (meta + 1) * 2],
   };
 
   traverse(visitors, set);
@@ -198,7 +198,7 @@ it("handles nested collection relationships", () => {
   ];
 
   const visitors: Visitors<typeof set> = {
-    each: (data, meta) => [data, { count: meta.count * 2 + 1 }],
+    update: (data, meta) => [data, { count: meta.count * 2 + 1 }],
   };
 
   traverse(visitors, set);
@@ -217,7 +217,7 @@ it("handles nested collection relationships", () => {
 it("processes empty set without errors", () => {
   const set: MetaSet<number, string> = [[], []];
   const visitors: Visitors<typeof set> = {
-    each: (data, meta) => [data, meta],
+    update: (data, meta) => [data, meta],
     container: (container) => container,
   };
   expect(() => traverse(visitors, set)).not.toThrow();
@@ -231,7 +231,7 @@ it("handles mixed primitive and object metadata", () => {
   ];
 
   const visitors: Visitors<typeof set> = {
-    each: (data, meta) => [
+    update: (data, meta) => [
       data * 2,
       typeof meta === "string" ? meta + "!" : meta * 2,
     ],
@@ -397,11 +397,11 @@ it("traverses children of singular items", () => {
 
   const visitors = {
     container: mock((container) => container),
-    each: mock((data, meta) => [data, meta]),
+    update: mock((data, meta) => [data, meta]),
   } as unknown as Visitors<typeof set>;
 
   traverse(visitors, set);
-  expect(visitors.each).toHaveBeenCalledTimes(6);
+  expect(visitors.update).toHaveBeenCalledTimes(6);
   expect(visitors.container).toHaveBeenCalledTimes(3);
-  expect(visitors.each).toHaveBeenLastCalledWith({ id: 200 }, 3);
+  expect(visitors.update).toHaveBeenLastCalledWith({ id: 200 }, 3);
 });

@@ -1,22 +1,8 @@
 import { shared, type MetaSet, type Visitors } from "./metaset.types";
 import { children, compare, either } from "./shape";
 
-function traverse<T extends MetaSet>(visitors: Visitors<T>, ...sets: T[]): T {
-  // TODO: consider length optimization
-  if (sets.length === 1) return merge(visitors, sets[0]);
-  if (sets.length === 2) return merge(visitors, sets[0], sets[1]);
-
-  const mid = Math.floor(sets.length / 2);
-  return merge(
-    visitors,
-    traverse({ combine: visitors.combine }, ...sets.slice(0, mid)),
-    traverse({ combine: visitors.combine }, ...sets.slice(mid)),
-  );
-}
-
-// TODO: add types
-function merge(visitors, target, source?) {
-  const { container, each, combine } = visitors;
+function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
+  const { container, update, insert, combine } = fns;
   const shape = either(target[2], source?.[2]);
   const childKeys = children(shape);
 
@@ -31,12 +17,11 @@ function merge(visitors, target, source?) {
   const [tData, tMeta] = target;
   const [sData, sMeta] = source ?? [[], []];
 
-  const recurse = ([tMeta, sMeta], [tData, sData], [i, j], shape) =>
-    merge(visitors, [tData, tMeta[i], shape], [sData ?? [], sMeta?.[j] ?? []]);
+  const recurse = ([tData, sData], [tMeta, sMeta], [i, j], shape) =>
+    traverse<any>(fns, [tData, tMeta[i], shape], sMeta && [sData, sMeta[j]]);
 
-  const combineDeep = visitor(recurse, combine, childKeys, tMeta, sMeta);
-  const eachDeep = visitor(recurse, each, childKeys, tMeta);
-  const insertDeep = inserter(childKeys, tMeta, sMeta);
+  const deep = visitor(recurse, childKeys);
+  const insertMetaDeep = inserter(childKeys, tMeta, sMeta);
 
   let deleted = 0;
   let i = 0;
@@ -48,19 +33,19 @@ function merge(visitors, target, source?) {
       +(i >= tData.length) ||
       compare(tData[i], sData[j], shape);
 
+    const next =
+      cmp === 0 ? deep(combine, [tData[i], sData[j]], [tMeta, sMeta], [i, j])
+      : cmp > 0 ? deep(insert, [sData[j]], [sMeta], [j])
+      : deep(update, [tData[i]], [tMeta], [i]);
+
     const ti = i - deleted;
-
-    if (cmp === 0 && combine) {
-      [tData[i], tMeta[i]] = combineDeep([tData[i], sData[j]], [i, j])!;
-    } else if (cmp > 0) {
-      tData.splice(i, 0, sData[j]);
-      tMeta.splice(i, 0, sMeta[j]);
-      insertDeep(i, j);
+    if (!next) cmp <= 0 && deleted++;
+    else if (cmp <= 0) [tData[ti], tMeta[ti]] = next;
+    else {
+      tData.splice(ti, 0, next[0]);
+      tMeta.splice(ti, 0, next[1]);
+      insertMetaDeep(ti, j);
     }
-
-    const next = eachDeep([tData[i]], [i]);
-    if (next) [tData[ti], tMeta[ti]] = next;
-    else deleted++;
 
     if (cmp >= 0) i++, j++;
     else i++;
@@ -75,8 +60,8 @@ function merge(visitors, target, source?) {
 }
 
 // TODO: add types
-function visitor(recurse, fn, childKeys, ...metas) {
-  return (items, idx, deleted = false) => {
+function visitor(recurse, childKeys) {
+  return (fn, items, metas, idx, deleted = false) => {
     if (fn) {
       const next = fn(...items.flatMap((x, i) => [x, metas[i][idx[i]]]));
       if (next) [items[0], metas[0][idx[0]]] = next;
@@ -85,13 +70,13 @@ function visitor(recurse, fn, childKeys, ...metas) {
 
     childKeys.forEach(([key, { single, shape }]) => {
       if (!(idx[0] in metas[0][key])) return;
-      const metas2 = metas.map((x) => x[key]);
       const items2 = items.map((x) => x[key]);
+      const metas2 = metas.map((x) => x[key]);
 
       const next =
         single ?
-          visitor(recurse, fn, children(shape), ...metas2)(items2, idx, deleted)
-        : recurse(metas2, items2, idx, shape);
+          visitor(recurse, children(shape))(fn, items2, metas2, idx, deleted)
+        : recurse(items2, metas2, idx, shape);
 
       if (deleted) metas[0][key].splice(idx[0], 1);
       else {

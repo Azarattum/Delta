@@ -79,20 +79,20 @@ function multiply<A, B, K extends string, S extends boolean = false>(
 
 function distinct<T>(item: ZSet<T>) {
   return traverse(
-    { each: (data, meta) => (meta > 0 ? [data, 1] : undefined) },
+    { update: (data, meta) => (meta > 0 ? [data, 1] : undefined) },
     item,
   );
 }
 
 function zero<T>(item?: ZSet<T>) {
   if (!item) return [[], []] as ZSet<T>;
-  return traverse({ each: (data) => [data, 0] }, item);
+  return traverse({ update: (data) => [data, 0] }, item);
 }
 
 function copy<T>(item: ZSet<T>) {
   return traverse(
     {
-      each: (data, meta) => [{ ...data }, meta],
+      update: (data, meta) => [{ ...data }, meta],
       container: (container, deep): any =>
         deep ? Object.assign([], container) : container.slice(),
     },

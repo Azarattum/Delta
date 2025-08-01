@@ -52,21 +52,26 @@ type RecordKeys<T> =
   : never;
 
 type Visitors<T extends MetaSet> = {
-  each?: (
+  update?: (
     data: InferEntry<T>,
     meta: InferMeta<T>,
   ) => [InferEntry<T>, InferMeta<T>] | undefined;
-  container?: <TDeep extends boolean>(
-    container: TDeep extends true ? Record<string, unknown> & unknown[]
-    : unknown[],
-    deep: TDeep,
-  ) => TDeep extends true ? Record<string, unknown> & unknown[] : unknown[];
+  insert?: (
+    data: InferEntry<T>,
+    meta: InferMeta<T>,
+  ) => [InferEntry<T>, InferMeta<T>] | undefined;
   combine?: (
     aData: InferEntry<T>,
     aMeta: InferMeta<T>,
     bData: InferEntry<T>,
     bMeta: InferMeta<T>,
-  ) => [InferEntry<T>, InferMeta<T>];
+  ) => [InferEntry<T>, InferMeta<T>] | undefined;
+
+  container?: <TDeep extends boolean>(
+    container: TDeep extends true ? Record<string, unknown> & unknown[]
+    : unknown[],
+    deep: TDeep,
+  ) => TDeep extends true ? Record<string, unknown> & unknown[] : unknown[];
 };
 
 export { shared };
