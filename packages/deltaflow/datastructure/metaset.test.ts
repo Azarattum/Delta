@@ -1,6 +1,6 @@
 import { traverse, type MetaSet, type Visitors } from "./metaset";
 import { nest, shape } from "./shape";
-import { expect, it, mock } from "bun:test";
+import { expect, it, mock, type Mock } from "bun:test";
 
 const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
 
@@ -404,4 +404,57 @@ it("traverses children of singular items", () => {
   expect(visitors.update).toHaveBeenCalledTimes(6);
   expect(visitors.container).toHaveBeenCalledTimes(3);
   expect(visitors.update).toHaveBeenLastCalledWith({ id: 200 }, 3);
+});
+
+it("transforms inserted items", () => {
+  const detailShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const postShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const userShape = nest(
+    nest(idShape, "details", detailShape, true),
+    "posts",
+    postShape,
+  );
+
+  const setA: MetaSet<(typeof userShape)["~type"], number> = [
+    [
+      { id: 1, details: { id: 25 }, posts: [{ id: 100 }, { id: 200 }] },
+      { id: 3, details: { id: 30 }, posts: [{ id: 150 }] },
+    ],
+    Object.assign([1, 2], { details: [3, 4], posts: [[5, 6], [7]] }),
+    userShape,
+  ];
+  const setB: MetaSet<(typeof userShape)["~type"], number> = [
+    [
+      { id: 2, details: { id: 35 }, posts: [{ id: 200 }] },
+      { id: 3, details: { id: 40 }, posts: [{ id: 350 }] },
+    ],
+    Object.assign([1, 2], { details: [3, 4], posts: [[5], [7]] }),
+    userShape,
+  ];
+
+  const visitors: Visitors<typeof setA> = {
+    insert: mock((data, meta) => [((data.id *= 2), data), ++meta]) as any,
+    combine: (aData, aMeta) => [aData, aMeta],
+  };
+
+  const [data, meta] = traverse(visitors, setA, setB);
+
+  expect(data).toEqual([
+    { id: 1, details: { id: 25 }, posts: [{ id: 100 }, { id: 200 }] },
+    { id: 4, details: { id: 70 }, posts: [{ id: 400 }] },
+    { id: 3, details: { id: 30 }, posts: [{ id: 150 }, { id: 700 }] },
+  ]);
+  expect({ ...meta }).toEqual({
+    ...Object.assign([1, 2, 2], {
+      posts: [[5, 6], [6], [7, 8]],
+      details: [3, 4, 4],
+    }),
+  });
+
+  expect((visitors.insert as Mock<any>).mock.calls).toEqual([
+    [data[1], meta[1] - 1],
+    [data[1].details, meta.details[1] - 1],
+    [data[1].posts[0], meta.posts[1][0] - 1],
+    [data[2].posts[1], meta.posts[2][1] - 1],
+  ]);
 });
