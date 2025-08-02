@@ -10,7 +10,7 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
     target[0] = container(target[0], false);
     target[1] = container(target[1], !!childKeys.length) as (typeof target)[1];
     childKeys.forEach(([key, { shape }]) => {
-      target[1][key] = container!(target[1][key], !!children(shape).length);
+      target[1][key] = container(target[1][key], !!children(shape).length);
     });
   }
 
