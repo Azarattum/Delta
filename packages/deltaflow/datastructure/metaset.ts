@@ -75,7 +75,7 @@ function visitor(recurse, childKeys, fns) {
       const next =
         single ?
           visitor(recurse, children(shape), fns)(type, items2, metas2, idx)
-        : recurse(items2, metas2, idx, shape, fns2);
+        : type !== "delete" && recurse(items2, metas2, idx, shape, fns2);
 
       if (type === "insert") metas2[1].splice(idx[1], 0, metas2[0][idx[0]]);
       if (type === "delete") metas[0][key].splice(idx[0], 1);
