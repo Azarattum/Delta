@@ -54,7 +54,13 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   if (deleted) {
     tData.length -= deleted;
     tMeta.length -= deleted;
-    deleter(childKeys, tMeta)(deleted); // TODO: is there a better way to do that?
+
+    (function pruneChildren(childKeys, meta) {
+      childKeys.forEach(([key, { single, shape }]) => {
+        meta[key].length -= deleted;
+        if (single) pruneChildren(children(shape), meta[key]);
+      });
+    })(childKeys, tMeta);
   }
 
   return target;
@@ -94,16 +100,6 @@ function visitor(recurse, childKeys, fns) {
     });
 
     return type === "delete" ? undefined : [items[0], metas[0][idx[0] - del]];
-  };
-}
-
-// TODO: single-child recurser should be used for length prunning, metadata insertion
-function deleter(childKeys, tMeta) {
-  return (deleted) => {
-    childKeys.forEach(([key, { single, shape }]) => {
-      tMeta[key].length -= deleted;
-      if (single) deleter(children(shape), tMeta[key])(deleted);
-    });
   };
 }
 
