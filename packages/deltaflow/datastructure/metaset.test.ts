@@ -458,3 +458,74 @@ it("transforms inserted items", () => {
     [data[2].posts[1], meta.posts[2][1] - 1],
   ]);
 });
+
+it("handles mid collection deletion", () => {
+  const postShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const userShape = nest(idShape, "posts", postShape);
+
+  const setA: MetaSet<(typeof userShape)["~type"], number> = [
+    [
+      { id: 1, posts: [{ id: 10 }] },
+      { id: 2, posts: [{ id: 20 }] },
+      { id: 3, posts: [{ id: 30 }] },
+    ],
+    Object.assign([10, 20, 30], { posts: [[100], [200], [300]] }),
+    userShape,
+  ];
+
+  const visitors: Visitors<typeof setA> = {
+    update: (data, meta) => (meta === 20 ? undefined : [data, meta + 1]),
+    insert: (data, meta) => [data, meta],
+  };
+
+  traverse(visitors, setA);
+
+  expect(setA[0]).toEqual([
+    { id: 1, posts: [{ id: 10 }] },
+    { id: 3, posts: [{ id: 30 }] },
+  ]);
+  expect({ ...setA[1] }).toEqual({
+    ...Object.assign([11, 31], { posts: [[101], [301]] }),
+  });
+});
+
+it("handles child metadata insertion after deletion", () => {
+  const postShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const userShape = nest(idShape, "posts", postShape);
+
+  const setA: MetaSet<(typeof userShape)["~type"], number> = [
+    [
+      { id: 1, posts: [{ id: 10 }] },
+      { id: 2, posts: [{ id: 20 }] },
+      { id: 4, posts: [{ id: 40 }] },
+    ],
+    Object.assign([1, 2, 4], { posts: [[100], [200], [400]] }),
+    userShape,
+  ];
+
+  const setB: MetaSet<(typeof userShape)["~type"], number> = [
+    [{ id: 3, posts: [{ id: 30 }] }],
+    Object.assign([3], { posts: [[300]] }),
+    userShape,
+  ];
+
+  const metas: number[] = [];
+  const visitors: Visitors<typeof setA> = {
+    update: (data, meta) => (
+      metas.push(meta), meta === 2 ? undefined : [data, meta]
+    ),
+    insert: (data, meta) => [data, meta],
+  };
+
+  traverse(visitors, setA, setB);
+
+  expect(metas).toEqual([1, 100, 2, 4, 400]);
+  expect(setA[0]).toEqual([
+    { id: 1, posts: [{ id: 10 }] },
+    { id: 3, posts: [{ id: 30 }] },
+    { id: 4, posts: [{ id: 40 }] },
+  ]);
+  expect({ ...setA[1] }).toEqual({
+    ...Object.assign([1, 3, 4], { posts: [[100], [300], [400]] }),
+  });
+});
