@@ -529,3 +529,119 @@ it("handles child metadata insertion after deletion", () => {
     ...Object.assign([1, 3, 4], { posts: [[100], [300], [400]] }),
   });
 });
+
+it("propagates deep deletion with single child", () => {
+  const shape = nest(
+    idShape,
+    "deep1",
+    nest(idShape, "deep2", idShape, true),
+    true,
+  );
+
+  const set: MetaSet<(typeof shape)["~type"], number> = [
+    [
+      { id: 1, deep1: { id: 10, deep2: { id: 100 } } },
+      { id: 2, deep1: { id: 20, deep2: { id: 200 } } },
+    ],
+    Object.assign([1, 2], {
+      deep1: Object.assign([10, 20], { deep2: [100, 200] }),
+    }),
+    shape,
+  ];
+
+  const visitors: Visitors<typeof set> = {
+    update: (data, meta) => {
+      if (data.id === 10) return;
+      return [data, meta];
+    },
+  };
+
+  traverse(visitors, set);
+
+  expect(set[0]).toEqual([
+    { id: 1 } as any,
+    { id: 2, deep1: { id: 20, deep2: { id: 200 } } },
+  ]);
+
+  expect(set[1]).toEqual([1, 2] as any);
+  expect(set[1].deep1).toEqual([, 20] as any);
+  expect(set[1].deep1.deep2).toEqual([, 200] as any);
+});
+
+it("propagates deep deletion with collection children", () => {
+  const shape = nest(idShape, "deep1", nest(idShape, "deep2", idShape));
+
+  const set: MetaSet<(typeof shape)["~type"], number> = [
+    [
+      { id: 1, deep1: [{ id: 10, deep2: [{ id: 100 }] }] },
+      { id: 2, deep1: [{ id: 20, deep2: [{ id: 200 }] }] },
+    ],
+    Object.assign([1, 2], {
+      deep1: [
+        Object.assign([10], { deep2: [[100]] }),
+        Object.assign([20], { deep2: [[200]] }),
+      ],
+    }),
+    shape,
+  ];
+
+  const visitors: Visitors<typeof set> = {
+    update: (data, meta) => {
+      if (data.id === 10) return;
+      return [data, meta];
+    },
+  };
+
+  traverse(visitors, set);
+
+  expect(set[0]).toEqual([
+    { id: 1, deep1: [] },
+    { id: 2, deep1: [{ id: 20, deep2: [{ id: 200 }] }] },
+  ]);
+
+  expect(set[1]).toEqual([1, 2] as any);
+  expect(set[1].deep1).toEqual([[], [20]] as any);
+  expect(set[1].deep1[0].deep2).toEqual([]);
+  expect(set[1].deep1[1].deep2).toEqual([[200]]);
+});
+
+it("doesn't modify the original when inserting", () => {
+  const shape = nest(idShape, "deep", idShape, true);
+
+  const emptySet: MetaSet<(typeof shape)["~type"], number> = [
+    [],
+    Object.assign([], { deep: Object.assign([], { deep2: [] }) }),
+    shape,
+  ];
+
+  const set: MetaSet<(typeof shape)["~type"], number> = [
+    [
+      { id: 1, deep: { id: 10 } },
+      { id: 2, deep: { id: 20 } },
+    ],
+    Object.assign([1, 2], { deep: Object.assign([10, 20]) }),
+    shape,
+  ];
+
+  const visitors: Visitors<typeof set> = {
+    insert: (data, meta) => [{ ...data, id: data.id + 1 }, meta + 1],
+  };
+
+  traverse(visitors, emptySet, set);
+
+  expect(set[0]).toEqual([
+    { id: 1, deep: { id: 10 } },
+    { id: 2, deep: { id: 20 } },
+  ]);
+
+  expect(set[1]).toEqual([1, 2] as any);
+  expect(set[1].deep).toEqual([10, 20] as any);
+
+  expect(emptySet[0]).toEqual([
+    { id: 2, deep: { id: 11 } },
+    { id: 3, deep: { id: 21 } },
+  ]);
+
+  expect(emptySet[1]).toEqual([2, 3] as any);
+  expect(emptySet[1].deep).toEqual([11, 21] as any);
+});

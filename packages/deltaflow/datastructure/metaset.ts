@@ -39,10 +39,8 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
 
     const ti = i - deleted;
     if (!next) cmp <= 0 && deleted++;
-    else if (cmp <= 0) {
-      // TODO: the responsibility separation is a little confusing here
-      tData[ti] = next[0];
-    } else {
+    else if (cmp <= 0) [tData[ti], tMeta[ti]] = next;
+    else {
       tData.splice(ti, 0, next[0]);
       tMeta.splice(ti, 0, next[1]);
     }
@@ -69,37 +67,38 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
 // TODO: add types
 function visitor(recurse, childKeys, fns) {
   return (type, items, metas, idx, del) => {
-    if (fns[type]) {
-      const next = fns[type](...items.flatMap((x, i) => [x, metas[i][idx[i]]]));
-      // TODO: insert modifies the source?.. meh...
-      if (next) [items[0], metas[0][idx[0] - del]] = next;
-      else type = "delete";
-    }
+    const result =
+      type === "delete" ? undefined
+      : fns[type] ? fns[type](...items.flatMap((x, i) => [x, metas[i][idx[i]]]))
+      : [items[0], metas[0][idx[0] - del]];
+
+    if (!childKeys.length) return result;
+    if (!result) type = "delete";
+
+    const isInsert = type === "insert";
+    const fns2 = isInsert ? { ...fns, update: fns.insert } : fns;
+    const resultIdx = idx[+isInsert] - del;
+    const resultMeta = metas[+isInsert];
 
     childKeys.forEach(([key, { single, shape }]) => {
-      if (!(idx[0] in metas[0][key])) return;
+      if (!(idx[0] in metas[0][key]) || (!single && !result)) return;
       const items2 = items.map((x) => x[key]);
       const metas2 = metas.map((x) => x[key]);
-      const fns2 = type === "insert" ? { ...fns, update: fns.insert } : fns;
 
       const next =
         single ?
           visitor(recurse, children(shape), fns)(type, items2, metas2, idx, del)
-        : type !== "delete" && recurse(items2, metas2, idx, shape, fns2);
+        : recurse(items2, metas2, idx, shape, fns2);
 
-      if (type === "insert") {
-        metas2[1].splice(idx[1] - del, 0, metas2[0][idx[0]]);
-      }
-      if (type !== "delete") {
-        if (next) [items[0][key], metas[0][key][idx[0] - del]] = next;
-        else {
-          delete items[0][key];
-          delete metas[0][key][idx[0] - del];
-        }
+      if (isInsert) resultMeta[key].splice(resultIdx, 0, metas2[0][idx[0]]);
+      if (next) [result[0][key], resultMeta[key][resultIdx]] = next;
+      else {
+        if (result) delete result[0][key];
+        delete resultMeta[key][resultIdx];
       }
     });
 
-    return type === "delete" ? undefined : [items[0], metas[0][idx[0] - del]];
+    return result;
   };
 }
 
