@@ -63,10 +63,7 @@ function either<T>(aShape?: Shape<T>, bShape?: Shape<T>) {
 }
 
 function children<T>(shape: Shape<T> | undefined) {
-  return Object.entries(shape?.children ?? {}) as [
-    string,
-    NonNullable<Shape<T>["children"]>[keyof T],
-  ][];
+  return Object.entries(shape?.children ?? {}) as Children<T>;
 }
 
 function compare<T>(a: T, b: T, shape?: Shape<T>) {
@@ -119,7 +116,7 @@ type Shape<T = any> = Readonly<{
   keys: readonly (keyof T)[];
   order: readonly number[];
   types: readonly (typeof TYPE)[keyof typeof TYPE][];
-  children?: Record<keyof T, { single: boolean; shape?: Shape<T[keyof T]> }>;
+  children?: Record<keyof T, { single: boolean; shape: Shape<T[keyof T]> }>;
 }>;
 
 type Template<T = unknown> = (
@@ -163,5 +160,7 @@ type ExtractConstNumbers<T extends any[]> = {
   : never;
 }[number];
 
+type Children<T> = [string, NonNullable<Shape<T>["children"]>[keyof T]][];
+
 export { TYPE, shape, children, compare, reorder, either, nest };
-export type { Shape };
+export type { Shape, Children };

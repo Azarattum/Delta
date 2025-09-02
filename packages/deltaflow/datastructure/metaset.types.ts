@@ -29,6 +29,7 @@ type InferEntry<T> =
       TraverseEntries<TData>
     : TData
   : never;
+type InferItem<T extends MetaSet> = [InferData<T>, InferMeta<T>];
 
 type TraverseEntries<T> =
   T extends (infer U)[] ? TraverseEntries<U>
@@ -74,12 +75,30 @@ type Visitors<T extends MetaSet> = {
   ) => TDeep extends true ? Record<string, unknown> & unknown[] : unknown[];
 };
 
+type Recurse = <T extends MetaSet>(
+  items: T[0][],
+  metas: T[1][],
+  shape: Shape<InferData<T>>,
+  fns: Visitors<T>,
+) => T;
+
+type Visit<T extends MetaSet> = (
+  type: Exclude<keyof Visitors<T>, "container"> | "delete",
+  items: T[0],
+  metas: T[1][],
+  idx: number[],
+  del: number,
+) => InferItem<T> | undefined;
+
 export { shared };
 export type {
   MetaSet,
   InferData,
   InferMeta,
+  InferItem,
   InferShared,
   InferEntry,
   Visitors,
+  Recurse,
+  Visit,
 };

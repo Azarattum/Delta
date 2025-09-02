@@ -1,9 +1,17 @@
-import { shared, type MetaSet, type Visitors } from "./metaset.types";
-import { children, compare, either } from "./shape";
+import type {
+  InferItem,
+  Visitors,
+  MetaSet,
+  Recurse,
+  Visit,
+} from "./metaset.types";
+import { children, compare, either, type Children } from "./shape";
+import { shared } from "./metaset.types";
 
 function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   const shape = either(target[2], source?.[2]);
   const childKeys = children(shape);
+  const deep = visit(fns, childKeys);
 
   const { container } = fns;
   if (container) {
@@ -16,11 +24,6 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
 
   const [tData, tMeta] = target;
   const [sData, sMeta] = source ?? [[], []];
-
-  const recurse = ([tData, sData], [tMeta, sMeta], [i, j], shape, fns) =>
-    traverse<any>(fns, [tData, tMeta[i], shape], sData && [sData, sMeta[j]]);
-
-  const deep = visitor(recurse, childKeys, fns);
 
   let deleted = 0;
   let i = 0;
@@ -64,34 +67,36 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   return target;
 }
 
-// TODO: add types
-function visitor(recurse, childKeys, fns) {
-  return (type, items, metas, idx, del) => {
-    const result =
+function visit<T extends MetaSet>(
+  fns: Visitors<T>,
+  childKeys: Children<T>,
+): Visit<T> {
+  return (type, items, metas, idx, deleted) => {
+    const result: InferItem<T> | undefined =
       type === "delete" ? undefined
-      : fns[type] ? fns[type](...items.flatMap((x, i) => [x, metas[i][idx[i]]]))
-      : [items[0], metas[0][idx[0] - del]];
+      : !fns[type] ? [items[0], metas[0][idx[0] - deleted]]
+      : (fns[type] as any)(...items.flatMap((x, i) => [x, metas[i][idx[i]]]));
 
     if (!childKeys.length) return result;
     if (!result) type = "delete";
 
     const isInsert = type === "insert";
     const fns2 = isInsert ? { ...fns, update: fns.insert } : fns;
-    const resultIdx = idx[+isInsert] - del;
+    const resultIdx = idx[+isInsert] - deleted;
     const resultMeta = metas[+isInsert];
 
     childKeys.forEach(([key, { single, shape }]) => {
       if (!(idx[0] in metas[0][key]) || (!single && !result)) return;
       const items2 = items.map((x) => x[key]);
-      const metas2 = metas.map((x) => x[key]);
+      const metas2 = metas.map((x, i) => (single ? x[key] : x[key]?.[idx[i]]));
 
       const next =
         single ?
-          visitor(recurse, children(shape), fns)(type, items2, metas2, idx, del)
-        : recurse(items2, metas2, idx, shape, fns2);
+          visit<any>(fns, children(shape))(type, items2, metas2, idx, deleted)
+        : recurse<MetaSet>(items2, metas2, shape, fns2);
 
       if (isInsert) resultMeta[key].splice(resultIdx, 0, metas2[0][idx[0]]);
-      if (next) [result[0][key], resultMeta[key][resultIdx]] = next;
+      if (next) [result![0][key], resultMeta[key][resultIdx]] = next;
       else {
         if (result) delete result[0][key];
         delete resultMeta[key][resultIdx];
@@ -101,5 +106,8 @@ function visitor(recurse, childKeys, fns) {
     return result;
   };
 }
+
+const recurse: Recurse = ([tData, sData], [tMeta, sMeta], shape, fns) =>
+  traverse<any>(fns, [tData, tMeta, shape], sData && [sData, sMeta]);
 
 export { shared, traverse, type MetaSet, type Visitors };
