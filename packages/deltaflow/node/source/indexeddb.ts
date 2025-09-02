@@ -45,7 +45,7 @@ export async function indexeddb<T extends object>(
 
           if (op === 0) store.put(item);
           else if (op > 0) store.add(item);
-          else store.delete(primaryKeys.map((key) => item[key[0]]) as string[]);
+          else store.delete(primaryKeys.map((key) => item[key]) as string[]);
         }
       }
 
@@ -78,7 +78,7 @@ function queryWithConstraints<T>(
   constraints: Record<keyof any, Set<IDBValidKey>>,
 ) {
   const indexName = Object.keys(constraints).sort().toString();
-  const byPrimaryKey = indexName === store.keyPath.toString();
+  const byPrimaryKey = indexName === store.keyPath?.toString();
   // TODO: only check in dev
   if (!byPrimaryKey && !store.indexNames.contains(indexName)) {
     throw new Error(`Attempting to query by non-existent index: ${indexName}`);
@@ -87,7 +87,7 @@ function queryWithConstraints<T>(
   const index = byPrimaryKey ? store : store.index(indexName);
   const unique = byPrimaryKey || (index as IDBIndex).unique;
   const keyPath =
-    Array.isArray(index.keyPath) ? index.keyPath : [index.keyPath];
+    Array.isArray(index.keyPath) ? index.keyPath : [index.keyPath!];
   const reference = keyPath.map((k) =>
     Array.from(constraints[k]).sort(indexedDB.cmp),
   );
@@ -143,6 +143,8 @@ async function queryWithOrdering<T>(
     (r) => (request.onsuccess = (e: any) => r(e.target.result)),
   )) as T[];
   // TODO: this is horrible, use cursor with reverse order instead!
-  if (ordering[0][1] === "desc") scan = scan.reverse();
+  if (Array.isArray(ordering[0]) && ordering[0][1] === "desc") {
+    scan = scan.reverse();
+  }
   return scan;
 }

@@ -13,7 +13,9 @@ export function replicate<
     push(a: ZSet<T>) {
       // TODO: don't use id here!
       const aKeys = a && {
-        id: new Set(a[0].filter((_, i) => a[1][i] <= 0).map((x) => x["id"])),
+        id: new Set(
+          a[0].filter((_, i) => a[1][i] <= 0).map((x) => (x as any)["id"]),
+        ),
       };
 
       // TODO: CLSet should also have a zero type (or maybe unite them?)
@@ -57,16 +59,17 @@ export function replicate<
               if (!referenceItem || !referenceMeta) {
                 throw new Error("Trying to update non-existent item!");
               }
-              (a[1][i] as any) = referenceMeta;
 
-              a[1][i][0] = nextVersion;
+              referenceMeta[0] = nextVersion;
               for (let j = 2; j < referenceMeta.length; j += 2) {
                 const key = keys[(j - 2) / 2];
                 if (a[0][i][key] !== referenceItem[key]) {
-                  a[1][i][j + 1] = pulled[1].peer ?? 0;
-                  a[1][i][j]++;
+                  referenceMeta[j + 1] = pulled[1].peer ?? 0;
+                  referenceMeta[j]++;
                 }
               }
+
+              (a[1][i] as any) = referenceMeta;
             }
           }
 

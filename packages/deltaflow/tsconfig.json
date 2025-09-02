@@ -21,9 +21,6 @@
     // Some stricter flags
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noPropertyAccessFromIndexSignature": true,
-
-    // TODO: cleanup the codebase to reenable this option
-    "noImplicitAny": false
+    "noPropertyAccessFromIndexSignature": true
   }
 }

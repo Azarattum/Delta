@@ -6,7 +6,7 @@ import type { ZSet } from "../../datastructure/zset";
 import { stream, SyncPromise } from "../../stream";
 import type { OfZStream, ZStream } from "../type";
 
-export function memory<T>(
+export function memory<T extends Record<string, any>>(
   shape: Shape<T>,
   initialData: T[] = [],
   // TODO: allow memory to accept upstream (e.g. to allow pushes to it)
