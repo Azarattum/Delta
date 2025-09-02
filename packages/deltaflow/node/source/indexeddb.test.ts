@@ -337,3 +337,61 @@ it("pulls with constraints", async () => {
     expect(result[0]).toEqual([{ id: 0, text: "Hello", user: 0 }]);
   }
 });
+
+it("writes to indexeddb", async () => {
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    text: t.STRING,
+  }));
+
+  const idbRequest = indexedDB.open("test5", 1);
+  idbRequest.onupgradeneeded = () => {
+    createStore(idbRequest.result, "messages", message, ["text"]);
+  };
+
+  const db = await new Promise<IDBDatabase>(
+    (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
+  );
+
+  const messages = await indexeddb(db, "messages", message);
+
+  {
+    messages.push([[{ id: 0, text: "Hello" }], [1]]);
+    await messages.flush();
+
+    const stored = await new Promise((resolve) => {
+      db
+        .transaction("messages", "readwrite")
+        .objectStore("messages")
+        .getAll().onsuccess = ({ target }) => resolve((target as any).result);
+    });
+
+    expect(stored).toEqual([{ id: 0, text: "Hello" }]);
+  }
+  {
+    messages.push([[{ id: 0, text: "Hi" }], [0]]);
+    await messages.flush();
+
+    const stored = await new Promise((resolve) => {
+      db
+        .transaction("messages", "readwrite")
+        .objectStore("messages")
+        .getAll().onsuccess = ({ target }) => resolve((target as any).result);
+    });
+
+    expect(stored).toEqual([{ id: 0, text: "Hi" }]);
+  }
+  {
+    messages.push([[{ id: 0, text: "Hi" }], [-1]]);
+    await messages.flush();
+
+    const stored = await new Promise((resolve) => {
+      db
+        .transaction("messages", "readwrite")
+        .objectStore("messages")
+        .getAll().onsuccess = ({ target }) => resolve((target as any).result);
+    });
+
+    expect(stored).toEqual([]);
+  }
+});
