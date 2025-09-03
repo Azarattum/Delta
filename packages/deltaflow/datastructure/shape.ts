@@ -6,8 +6,9 @@ function shape<T extends Template>(template: T): Shape<FromTemplate<T>> {
   const order = types
     .map((x, i) => (x & TYPE.PRIMARY ? i << 1 : null))
     .filter((x) => x !== null);
+  const hash = checksum(types, order);
 
-  return { keys, types, order } as any;
+  return { keys, types, order, hash, children: {} } as any;
 }
 
 function reorder<TShape extends Shape<any> | undefined>(
@@ -29,8 +30,9 @@ function reorder<TShape extends Shape<any> | undefined>(
   // Append unused primary keys to ensure uniqueness
   order.push(...primary.filter((x) => x !== null));
 
-  if (order.toString() === shape.order.toString()) return shape;
-  return { ...shape, order };
+  const hash = checksum(shape.types, order);
+  if (hash === shape.hash) return shape;
+  return { ...shape, order, hash };
 }
 
 function nest<
@@ -46,15 +48,21 @@ function nest<
 ): undefined extends TShape | TChild ? TShape
 : NestedShape<NonNullable<TShape>, NonNullable<TChild>, TRelation, TSingle> {
   if (!shape || !child) return shape as any;
+  if (relation in shape.children) {
+    const { shape: thisChild, single: thisSingle } = shape.children[relation];
+    if (thisChild.hash === child.hash && thisSingle === single) return shape;
+    const shapeString = JSON.stringify(shape, null, 2);
+    throw new Error(`Relation ${relation} already exists on:\n${shapeString}`);
+  }
+
   return {
     ...shape,
     children: { ...shape.children, [relation]: { single, shape: child } },
-  } as any;
+  };
 }
 
 function either<T>(aShape?: Shape<T>, bShape?: Shape<T>) {
-  // TODO: maybe check shape hash?
-  if (aShape && bShape && aShape.order.toString() !== bShape.order.toString()) {
+  if (aShape && bShape && aShape.hash !== bShape.hash) {
     const aShapeString = JSON.stringify(aShape, null, 2);
     const bShapeString = JSON.stringify(bShape, null, 2);
     throw new Error(`Incompatible shapes:\n${aShapeString}\n${bShapeString}`);
@@ -91,6 +99,13 @@ function compare<T>(a: T, b: T, shape?: Shape<T>) {
   return 0;
 }
 
+function checksum(types: readonly number[], order: readonly number[]) {
+  let hash = 0;
+  types.forEach((x) => (hash = ((hash << 5) - hash + x) | 0));
+  order.forEach((x) => (hash = ((hash << 5) - hash + x) | 0));
+  return hash;
+}
+
 const RELATION = (id: number) => id << 16;
 
 const TYPE = {
@@ -113,10 +128,11 @@ const defineFlags = Object.assign(combineFlags, TYPE, { RELATION });
 
 type Shape<T = any> = Readonly<{
   "~type": T;
+  hash: number;
   keys: readonly (keyof T)[];
   order: readonly number[];
   types: readonly (typeof TYPE)[keyof typeof TYPE][];
-  children?: Record<keyof T, { single: boolean; shape: Shape<T[keyof T]> }>;
+  children: Record<keyof T, { single: boolean; shape: Shape<T[keyof T]> }>;
 }>;
 
 type Template<T = unknown> = (

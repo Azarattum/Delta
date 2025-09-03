@@ -28,6 +28,8 @@ it("fails with invalid data", () => {
   users.flush();
   expect(consoleErrorMock).toHaveBeenCalledTimes(1);
   consoleErrorMock.mockRestore();
+
+  expect(() => nest(nest(user, "child", user), "child", userReverse)).toThrow();
 });
 
 it("performs basic CRUD", () => {
