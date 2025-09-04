@@ -1,5 +1,5 @@
-import { traverse, type MetaSet } from "./metaset";
-import { nest } from "./shape";
+import { recurse, traverse, type MetaSet } from "./metaset";
+import { children, nest } from "./shape";
 
 type ZSet<T> = MetaSet<T, number>;
 
@@ -29,7 +29,6 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
   );
 }
 
-// TODO: consider if multiply can be recursive an any way?
 function multiply<A, B, K extends string, S extends boolean = false>(
   a: ZSet<A>,
   aKey: keyof A,
@@ -41,9 +40,12 @@ function multiply<A, B, K extends string, S extends boolean = false>(
   const [aData, aMeta, aShape] = a;
   const [bData, bMeta, bShape] = b;
   const seen = new Map<A[keyof A] | B[keyof B], number>();
+  const childKeys = children(bShape);
+
   (aMeta as any)[relationship] ??= [];
 
   if (single) {
+    initMeta([aMeta[relationship]], childKeys);
     for (let i = 0; i < bData.length; i++) {
       const key = bData[i][bKey];
       if (!seen.has(key)) seen.set(key, i);
@@ -52,7 +54,9 @@ function multiply<A, B, K extends string, S extends boolean = false>(
     for (let i = 0; i < aData.length && bData.length; i++) {
       const id = seen.get(aData[i][aKey]);
       (aData[i] as any)[relationship] ??= id != null ? bData[id] : null;
-      (aMeta as any)[relationship][i] ??= id != null ? bMeta[id] : 0;
+      if (id === undefined) continue;
+      (aMeta as any)[relationship][i] ??= bMeta[id];
+      pushMeta([aMeta[relationship], bMeta], childKeys, id);
     }
   } else {
     for (let i = 0; i < aData.length; i++) {
@@ -63,6 +67,7 @@ function multiply<A, B, K extends string, S extends boolean = false>(
         cached === undefined ? [] : (aData[cached] as any)[relationship];
       (aMeta as any)[relationship][i] =
         cached === undefined ? [] : (aMeta as any)[relationship][cached];
+      if (cached === undefined) initMeta([aMeta[relationship][i]], childKeys);
     }
 
     for (let i = 0; i < bData.length; i++) {
@@ -70,6 +75,7 @@ function multiply<A, B, K extends string, S extends boolean = false>(
       if (id === undefined) continue;
       (aData[id] as any)[relationship].push(bData[i]);
       (aMeta as any)[relationship][id].push(bMeta[i]);
+      pushMeta([aMeta[relationship][id], bMeta], childKeys, i);
     }
   }
 
@@ -111,6 +117,11 @@ function sort<T>(item: ZSet<T>, compare: (a: T, b: T) => number) {
 
   return item;
 }
+
+const initMeta = recurse(([meta], key) => (meta[key] ??= []));
+const pushMeta = recurse(([aMeta, bMeta], key, i: number) =>
+  aMeta[key].push(bMeta[key][i]),
+);
 
 export { add, sort, distinct, zero, copy, multiply };
 export type { ZSet };

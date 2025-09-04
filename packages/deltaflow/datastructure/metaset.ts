@@ -1,8 +1,9 @@
 import type {
   InferItem,
+  RecurseFn,
   Visitors,
-  MetaSet,
   Recurse,
+  MetaSet,
   Visit,
 } from "./metaset.types";
 import { children, compare, either, type Children } from "./shape";
@@ -55,13 +56,7 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   if (deleted) {
     tData.length -= deleted;
     tMeta.length -= deleted;
-
-    (function pruneChildren(childKeys, meta) {
-      childKeys.forEach(([key, { single, shape }]) => {
-        meta[key].length -= deleted;
-        if (single) pruneChildren(children(shape), meta[key]);
-      });
-    })(childKeys, tMeta);
+    pruneMeta([tMeta], childKeys, deleted);
   }
 
   return target;
@@ -89,13 +84,14 @@ function visit<T extends MetaSet>(
       if (!(idx[0] in metas[0][key]) || (!single && !result)) return;
       const items2 = items.map((x) => x[key]);
       const metas2 = metas.map((x, i) => (single ? x[key] : x[key]?.[idx[i]]));
+      const [[tData, sData], [tMeta, sMeta]] = [items2, metas2];
 
       const next =
         single ?
           visit<any>(fns, children(shape))(type, items2, metas2, idx, deleted)
-        : recurse<MetaSet>(items2, metas2, shape, fns2);
+        : traverse<any>(fns2, [tData, tMeta, shape], sData && [sData, sMeta]);
 
-      if (isInsert) resultMeta[key].splice(resultIdx, 0, metas2[0][idx[0]]);
+      if (isInsert) resultMeta[key].splice(resultIdx, 0, tMeta[idx[0]]);
       if (next) [result![0][key], resultMeta[key][resultIdx]] = next;
       else {
         if (result) delete result[0][key];
@@ -107,7 +103,18 @@ function visit<T extends MetaSet>(
   };
 }
 
-const recurse: Recurse = ([tData, sData], [tMeta, sMeta], shape, fns) =>
-  traverse<any>(fns, [tData, tMeta, shape], sData && [sData, sMeta]);
+function recurse<TFn extends RecurseFn>(fn: TFn): Recurse<TFn> {
+  return function self(metas, childKeys, ...args) {
+    childKeys.forEach(([key, { single, shape }]) => {
+      fn(metas, key, ...args);
+      if (single) {
+        const metas2 = metas.map((x) => x[key]);
+        self(metas2, children(shape), ...args);
+      }
+    });
+  };
+}
 
-export { shared, traverse, type MetaSet, type Visitors };
+const pruneMeta = recurse(([meta], key, n: number) => (meta[key].length -= n));
+
+export { shared, traverse, recurse, type MetaSet, type Visitors };

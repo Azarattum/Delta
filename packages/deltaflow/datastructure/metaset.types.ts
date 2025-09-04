@@ -1,4 +1,4 @@
-import type { Shape } from "./shape";
+import type { Children, Shape } from "./shape";
 
 const shared = Symbol("shared");
 
@@ -75,13 +75,6 @@ type Visitors<T extends MetaSet> = {
   ) => TDeep extends true ? Record<string, unknown> & unknown[] : unknown[];
 };
 
-type Recurse = <T extends MetaSet>(
-  items: T[0][],
-  metas: T[1][],
-  shape: Shape<InferData<T>>,
-  fns: Visitors<T>,
-) => T;
-
 type Visit<T extends MetaSet> = (
   type: Exclude<keyof Visitors<T>, "container"> | "delete",
   items: T[0],
@@ -89,6 +82,14 @@ type Visit<T extends MetaSet> = (
   idx: number[],
   del: number,
 ) => InferItem<T> | undefined;
+
+type RecurseFn = (metas: Meta<any, any>[], key: string, ...args: any[]) => void;
+
+type Recurse<TFn extends RecurseFn> = (
+  metas: Meta<any, any>[],
+  childKeys: Children<any>,
+  ...args: Parameters<TFn> extends [any, any, ...infer Rest] ? Rest : never
+) => void;
 
 export { shared };
 export type {
@@ -99,6 +100,7 @@ export type {
   InferShared,
   InferEntry,
   Visitors,
-  Recurse,
   Visit,
+  RecurseFn,
+  Recurse,
 };

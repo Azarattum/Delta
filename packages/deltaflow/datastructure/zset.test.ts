@@ -112,6 +112,8 @@ it("performs distributed multiplication", () => {
     both,
   ]);
   expect(zsetC[0][0].details).toBe(zsetC[0][1].details);
+  expect(zsetC[1].details).toEqual([[1], [1]]);
+  expect(zsetC[1].details[0]).toBe(zsetC[1].details[1]);
 });
 
 it("performs out of order multiplication", () => {
@@ -269,4 +271,517 @@ it("applies distinct on deep items", () => {
   expect(zsetA[1]).toEqual([1] as any);
   expect(zsetA[1].details).toEqual([1] as any);
   expect(zsetA[1].details.details).toEqual([1] as any);
+});
+
+it("multiplies through deep nesting with single match", () => {
+  const relShape = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    rel: t(t.NULLABLE, t.INT),
+  }));
+
+  const zsetA: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 2, rel: 1 }],
+    [3],
+    relShape,
+  ];
+  const zsetB: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 1, rel: 0 }],
+    [2],
+    relShape,
+  ];
+  const zsetC: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 0, rel: null }],
+    [1],
+    relShape,
+  ];
+
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep");
+    const result = multiply(copy(zsetA), "rel", tmp, "id", "deep");
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep: [{ id: 1, rel: 0, deep: [{ id: 0, rel: null }] }],
+      },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1].deep).toEqual([[2]] as any);
+    expect(result[1].deep[0].deep).toEqual([[1]] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep", true);
+    const result = multiply(copy(zsetA), "rel", tmp, "id", "deep");
+
+    expect(result[0]).toEqual([
+      { id: 2, rel: 1, deep: [{ id: 1, rel: 0, deep: { id: 0, rel: null } }] },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1].deep).toEqual([[2]] as any);
+    expect(result[1].deep[0]["deep"]).toEqual([1] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep");
+    const result = multiply(copy(zsetA), "rel", tmp, "id", "deep", true);
+
+    expect(result[0]).toEqual([
+      { id: 2, rel: 1, deep: { id: 1, rel: 0, deep: [{ id: 0, rel: null }] } },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep"]).toEqual([2] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([[1]] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep", true);
+    const result = multiply(copy(zsetA), "rel", tmp, "id", "deep", true);
+
+    expect(result[0]).toEqual([
+      { id: 2, rel: 1, deep: { id: 1, rel: 0, deep: { id: 0, rel: null } } },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep"]).toEqual([2] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([1] as any);
+  }
+});
+
+it("multiplies through deep nesting with no matches", () => {
+  const relShape = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    rel: t(t.NULLABLE, t.INT),
+  }));
+
+  const zsetA: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 2, rel: 1 }],
+    [3],
+    relShape,
+  ];
+  const zsetB: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 1, rel: 0 }],
+    [2],
+    relShape,
+  ];
+  const zsetC: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 0, rel: null }],
+    [1],
+    relShape,
+  ];
+
+  {
+    const tmp = multiply(copy(zsetB), "id", zsetC, "id", "deep");
+    const result = multiply(copy(zsetA), "id", tmp, "id", "deep");
+
+    expect(result[0]).toEqual([{ id: 2, rel: 1, deep: [] }]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1].deep).toEqual([[]] as any);
+    expect(result[1].deep[0].deep).toEqual([] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "id", zsetC, "id", "deep", true);
+    const result = multiply(copy(zsetA), "id", tmp, "id", "deep");
+
+    expect(result[0]).toEqual([{ id: 2, rel: 1, deep: [] }]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1].deep).toEqual([[]] as any);
+    expect(result[1].deep[0]["deep"]).toEqual([] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "id", zsetC, "id", "deep");
+    const result = multiply(copy(zsetA), "id", tmp, "id", "deep", true);
+
+    expect(result[0]).toEqual([{ id: 2, rel: 1, deep: null }]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep"]).toEqual([] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "id", zsetC, "id", "deep", true);
+    const result = multiply(copy(zsetA), "id", tmp, "id", "deep", true);
+
+    expect(result[0]).toEqual([{ id: 2, rel: 1, deep: null }]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep"]).toEqual([] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([] as any);
+  }
+});
+
+it("multiplies through double deep nesting", () => {
+  const relShape = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    rel: t(t.NULLABLE, t.INT),
+  }));
+
+  const zsetA: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 2, rel: 1 }],
+    [3],
+    relShape,
+  ];
+  const zsetB: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 1, rel: 0 }],
+    [2],
+    relShape,
+  ];
+  const zsetC: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 0, rel: null }],
+    [1],
+    relShape,
+  ];
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep", true);
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep", true);
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep", true);
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep: {
+          id: 1,
+          rel: 0,
+          deep: { id: 1, rel: 0, deep: { id: 0, rel: null } },
+        },
+      },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep"]).toEqual([2] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([2] as any);
+    expect(result[1]["deep"]["deep"]["deep"]).toEqual([1] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3", true);
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep2", true);
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep1");
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: { id: 1, rel: 0, deep3: { id: 0, rel: null } },
+          },
+        ],
+      },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep1"]).toEqual([[2]] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([2] as any);
+    expect(result[1]["deep1"][0]["deep2"]["deep3"]).toEqual([1] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3", true);
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep2");
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep1");
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: [{ id: 1, rel: 0, deep3: { id: 0, rel: null } }],
+          },
+        ],
+      },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep1"]).toEqual([[2]] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([[2]] as any);
+    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([1] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3");
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep2");
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep1");
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: [{ id: 1, rel: 0, deep3: [{ id: 0, rel: null }] }],
+          },
+        ],
+      },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep1"]).toEqual([[2]] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([[2]] as any);
+    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([[1]] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep");
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep", true);
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep", true);
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep: {
+          id: 1,
+          rel: 0,
+          deep: { id: 1, rel: 0, deep: [{ id: 0, rel: null }] },
+        },
+      },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep"]).toEqual([2] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([2] as any);
+    expect(result[1]["deep"]["deep"]["deep"]).toEqual([[1]] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep");
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep");
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep", true);
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep: {
+          id: 1,
+          rel: 0,
+          deep: [{ id: 1, rel: 0, deep: [{ id: 0, rel: null }] }],
+        },
+      },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep"]).toEqual([2] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([[2]] as any);
+    expect(result[1]["deep"]["deep"][0]["deep"]).toEqual([[1]] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep");
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep", true);
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep");
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep: [
+          {
+            id: 1,
+            rel: 0,
+            deep: { id: 1, rel: 0, deep: [{ id: 0, rel: null }] },
+          },
+        ],
+      },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep"]).toEqual([[2]] as any);
+    expect(result[1]["deep"][0]["deep"]).toEqual([2] as any);
+    expect(result[1]["deep"][0]["deep"]["deep"]).toEqual([[1]] as any);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3", true);
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep2");
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep1", true);
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep1: {
+          id: 1,
+          rel: 0,
+          deep2: [{ id: 1, rel: 0, deep3: { id: 0, rel: null } }],
+        },
+      },
+    ]);
+    expect(result[1]).toEqual([3] as any);
+    expect(result[1]["deep1"]).toEqual([2] as any);
+    expect(result[1]["deep1"]["deep2"]).toEqual([[2]] as any);
+    expect(result[1]["deep1"]["deep2"][0]["deep3"]).toEqual([1] as any);
+  }
+});
+
+it("multiplies through double deep nesting & multiple matches", () => {
+  const relShape = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    rel: t(t.NULLABLE, t.INT),
+  }));
+
+  const zsetA: ZSet<(typeof relShape)["~type"]> = [
+    [
+      { id: 2, rel: 1 },
+      { id: 3, rel: 1 },
+    ],
+    [3, 4],
+    relShape,
+  ];
+  const zsetB: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 1, rel: 0 }],
+    [2],
+    relShape,
+  ];
+  const zsetC: ZSet<(typeof relShape)["~type"]> = [
+    [{ id: 0, rel: null }],
+    [1],
+    relShape,
+  ];
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3", true);
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep2", true);
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep1");
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: { id: 1, rel: 0, deep3: { id: 0, rel: null } },
+          },
+        ],
+      },
+      {
+        id: 3,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: { id: 1, rel: 0, deep3: { id: 0, rel: null } },
+          },
+        ],
+      },
+    ]);
+    expect(result[1]).toEqual([3, 4] as any);
+    expect(result[1]["deep1"]).toEqual([[2], [2]] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([2] as any);
+    expect(result[1]["deep1"][1]["deep2"]).toEqual([2] as any);
+    expect(result[1]["deep1"][0]["deep2"]["deep3"]).toEqual([1] as any);
+    expect(result[1]["deep1"][1]["deep2"]["deep3"]).toEqual([1] as any);
+
+    expect(result[0][0].deep1).toBe(result[0][1].deep1);
+    expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3", true);
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep2");
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep1");
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: [{ id: 1, rel: 0, deep3: { id: 0, rel: null } }],
+          },
+        ],
+      },
+      {
+        id: 3,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: [{ id: 1, rel: 0, deep3: { id: 0, rel: null } }],
+          },
+        ],
+      },
+    ]);
+    expect(result[1]).toEqual([3, 4] as any);
+    expect(result[1]["deep1"]).toEqual([[2], [2]] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([[2]] as any);
+    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([1] as any);
+    expect(result[1]["deep1"][1]["deep2"]).toEqual([[2]] as any);
+    expect(result[1]["deep1"][1]["deep2"][0]["deep3"]).toEqual([1] as any);
+
+    expect(result[0][0].deep1).toBe(result[0][1].deep1);
+    expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3");
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep2");
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep1");
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: [{ id: 1, rel: 0, deep3: [{ id: 0, rel: null }] }],
+          },
+        ],
+      },
+      {
+        id: 3,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: [{ id: 1, rel: 0, deep3: [{ id: 0, rel: null }] }],
+          },
+        ],
+      },
+    ]);
+    expect(result[1]).toEqual([3, 4] as any);
+    expect(result[1]["deep1"]).toEqual([[2], [2]] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([[2]] as any);
+    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([[1]] as any);
+    expect(result[1]["deep1"][1]["deep2"]).toEqual([[2]] as any);
+    expect(result[1]["deep1"][1]["deep2"][0]["deep3"]).toEqual([[1]] as any);
+
+    expect(result[0][0].deep1).toBe(result[0][1].deep1);
+    expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
+  }
+  {
+    const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3");
+    const tmp2 = multiply(copy(zsetB), "id", tmp, "id", "deep2", true);
+    const result = multiply(copy(zsetA), "rel", tmp2, "id", "deep1");
+
+    expect(result[0]).toEqual([
+      {
+        id: 2,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: { id: 1, rel: 0, deep3: [{ id: 0, rel: null }] },
+          },
+        ],
+      },
+      {
+        id: 3,
+        rel: 1,
+        deep1: [
+          {
+            id: 1,
+            rel: 0,
+            deep2: { id: 1, rel: 0, deep3: [{ id: 0, rel: null }] },
+          },
+        ],
+      },
+    ]);
+    expect(result[1]).toEqual([3, 4] as any);
+    expect(result[1]["deep1"]).toEqual([[2], [2]] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([2] as any);
+    expect(result[1]["deep1"][0]["deep2"]["deep3"]).toEqual([[1]] as any);
+    expect(result[1]["deep1"][1]["deep2"]).toEqual([2] as any);
+    expect(result[1]["deep1"][1]["deep2"]["deep3"]).toEqual([[1]] as any);
+
+    expect(result[0][0].deep1).toBe(result[0][1].deep1);
+    expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
+  }
 });
