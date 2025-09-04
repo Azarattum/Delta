@@ -1,4 +1,5 @@
 import { SyncPromise, type MaybePromise } from "./promise";
+import { Shared } from "./shared";
 
 export class Scheduler {
   #tasks: (() => MaybePromise<void>)[][];
@@ -11,11 +12,10 @@ export class Scheduler {
     this.#tasks = Array.from({ length: levels }, () => []);
   }
 
-  static join(schedulers: { current: Scheduler }[], levels: number) {
-    if (!schedulers.length) return { current: new Scheduler(levels) };
-    const first = schedulers[0];
-    schedulers.forEach((x) => (x.current = first.current));
-    return first;
+  static join(schedulers: Shared<Scheduler>[], levels: number) {
+    if (!schedulers.length) return new Shared(new Scheduler(levels));
+    const [first, ...rest] = schedulers;
+    return Shared.join(first, ...rest);
   }
 
   enqueue(task: () => MaybePromise<void>, level: number) {
