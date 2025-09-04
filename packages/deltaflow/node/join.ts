@@ -38,15 +38,11 @@ export function join<
         if (aPulled && a) add(aPulled, a);
         else if (a) aPulled = a;
 
-        if (aPulled && b) {
-          multiply(aPulled, aKey, b, bKey, relationship, single);
-        }
+        if (bPulled && b) add(bPulled, b);
+        else if (b) bPulled = b;
 
         if (aPulled && bPulled) {
-          const aRef = aPulled === a ? a : zero(a && copy(a));
-          multiply(aRef, aKey, bPulled, bKey, relationship, single);
-          if (aPulled !== a) add(aRef, aPulled);
-          return aRef as C;
+          multiply(aPulled, aKey, bPulled, bKey, relationship, single);
         }
 
         return (aPulled || zero()) as C;

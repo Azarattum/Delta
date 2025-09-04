@@ -1026,3 +1026,176 @@ it("reorders items", () => {
   expect(users.pull()[2]).toBe(user);
   expect(view.pull()[2]?.order).toEqual([2, 0]);
 });
+
+it("handles deeply nested joins", () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    name: t.STRING,
+  }));
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    text: t.STRING,
+    user: t.INT,
+  }));
+  const comment = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    text: t.STRING,
+    user: t.INT,
+  }));
+  const like = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    count: t.INT,
+    comment: t.INT,
+  }));
+
+  const users = memory(user);
+  const messages = memory(message);
+  const comments = memory(comment);
+  const likes = memory(like);
+
+  const calls: any[] = [];
+  const usersWithMessagesFn = mock((x) => calls.push(structuredClone(x)));
+  const usersWithMessages = join(users, "id", messages, "user", "messages");
+  usersWithMessages.connect(usersWithMessagesFn);
+
+  const commentsWithLikesFn = mock((x) => calls.push(structuredClone(x)));
+  const commentsWithLikes = join(
+    comments,
+    "id",
+    likes,
+    "comment",
+    "likes",
+    true,
+  );
+  commentsWithLikes.connect(commentsWithLikesFn);
+
+  const fullFn = mock((x) => calls.push(structuredClone(x)));
+  const full = join(
+    usersWithMessages,
+    "id",
+    commentsWithLikes,
+    "user",
+    "comments",
+  );
+  full.connect(fullFn);
+
+  users.push([
+    [
+      { id: 0, name: "Bob" },
+      { id: 1, name: "Alice" },
+    ],
+    [1, 1],
+    user,
+  ]);
+
+  messages.push([
+    [
+      { id: 0, text: "Hello", user: 0 },
+      { id: 1, text: "I'm Bob", user: 0 },
+      { id: 2, text: "And I'm Alice!", user: 1 },
+      { id: 3, text: "I'll be here!", user: 2 },
+    ],
+    [1, 1, 1, 1],
+    message,
+  ]);
+
+  comments.push([
+    [
+      { id: 0, text: "First!", user: 1 },
+      { id: 1, text: "Great post!", user: 0 },
+    ],
+    [1, 1],
+    comment,
+  ]);
+
+  likes.push([
+    [
+      { id: 0, count: 2, comment: 0 },
+      { id: 1, count: 1, comment: 1 },
+    ],
+    [1, 1],
+    like,
+  ]);
+
+  expect(usersWithMessagesFn).not.toHaveBeenCalled();
+  expect(commentsWithLikesFn).not.toHaveBeenCalled();
+  expect(fullFn).not.toHaveBeenCalled();
+
+  full.flush();
+
+  expect(usersWithMessagesFn).toHaveBeenCalledTimes(1);
+  expect(commentsWithLikesFn).toHaveBeenCalledTimes(1);
+  expect(fullFn).toHaveBeenCalledTimes(1);
+
+  expect(calls[0][0]).toEqual([
+    {
+      id: 0,
+      name: "Bob",
+      messages: [
+        { id: 0, text: "Hello", user: 0 },
+        { id: 1, text: "I'm Bob", user: 0 },
+      ],
+    },
+    {
+      id: 1,
+      name: "Alice",
+      messages: [{ id: 2, text: "And I'm Alice!", user: 1 }],
+    },
+  ]);
+  expect(calls[0][1]).toEqual([1, 1]);
+  expect(calls[0][1].messages).toEqual([[1, 1], [1]]);
+
+  expect(calls[1][0]).toEqual([
+    {
+      id: 0,
+      text: "First!",
+      user: 1,
+      likes: { id: 0, count: 2, comment: 0 },
+    },
+    {
+      id: 1,
+      text: "Great post!",
+      user: 0,
+      likes: { id: 1, count: 1, comment: 1 },
+    },
+  ]);
+  expect(calls[1][1]).toEqual([1, 1]);
+  expect(calls[1][1].likes).toEqual([1, 1]);
+
+  expect(calls[2][0]).toEqual([
+    {
+      id: 0,
+      name: "Bob",
+      messages: [
+        { id: 0, text: "Hello", user: 0 },
+        { id: 1, text: "I'm Bob", user: 0 },
+      ],
+      comments: [
+        {
+          id: 1,
+          text: "Great post!",
+          user: 0,
+          likes: { id: 1, count: 1, comment: 1 },
+        },
+      ],
+    },
+    {
+      id: 1,
+      name: "Alice",
+      messages: [{ id: 2, text: "And I'm Alice!", user: 1 }],
+      comments: [
+        {
+          id: 0,
+          text: "First!",
+          user: 1,
+          likes: { id: 0, count: 2, comment: 0 },
+        },
+      ],
+    },
+  ]);
+  expect(calls[2][1]).toEqual([1, 1]);
+  expect(calls[2][1].messages).toEqual([[1, 1], [1]]);
+  expect(calls[2][1].comments).toEqual([[1], [1]]);
+  expect(calls[2][1].comments[0].likes).toEqual([1]);
+  expect(calls[2][1].comments[1].likes).toEqual([1]);
+});
