@@ -1,4 +1,6 @@
+export * from "./source/indexeddb";
 export * from "./source/memory";
+export * from "./source/sqlite";
 
 export * from "./filter";
 export * from "./order";
