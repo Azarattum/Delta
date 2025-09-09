@@ -1,6 +1,6 @@
 import { TYPE, type Shape } from "../../datastructure/shape";
 import type { ZSet } from "../../datastructure/zset";
-import { stream } from "../../stream";
+import { zStream } from "../stream";
 
 /** TODO: this is just a prototype */
 export async function indexeddb<T extends object>(
@@ -18,7 +18,7 @@ export async function indexeddb<T extends object>(
     (_, i) => shape.types[i] & TYPE.PRIMARY,
   );
 
-  return stream({
+  return zStream({
     pull: async ({ constraints, ordering } = {}) => {
       const store = db.transaction([table], "readonly").objectStore(table);
       let scan: T[];

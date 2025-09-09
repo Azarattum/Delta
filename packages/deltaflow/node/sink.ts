@@ -1,6 +1,6 @@
 import { add, distinct, zero, type ZSet } from "../datastructure/zset";
-import { stream, SyncPromise, type MaybePromise } from "../stream";
-import type { OfZStream, ZStream } from "./type";
+import { zStream, type OfZStream, type ZStream } from "./stream";
+import { SyncPromise, type MaybePromise } from "../stream";
 
 export function sink<TStream extends ZStream<T>, T = OfZStream<TStream>>(
   upstream: TStream,
@@ -17,7 +17,7 @@ export function sink<TStream extends ZStream<T>, T = OfZStream<TStream>>(
       return node.flush();
     }) as MaybePromise<void>);
 
-  const node = stream({
+  const node = zStream({
     push: (x: ZSet<T>) => {
       if (view) return distinct(add(view, x));
       if (x !== queue[0]) return queue.push(x), initial;

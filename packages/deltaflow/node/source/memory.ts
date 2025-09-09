@@ -1,10 +1,10 @@
 import { children, compare, reorder, TYPE } from "../../datastructure/shape";
+import { zStream, clStream, type OfZStream, type ZStream } from "../stream";
 import type { CLMetadata, CLSet } from "../../datastructure/clset";
 import { add, sort, distinct } from "../../datastructure/zset";
 import type { Shape } from "../../datastructure/shape";
 import type { ZSet } from "../../datastructure/zset";
-import { stream, SyncPromise } from "../../stream";
-import type { OfZStream, ZStream } from "../type";
+import { SyncPromise } from "../../stream";
 
 export function memory<T extends Record<string, any>>(
   shape: Shape<T>,
@@ -22,7 +22,7 @@ export function memory<T extends Record<string, any>>(
     data[0].forEach((x, i) => (data[1][key][i] = Array(x[key].length).fill(1)));
   });
 
-  return stream({
+  return zStream({
     pull: ({ ordering, constraints } = {}) => {
       const checks = constraints && Object.entries(constraints);
       const scan = structuredClone(
@@ -55,7 +55,7 @@ export function memoryReplication<
   const meta = new Map<number, CLMetadata>(initialData);
   let version = initialData.reduce((a, b) => Math.max(a, b[1][0]), 0);
 
-  return stream({
+  return clStream({
     pull(options) {
       return SyncPromise.one(dataStream.pull(options)).then((zset) => {
         const [data, _, shape] = zset;

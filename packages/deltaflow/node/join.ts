@@ -1,7 +1,7 @@
-import { add, copy, multiply, zero } from "../datastructure/zset";
-import { stream, SyncPromise, type ValidKey } from "../stream";
+import { zStream, type OfZStream, type ZStream } from "./stream";
+import { add, multiply, zero } from "../datastructure/zset";
+import { SyncPromise, type ValidKey } from "../stream";
 import type { ZSet } from "../datastructure/zset";
-import type { OfZStream, ZStream } from "./type";
 
 export function join<
   const AStream extends ZStream<A>,
@@ -19,7 +19,7 @@ export function join<
   single = false as S,
 ) {
   type C = ReturnType<typeof multiply<A, B, K, S>>;
-  return stream({
+  return zStream({
     push(a?: ZSet<A>, b?: ZSet<B>) {
       const bKeys = b && {
         [aKey]: new Set(b?.[0].map((x) => x[bKey] as ValidKey)),

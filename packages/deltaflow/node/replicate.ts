@@ -1,4 +1,4 @@
-import type { CLStream, OfZStream, ZStream } from "./type";
+import type { CLStream, OfZStream, ZStream } from "./stream";
 import { either, TYPE } from "../datastructure/shape";
 import type { CLSet } from "../datastructure/clset";
 import type { ZSet } from "../datastructure/zset";
@@ -82,5 +82,6 @@ export function replicate<
       // TODO: implement pulling with version constraint
       throw new Error("Pulling for changes is not implemented yet");
     },
+    // TODO: its own compress logic?
   })(aUpstream);
 }

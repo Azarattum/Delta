@@ -1,7 +1,7 @@
-import type SQLite from "bun:sqlite";
 import { TYPE, type Shape } from "../../datastructure/shape";
-import { stream } from "../../stream";
 import type { ZSet } from "../../datastructure/zset";
+import type SQLite from "bun:sqlite";
+import { zStream } from "../stream";
 
 /** TODO: this is just a prototype */
 export function sqlite<T extends object>(
@@ -29,7 +29,7 @@ export function sqlite<T extends object>(
     initialData.flatMap((x) => Object.values(x)),
   );
 
-  return stream({
+  return zStream({
     pull: ({ constraints, ordering } = {}) => {
       const orderBy =
         ordering ?

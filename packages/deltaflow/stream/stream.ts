@@ -24,9 +24,17 @@ function stream<
         const entities = upstreams.map((x) => x?.pull(options));
         return SyncPromise.all(entities).then((x) => push(...(x as TIn)));
       });
+    const compress =
+      options.compress ??
+      ((queue) => {
+        const length = queue.reduce((max, a) => Math.max(max, a!.length), 1);
+        return Array.from({ length }, (_, i) =>
+          queue.map((arr) => arr![i]),
+        ) as PartialEntities<TIn>[];
+      });
 
-    let queue: PartialEntities<TIn>[] = [];
     const downstreams: Set<(entity: Awaited<TOut>) => void> = new Set();
+    const queue = [] as unknown as EntityQueue<TIn>;
 
     let scheduled = false;
     const scheduler = Scheduler.join(
@@ -36,9 +44,8 @@ function stream<
 
     upstreams.forEach((upstream, i) => {
       upstream?.connect((entity: TIn[number]) => {
-        const entities = new Array() as PartialEntities<TIn>;
-        entities[i] = entity;
-        forward(entities);
+        (queue[i] ??= []).push(entity);
+        schedule();
       });
     });
 
@@ -47,32 +54,26 @@ function stream<
       return () => downstreams.delete(fn);
     }
 
-    function forward(entities: PartialEntities<TIn>) {
-      const last = queue[queue.length - 1];
-      const canMerge =
-        last && entities.every((x, i) => x == null || last[i] == null);
-
-      if (canMerge) entities.forEach((x, i) => x != null && (last[i] = x));
-      else queue.push(entities);
-
-      if (!scheduled && queue.length && upstreams.every((x) => !x?.isDirty)) {
+    function schedule() {
+      if (!scheduled && upstreams.every((x) => !x?.isDirty)) {
         scheduled = true;
         scheduler.current.enqueue(() => {
+          const compressed = compress(queue);
           scheduled = false;
+          queue.length = 0;
+
           if (options.flush) {
-            const snapshot = structuredClone(queue);
+            const snapshot = structuredClone(compressed);
             scheduler.current.enqueue(() => options.flush!(snapshot), 1);
           }
-          return process().then(() => undefined);
+          return process(compressed).then(() => undefined);
         }, 0);
       }
     }
 
-    function process() {
-      const toProcess = queue;
-      queue = [];
+    function process(queue: TIn[number][][]) {
       return SyncPromise.all(
-        toProcess.map((entities) =>
+        queue.map((entities) =>
           SyncPromise.one(push(...entities)).then((x) =>
             downstreams.forEach((fn) => {
               SyncPromise.try(() => fn(x)).catch((error) =>
@@ -86,7 +87,10 @@ function stream<
 
     return {
       pull: (options) => (scheduler.current.flush(), pull(options)),
-      push: (...entities) => forward(entities),
+      push: (...entities) => {
+        entities.forEach((x, i) => x != null && (queue[i] ??= []).push(x));
+        return schedule();
+      },
       flush: () => scheduler.current.flush(),
       connect,
       subscribe: (fn) => {
@@ -94,7 +98,7 @@ function stream<
         return connect(fn);
       },
       get isDirty() {
-        return !!(queue.length > 0 || upstreams.some((x) => x?.isDirty));
+        return !!(scheduled || upstreams.some((x) => x?.isDirty));
       },
       [internal]: { scheduler },
     };
@@ -116,6 +120,9 @@ type InferOut<TPush, TPull, TUpstreams extends any[]> =
 
 type PartialEntities<T extends any[]> =
   T extends [any] ? [Awaited<T[0]>] : { [K in keyof T]?: Awaited<T[K]> };
+
+type EntityQueue<T extends any[]> =
+  T extends [any] ? [Awaited<T[0]>[]] : { [K in keyof T]?: Awaited<T[K]>[] };
 
 type Stream<TOut, TIn extends any[] = unknown[]> = {
   /** Subscribes to changes and immediately pulls the current state */
@@ -145,6 +152,8 @@ type StreamOptions<
   push?: (...entities: PartialEntities<TIn>) => TOut;
   /** Describes any additional flush behavior */
   flush?: (entities: PartialEntities<TIn>[]) => MaybePromise<void>;
+  /** Describes how to compress multiple pushes */
+  compress?: (queue: EntityQueue<TIn>) => PartialEntities<TIn>[];
 };
 
 /** TODO: these should be datatype specific */
@@ -158,4 +167,4 @@ type PullOptions = {
 type ValidKey = number | string | Date | BufferSource;
 
 export { stream };
-export type { Stream, StreamOptions, ValidKey };
+export type { Stream, StreamOptions, PartialEntities, EntityQueue, ValidKey };

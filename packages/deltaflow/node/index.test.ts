@@ -52,8 +52,8 @@ it("performs basic CRUD", () => {
   expect(predicate).toHaveBeenCalled();
 
   // Create
-  users.push([[{ id: 2, name: "Alex" }], [1]]);
-  users.push([[{ id: 2, name: "Nobody" }], [1]]);
+  users.push([[{ id: 2, name: "Alex" }], [1], user]);
+  users.push([[{ id: 2, name: "Nobody" }], [1], user]);
   expect(view.pull()).toEqual([
     [
       { id: 1, name: "Alice" },
@@ -1079,14 +1079,8 @@ it("handles deeply nested joins", () => {
   );
   full.connect(fullFn);
 
-  users.push([
-    [
-      { id: 0, name: "Bob" },
-      { id: 1, name: "Alice" },
-    ],
-    [1, 1],
-    user,
-  ]);
+  users.push([[{ id: 1, name: "Alice" }], [1], user]);
+  users.push([[{ id: 0, name: "Bob" }], [1], user]);
 
   messages.push([
     [
@@ -1099,23 +1093,11 @@ it("handles deeply nested joins", () => {
     message,
   ]);
 
-  comments.push([
-    [
-      { id: 0, text: "First!", user: 1 },
-      { id: 1, text: "Great post!", user: 0 },
-    ],
-    [1, 1],
-    comment,
-  ]);
+  comments.push([[{ id: 0, text: "First!", user: 1 }], [1], comment]);
+  comments.push([[{ id: 1, text: "Great post!", user: 0 }], [1], comment]);
 
-  likes.push([
-    [
-      { id: 0, count: 2, comment: 0 },
-      { id: 1, count: 1, comment: 1 },
-    ],
-    [1, 1],
-    like,
-  ]);
+  likes.push([[{ id: 0, count: 2, comment: 0 }], [1, 1], like]);
+  likes.push([[{ id: 1, count: 1, comment: 1 }], [1, 1], like]);
 
   expect(usersWithMessagesFn).not.toHaveBeenCalled();
   expect(commentsWithLikesFn).not.toHaveBeenCalled();

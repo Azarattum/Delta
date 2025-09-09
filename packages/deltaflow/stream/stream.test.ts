@@ -418,3 +418,20 @@ it("flushes async with async downstreams", async () => {
   source.push(42);
   expect(view.flush()).toBeInstanceOf(Promise);
 });
+
+it("works with custom compression", async () => {
+  const push = mock((x: number) => x);
+  const source = stream({
+    push,
+    compress: ([numbers]) => [[numbers.reduce((a, b) => a + b)]],
+  })(null);
+
+  source.push(42);
+  source.flush();
+  expect(push).toHaveBeenLastCalledWith(42);
+
+  source.push(42);
+  source.push(5);
+  source.flush();
+  expect(push).toHaveBeenLastCalledWith(47);
+});
