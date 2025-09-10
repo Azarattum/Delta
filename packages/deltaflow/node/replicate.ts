@@ -1,6 +1,6 @@
+import type { CLGlobal, CLSet } from "../datastructure/clset";
 import type { CLStream, OfZStream, ZStream } from "./stream";
 import { either, TYPE } from "../datastructure/shape";
-import type { CLSet } from "../datastructure/clset";
 import type { ZSet } from "../datastructure/zset";
 import { stream, SyncPromise } from "../stream";
 
@@ -8,7 +8,7 @@ export function replicate<
   AStream extends ZStream<T>,
   BStream extends CLStream<T>,
   T = OfZStream<AStream>,
->(aUpstream: AStream, bUpstream: BStream) {
+>(aUpstream: AStream, bUpstream: BStream, global: CLGlobal) {
   return stream({
     push(a: ZSet<T>) {
       // TODO: don't use id here!
@@ -25,15 +25,15 @@ export function replicate<
           const keys = pulled[2]?.keys.filter(
             (_, i) => !(pulled[2]!.types[i] & TYPE.PRIMARY),
           );
-          const nextVersion = (pulled[1].version ?? 0) + 1;
+          const nextVersion = (global.version ?? 0) + 1;
 
           let j = 0;
           for (let i = 0; i < a[0].length; i++) {
             // Create
             if (a[1][i] > 0) {
-              const initCols =
-                keys?.flatMap(() => [1, pulled[1].peer ?? 0]) ?? [];
+              const initCols = keys?.flatMap(() => [1, global.peer ?? 0]) ?? [];
               (a[1][i] as any) = [nextVersion, 1, ...initCols];
+              global.version = nextVersion;
               continue;
             }
 
@@ -61,10 +61,11 @@ export function replicate<
               }
 
               referenceMeta[0] = nextVersion;
+              global.version = nextVersion;
               for (let j = 2; j < referenceMeta.length; j += 2) {
                 const key = keys[(j - 2) / 2];
                 if (a[0][i][key] !== referenceItem[key]) {
-                  referenceMeta[j + 1] = pulled[1].peer ?? 0;
+                  referenceMeta[j + 1] = global.peer ?? 0;
                   referenceMeta[j]++;
                 }
               }

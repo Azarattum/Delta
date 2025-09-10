@@ -10,6 +10,8 @@ const user = shape((t) => ({
 type User = (typeof user)["~type"];
 
 it("merges partial structures", async () => {
+  const globalMeta = { version: 1, peer: 1 };
+
   const a: CLSet<User> = [
     [
       { id: 0, name: "Alice", age: 17 },
@@ -25,13 +27,15 @@ it("merges partial structures", async () => {
   const b: CLSet<User> = [
     [
       { id: 0, name: "Conflict", age: 18 },
-      undefined,
       { id: 2, name: "Carol", age: 42 },
     ],
-    [[1, 1, 1, 41, 2, 41], undefined, [1, 1, 1, 41, 1, 41]],
+    [
+      [1, 1, 1, 41, 2, 41],
+      [1, 1, 1, 41, 1, 41],
+    ],
   ];
 
-  const merged = merge(a, b);
+  const merged = merge(a, b, globalMeta);
   expect(a).toBe(merged as typeof a);
   expect(a).toEqual([
     [
@@ -51,16 +55,14 @@ it("merges partial structures", async () => {
 it("bumps version for items", async () => {
   const added = merge(
     [[{ id: 0, name: "Alice", age: 17 }], [[1, 1, 1, 42, 1, 42]], user],
-    [
-      [undefined, { id: 0, name: "Bob", age: 11 }],
-      [undefined, [1, 1, 1, 41, 1, 41]],
-    ],
+    [[{ id: 1, name: "Bob", age: 11 }], [[1, 1, 1, 41, 1, 41]], user],
+    { version: 1, peer: 1 },
   );
 
   expect(added).toEqual([
     [
       { id: 0, name: "Alice", age: 17 },
-      { id: 0, name: "Bob", age: 11 },
+      { id: 1, name: "Bob", age: 11 },
     ],
     [
       [1, 1, 1, 42, 1, 42],
@@ -72,6 +74,7 @@ it("bumps version for items", async () => {
   const modified = merge(
     [[{ id: 0, name: "Alice", age: 17 }], [[1, 1, 1, 42, 1, 42]], user],
     [[{ id: 0, name: "Alice", age: 18 }], [[1, 1, 1, 42, 1, 43]]],
+    { version: 1, peer: 1 },
   );
 
   expect(modified).toEqual([
@@ -83,6 +86,7 @@ it("bumps version for items", async () => {
   const unchanged = merge(
     [[{ id: 0, name: "Alice", age: 17 }], [[1, 1, 1, 42, 1, 42]], user],
     [[{ id: 0, name: "Alice", age: 18 }], [[1, 1, 1, 42, 1, 41]]],
+    { version: 1, peer: 1 },
   );
 
   expect(unchanged).toEqual([
@@ -97,26 +101,33 @@ it("converges changes", async () => {
   const b = [[{ id: 0, name: "Alice", age: 19 }], [[2, 1, 1, 42, 2, 43]], user];
   const c = [[{ id: 0, name: "ALICE", age: 17 }], [[2, 1, 2, 41, 1, 41]], user];
 
-  const nextB = merge(copy(b as any), c as any);
-  const nextNextB = merge(copy(nextB), a as any);
+  const globalB = { version: 2, peer: 1 };
+  const nextB = merge(copy(b as any), c as any, globalB);
+  const nextNextB = merge(copy(nextB), a as any, globalB);
 
-  const nextA = merge(copy(a as any), b as any);
-  const nextNextA = merge(copy(nextA), c as any);
+  const globalA = { version: 2, peer: 1 };
+  const nextA = merge(copy(a as any), b as any, globalA);
+  const nextNextA = merge(copy(nextA), c as any, globalA);
 
-  const nextC = merge(copy(c as any), a as any);
-  const nextNextC = merge(copy(nextC) as any, b as any);
+  const globalC = { version: 2, peer: 1 };
+  const nextC = merge(copy(c as any), a as any, globalC);
+  const nextNextC = merge(copy(nextC) as any, b as any, globalC);
 
   // In this chain the version is lower due to conflict lose
   nextNextB[1][0]![0] += 1;
 
   expect(nextNextA).toEqual(nextNextB);
   expect(nextNextB).toEqual(nextNextC);
+  expect(globalA.version).toBe(4);
+  expect(globalB.version).toBe(3);
+  expect(globalC.version).toBe(4);
 });
 
 it("merges causal length", async () => {
   const merged = merge(
     [[{ id: 0, name: "Alice", age: 18 }], [[2, 1, 1, 42, 1, 42]], user],
     [[{ id: 0, name: "Don't care", age: 8 }], [[2, 2, 2, 44, 2, 45]], user],
+    { version: 2, peer: 1 },
   );
 
   expect(merged).toEqual([
@@ -156,6 +167,7 @@ it("keeps incoming versions intact", async () => {
       ],
       user,
     ],
+    { version: 1, peer: 1 },
   );
 
   expect(merged).toEqual([
@@ -179,6 +191,7 @@ it("deleted fields always loose resolution", async () => {
   const afterDelete = merge(
     [[{ id: 0, name: "Alice", age: 18 }], [[1, 2, 2, 42, 2, 42]], user],
     [[{ id: 0, name: "New Alice", age: 19 }], [[2, 3, 1, 42, 1, 42]], user],
+    { version: 1, peer: 1 },
   );
 
   expect(afterDelete).toEqual([
@@ -190,6 +203,7 @@ it("deleted fields always loose resolution", async () => {
   const afterUpdate = merge(
     [[{ id: 0, name: "Alice", age: 18 }], [[1, 1, 2, 42, 2, 42]], user],
     [[{ id: 0, name: "New Alice", age: 19 }], [[2, 3, 1, 42, 1, 42]], user],
+    { version: 1, peer: 1 },
   );
 
   expect(afterUpdate).toEqual([
@@ -203,6 +217,7 @@ it("handles same clock but higher peer", async () => {
   const merged = merge(
     [[{ id: 0, name: "Alice", age: 20 }], [[1, 1, 5, 1, 4, 2]], user],
     [[{ id: 0, name: "Bob", age: 25 }], [[1, 1, 5, 2, 4, 3]], user],
+    { version: 1, peer: 1 },
   );
 
   expect(merged[0][0]).toEqual({ id: 0, name: "Bob", age: 25 });

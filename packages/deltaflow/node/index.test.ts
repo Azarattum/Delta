@@ -703,8 +703,10 @@ it("converts ZSet to CLSet", async () => {
     { id: 1, name: "Alice", age: 22 },
   ]);
 
-  const peer = 42;
-  const meta = memoryReplication(users, peer, [[0, [1, 1, 1, peer, 1, peer]]]);
+  const global = { version: 1, peer: 42 };
+  const meta = memoryReplication(users, global, [
+    [0, [1, 1, 1, global.peer, 1, global.peer]],
+  ]);
 
   // TODO: consider forking before pushing to users,
   //  to avoid z2cl node when receiving changes in a full pipeline
@@ -712,7 +714,7 @@ it("converts ZSet to CLSet", async () => {
 
   // Fork changes to copy them to 2 streams
   const [users1, users2] = fork(users);
-  const changes = replicate(users1, meta);
+  const changes = replicate(users1, meta, global);
   const view = sink(users2);
 
   // Materialize view
@@ -736,6 +738,8 @@ it("converts ZSet to CLSet", async () => {
     { id: 1, name: "Alice", age: 22 },
     { id: 2, name: "Eve", age: 20 },
   ]);
+
+  expect(global).toEqual({ version: 2, peer: 42 });
 });
 
 it("sorts streams for join", () => {

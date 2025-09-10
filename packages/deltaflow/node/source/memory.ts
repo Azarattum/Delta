@@ -1,6 +1,6 @@
 import { children, compare, reorder, TYPE } from "../../datastructure/shape";
 import { zStream, clStream, type OfZStream, type ZStream } from "../stream";
-import type { CLMetadata, CLSet } from "../../datastructure/clset";
+import type { CLGlobal, CLMeta, CLSet } from "../../datastructure/clset";
 import { add, sort, distinct } from "../../datastructure/zset";
 import type { Shape } from "../../datastructure/shape";
 import type { ZSet } from "../../datastructure/zset";
@@ -46,14 +46,9 @@ export function memory<T extends Record<string, any>>(
 export function memoryReplication<
   TStream extends ZStream<T>,
   T = OfZStream<TStream>,
->(
-  dataStream: TStream,
-  clientID: number,
-  initialData: [number, CLMetadata][] = [],
-) {
+>(dataStream: TStream, global: CLGlobal, initialData: [number, CLMeta][] = []) {
   // TODO: use generic key, not a number
-  const meta = new Map<number, CLMetadata>(initialData);
-  let version = initialData.reduce((a, b) => Math.max(a, b[1][0]), 0);
+  const stored = new Map<number, CLMeta>(initialData);
 
   return clStream({
     pull(options) {
@@ -63,17 +58,16 @@ export function memoryReplication<
         const emptyCols =
           shape?.keys
             .filter((_, i) => !(shape.types[i] & TYPE.PRIMARY))
-            .flatMap(() => [0, clientID]) ?? [];
+            .flatMap(() => [0, global.peer]) ?? [];
 
         // TODO: do not use the ID, but actual key!
-        const metadata = data.map(
+        const meta = data.map(
           (x) =>
             // TODO: I'm not sure if fallback here is a good idea...
-            meta.get((x as any).id) ?? [version, 0, ...emptyCols],
+            stored.get((x as any).id) ?? [global.version, 0, ...emptyCols],
         );
-        Object.assign(metadata, { version, peer: clientID });
 
-        return [data, metadata, shape] as unknown as CLSet<T>;
+        return [data, meta, shape] as unknown as CLSet<T>;
       });
     },
   })(null);
