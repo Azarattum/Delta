@@ -37,12 +37,14 @@ type TraverseEntries<T> =
   : never;
 
 type TraverseShape<T> =
-  T extends Shape ?
-    | T
-    | TraverseShape<
-        NonNullable<T>["children"][keyof NonNullable<T>["children"]]["shape"]
-      >
-  : never;
+  | T
+  | (T extends (
+      { children: Record<keyof any, { shape: infer TShape extends Shape }> }
+    ) ?
+      0 extends 1 & NonNullable<TShape>["~type"] ?
+        TShape
+      : TraverseShape<TShape>
+    : never);
 
 type ArrayKeys<T> =
   T extends Record<keyof any, any> ?
