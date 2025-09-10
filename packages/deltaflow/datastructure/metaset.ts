@@ -6,13 +6,13 @@ import type {
   MetaSet,
   Visit,
 } from "./metaset.types";
-import { children, compare, either, type Children } from "./shape";
+import { children, compare, either } from "./shape";
 import { shared } from "./metaset.types";
 
 function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   const shape = either(target[2], source?.[2]);
   const childKeys = children(shape);
-  const deep = visit(fns, childKeys);
+  const deep = visit(fns, shape);
 
   const { container } = fns;
   if (container) {
@@ -24,7 +24,7 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   }
 
   const [tData, tMeta] = target;
-  const [sData, sMeta] = source ?? [[], []];
+  const [sData, sMeta] = source ?? ([[], []] as unknown as T);
 
   let deleted = 0;
   let i = 0;
@@ -62,15 +62,16 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   return target;
 }
 
-function visit<T extends MetaSet>(
-  fns: Visitors<T>,
-  childKeys: Children<T>,
-): Visit<T> {
+function visit<T extends MetaSet>(fns: Visitors<T>, shape: T[2]): Visit<T> {
+  const childKeys = children(shape);
   return (type, items, metas, idx, deleted) => {
     const result: InferItem<T> | undefined =
       type === "delete" ? undefined
       : !fns[type] ? [items[0], metas[0][idx[0] - deleted]]
-      : (fns[type] as any)(...items.flatMap((x, i) => [x, metas[i][idx[i]]]));
+      : (fns[type] as any)(
+          ...items.flatMap((x, i) => [x, metas[i][idx[i]]]),
+          shape,
+        );
 
     if (!childKeys.length) return result;
     if (!result) type = "delete";
@@ -88,8 +89,8 @@ function visit<T extends MetaSet>(
 
       const next =
         single ?
-          visit(fns, children<any>(shape))(type, items2, metas2, idx, deleted)
-        : traverse(fns2, [tData, tMeta, shape], sData && [sData, sMeta]);
+          visit(fns2, shape)(type, items2, metas2, idx, deleted)
+        : traverse<any>(fns2, [tData, tMeta, shape], sData && [sData, sMeta]);
 
       if (isInsert) resultMeta[key].splice(resultIdx, 0, tMeta[idx[0]]);
       if (next) [result![0][key], resultMeta[key][resultIdx]] = next;

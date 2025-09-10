@@ -403,7 +403,7 @@ it("traverses children of singular items", () => {
   traverse(visitors, set);
   expect(visitors.update).toHaveBeenCalledTimes(6);
   expect(visitors.container).toHaveBeenCalledTimes(3);
-  expect(visitors.update).toHaveBeenLastCalledWith({ id: 200 }, 3);
+  expect(visitors.update).toHaveBeenLastCalledWith({ id: 200 }, 3, idShape);
 });
 
 it("transforms inserted items", () => {
@@ -452,10 +452,10 @@ it("transforms inserted items", () => {
   });
 
   expect((visitors.insert as Mock<any>).mock.calls).toEqual([
-    [data[1], meta[1] - 1],
-    [data[1].details, meta.details[1] - 1],
-    [data[1].posts[0], meta.posts[1][0] - 1],
-    [data[2].posts[1], meta.posts[2][1] - 1],
+    [data[1], meta[1] - 1, userShape],
+    [data[1].details, meta.details[1] - 1, detailShape],
+    [data[1].posts[0], meta.posts[1][0] - 1, postShape],
+    [data[2].posts[1], meta.posts[2][1] - 1, postShape],
   ]);
 });
 

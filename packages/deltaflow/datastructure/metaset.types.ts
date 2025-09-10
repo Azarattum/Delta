@@ -36,6 +36,11 @@ type TraverseEntries<T> =
   : T extends object ? T | { [K in keyof T]: TraverseEntries<T[K]> }[keyof T]
   : never;
 
+type TraverseShape<T> =
+  T extends Shape ?
+    T | TraverseShape<T["children"][keyof T["children"]]["shape"]>
+  : never;
+
 type ArrayKeys<T> =
   T extends Record<keyof any, any> ?
     {
@@ -56,16 +61,19 @@ type Visitors<T extends MetaSet> = {
   update?: (
     data: InferEntry<T>,
     meta: InferMeta<T>,
+    shape: TraverseShape<T[2]>,
   ) => [InferEntry<T>, InferMeta<T>] | undefined;
   insert?: (
     data: InferEntry<T>,
     meta: InferMeta<T>,
+    shape: TraverseShape<T[2]>,
   ) => [InferEntry<T>, InferMeta<T>] | undefined;
   combine?: (
     aData: InferEntry<T>,
     aMeta: InferMeta<T>,
     bData: InferEntry<T>,
     bMeta: InferMeta<T>,
+    shape: TraverseShape<T[2]>,
   ) => [InferEntry<T>, InferMeta<T>] | undefined;
 
   container?: <TDeep extends boolean>(
