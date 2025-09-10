@@ -2,7 +2,8 @@
   "name": "delta",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "examples/*"
   ],
   "scripts": {
     "verify": "bun test && bun run -F '*' check"

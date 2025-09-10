@@ -1,0 +1,14 @@
+{
+  "name": "music-library",
+  "private": true,
+  "scripts": {
+    "check": "tsgo --noEmit"
+  },
+  "type": "module",
+  "dependencies": {
+    "deltaflow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
