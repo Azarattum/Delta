@@ -1,4 +1,7 @@
 {
+  "explorer.fileNesting.patterns": {
+    "*.ts": "${capture}.test.ts, ${capture}.types.ts"
+  },
   "cSpell.words": [
     "datastructure",
     "deltaflow",
