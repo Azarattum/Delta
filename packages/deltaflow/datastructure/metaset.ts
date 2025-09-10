@@ -7,7 +7,6 @@ import type {
   Visit,
 } from "./metaset.types";
 import { children, compare, either } from "./shape";
-import { shared } from "./metaset.types";
 
 function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   const shape = either(target[2], source?.[2]);
@@ -118,4 +117,4 @@ function recurse<TFn extends RecurseFn>(fn: TFn): Recurse<TFn> {
 
 const pruneMeta = recurse(([meta], key, n: number) => (meta[key].length -= n));
 
-export { shared, traverse, recurse, type MetaSet, type Visitors };
+export { traverse, recurse, type MetaSet, type Visitors };

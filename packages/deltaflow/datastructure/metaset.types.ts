@@ -1,30 +1,24 @@
 import type { Children, Shape } from "./shape";
 
-const shared = Symbol("shared");
-
-type Meta<TData, TMeta, TShared = undefined> = TMeta[] & {
+type Meta<TData, TMeta> = TMeta[] & {
   [K in ArrayKeys<TData>]: Meta<
     TData[K] extends (infer T)[] ? T : never,
-    TMeta,
-    TShared
+    TMeta
   >[];
-} & {
-  [K in RecordKeys<TData>]: Meta<TData[K], TMeta, TShared>;
-} & { [key: string]: any } & (TShared extends undefined ? {}
-  : { [shared]: TShared });
+} & { [K in RecordKeys<TData>]: Meta<TData[K], TMeta> } & {
+  [key: string]: any;
+};
 
-type MetaSet<TData = any, TMeta = any, TShared = undefined> = [
+type MetaSet<TData = any, TMeta = any> = [
   TData[],
-  Meta<TData, TMeta, TShared>,
+  Meta<TData, TMeta>,
   Shape<TData>?,
 ];
 
-type InferData<T> = T extends MetaSet<infer TData, any, any> ? TData : never;
-type InferMeta<T> = T extends MetaSet<any, infer TMeta, any> ? TMeta : never;
-type InferShared<T> =
-  T extends MetaSet<any, any, infer TShared> ? TShared : never;
+type InferData<T> = T extends MetaSet<infer TData, any> ? TData : never;
+type InferMeta<T> = T extends MetaSet<any, infer TMeta> ? TMeta : never;
 type InferEntry<T> =
-  T extends MetaSet<infer TData, any, any> ?
+  T extends MetaSet<infer TData, any> ?
     TData extends object ?
       TraverseEntries<TData>
     : TData
@@ -104,13 +98,11 @@ type Recurse<TFn extends RecurseFn> = (
   ...args: Parameters<TFn> extends [any, any, ...infer Rest] ? Rest : never
 ) => void;
 
-export { shared };
 export type {
   MetaSet,
   InferData,
   InferMeta,
   InferItem,
-  InferShared,
   InferEntry,
   Visitors,
   Visit,
