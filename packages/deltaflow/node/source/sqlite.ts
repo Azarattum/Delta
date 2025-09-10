@@ -4,7 +4,7 @@ import type SQLite from "bun:sqlite";
 import { zStream } from "../stream";
 
 /** TODO: this is just a prototype */
-export function sqlite<T extends object>(
+export function sqlite<T extends Record<string, any>>(
   db: SQLite,
   table: string,
   shape: Shape<T>,

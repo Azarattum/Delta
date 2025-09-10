@@ -38,7 +38,10 @@ type TraverseEntries<T> =
 
 type TraverseShape<T> =
   T extends Shape ?
-    T | TraverseShape<T["children"][keyof T["children"]]["shape"]>
+    | T
+    | TraverseShape<
+        NonNullable<T>["children"][keyof NonNullable<T>["children"]]["shape"]
+      >
   : never;
 
 type ArrayKeys<T> =

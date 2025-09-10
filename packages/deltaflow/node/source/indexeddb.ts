@@ -56,11 +56,11 @@ export async function indexeddb<T extends object>(
 
 // TODO: this is a temporary solution for testing purposes,
 //  we should use a proper schema and source create in the future
-export function createStore<T extends string>(
+export function createStore<T extends Record<string, any>>(
   db: IDBDatabase,
   name: string,
-  shape: Shape<Record<T, Primitive>>,
-  indexed: T[] = [],
+  shape: Shape<T>,
+  indexed: (keyof T)[] = [],
 ) {
   const keyPath = shape.keys.filter((_, i) => shape.types[i] & TYPE.PRIMARY);
   const store = db.createObjectStore(name, { keyPath });
@@ -70,7 +70,7 @@ export function createStore<T extends string>(
 
   // TODO: support compound indexes somehow...
   const indexes = new Set([...indexed, ...relations]);
-  indexes.forEach((x) => store.createIndex(x, [x]));
+  indexes.forEach((x) => store.createIndex(x as string, [x as string]));
 }
 
 function queryWithConstraints<T>(
@@ -148,5 +148,3 @@ async function queryWithOrdering<T>(
   }
   return scan;
 }
-
-type Primitive = string | number | boolean | null | undefined | bigint | symbol;

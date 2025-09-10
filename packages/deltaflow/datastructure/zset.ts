@@ -79,7 +79,7 @@ function multiply<A, B, K extends string, S extends boolean = false>(
     }
   }
 
-  a[2] = nest(aShape, relationship, bShape, single);
+  (a as MetaSet)[2] = nest(aShape, relationship, bShape, single);
   return a as ZSet<A & { [_ in K]: S extends true ? B | null : B[] }>;
 }
 

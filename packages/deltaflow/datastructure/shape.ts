@@ -11,18 +11,16 @@ function shape<T extends Template>(template: T): Shape<FromTemplate<T>> {
   return { keys, types, order, hash, children: {} } as any;
 }
 
-function reorder<TShape extends Shape<any> | undefined>(
+function reorder<TShape extends Shape<T> | undefined, T = any>(
   shape: TShape,
-  ...ordering: TShape extends Shape<infer T> ?
-    (NoInfer<keyof T> | [NoInfer<keyof T>, ("asc" | "desc")?])[]
-  : []
+  ...ordering: (NoInfer<keyof T> | [NoInfer<keyof T>, ("asc" | "desc")?])[]
 ): TShape {
   if (!shape) return shape;
 
   const primary = shape.types.map((x, i) => (x & TYPE.PRIMARY ? i << 1 : null));
   const order = ordering.map((entry) => {
     const [key, dir = "asc"] = Array.isArray(entry) ? entry : [entry];
-    const index = shape.keys.indexOf(key);
+    const index = shape.keys.indexOf(key as keyof T);
     primary[index] = null;
     return (index << 1) | (dir === "desc" ? 1 : 0);
   });
@@ -50,13 +48,15 @@ function nest<
   if (!shape || !child) return shape as any;
   if (relation in shape.children) {
     const { shape: thisChild, single: thisSingle } = shape.children[relation];
-    if (thisChild.hash === child.hash && thisSingle === single) return shape;
+    if (thisChild?.hash === child.hash && thisSingle === single) {
+      return shape as any;
+    }
     const shapeString = JSON.stringify(shape, null, 2);
     throw new Error(`Relation ${relation} already exists on:\n${shapeString}`);
   }
 
   return {
-    ...shape,
+    ...(shape as any),
     children: { ...shape.children, [relation]: { single, shape: child } },
   };
 }
@@ -70,7 +70,7 @@ function either<T>(aShape?: Shape<T>, bShape?: Shape<T>) {
   return aShape ?? bShape;
 }
 
-function children<T>(shape: Shape<T> | undefined) {
+function children<T extends Shape>(shape: T) {
   return Object.entries(shape?.children ?? {}) as Children<T>;
 }
 
@@ -126,20 +126,25 @@ const combineFlags = <T extends number[]>(...flags: T) =>
 
 const defineFlags = Object.assign(combineFlags, TYPE, { RELATION });
 
-type Shape<T = any> = Readonly<{
-  "~type": T;
-  hash: number;
-  keys: readonly (keyof T)[];
-  order: readonly number[];
-  types: readonly (typeof TYPE)[keyof typeof TYPE][];
-  children: 0 extends 1 & T ? any
-  : {
-      [K in keyof T as T[K] extends object ? K : never]: {
-        single: boolean;
-        shape: Shape<T[K]>;
-      };
-    };
-}>;
+type Shape<T = any> =
+  T extends object ?
+    Readonly<{
+      "~type": T;
+      hash: number;
+      keys: readonly (keyof T)[];
+      order: readonly number[];
+      types: readonly (typeof TYPE)[keyof typeof TYPE][];
+      children: 0 extends 1 & T ?
+        Record<keyof T, { single: boolean; shape: Shape<T[keyof T]> }>
+      : {
+          [K in keyof T as T[K] extends object ? K : never]: T[K] extends (
+            (infer U)[]
+          ) ?
+            { single: false; shape: Shape<U> }
+          : { single: true; shape: Shape<T[K]> };
+        };
+    }>
+  : undefined;
 
 type Template<T = unknown> = (
   t: typeof combineFlags & typeof TYPE & { RELATION: typeof RELATION },
@@ -182,7 +187,10 @@ type ExtractConstNumbers<T extends any[]> = {
   : never;
 }[number];
 
-type Children<T> = [string, Shape<T>["children"][keyof Shape<T>["children"]]][];
+type Children<T extends Shape> = [
+  string,
+  NonNullable<T>["children"][keyof NonNullable<T>["children"]],
+][];
 
 export { TYPE, shape, children, compare, reorder, either, nest };
 export type { Shape, Children };
