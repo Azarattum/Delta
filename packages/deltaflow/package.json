@@ -10,7 +10,7 @@
     "homepage": "https://github.com/Azarattum"
   },
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsgo --noEmit"
   },
   "type": "module",
   "dependencies": {},
