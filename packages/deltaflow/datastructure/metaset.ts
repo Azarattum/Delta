@@ -88,8 +88,8 @@ function visit<T extends MetaSet>(
 
       const next =
         single ?
-          visit<any>(fns, children(shape))(type, items2, metas2, idx, deleted)
-        : traverse<any>(fns2, [tData, tMeta, shape], sData && [sData, sMeta]);
+          visit(fns, children<any>(shape))(type, items2, metas2, idx, deleted)
+        : traverse(fns2, [tData, tMeta, shape], sData && [sData, sMeta]);
 
       if (isInsert) resultMeta[key].splice(resultIdx, 0, tMeta[idx[0]]);
       if (next) [result![0][key], resultMeta[key][resultIdx]] = next;

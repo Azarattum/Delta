@@ -468,7 +468,7 @@ it("processes full pipeline", () => {
       0: 1,
       messages: [[1]],
     });
-    expect(shape).toEqual(userWithMessages);
+    expect(shape).toEqual(userWithMessages as any);
   }
 
   users.push([[{ id: 2, name: "Clara" }], [1]]);
@@ -487,7 +487,7 @@ it("processes full pipeline", () => {
       1: 1,
       messages: [[1], [1]],
     });
-    expect(shape).toEqual(userWithMessages);
+    expect(shape).toEqual(userWithMessages as any);
   }
 
   messages.push([
@@ -517,7 +517,7 @@ it("processes full pipeline", () => {
       1: 1,
       messages: [[1], [1, 1]],
     });
-    expect(shape).toEqual(userWithMessages);
+    expect(shape).toEqual(userWithMessages as any);
   }
 
   expect(spy).toHaveBeenLastCalledWith([

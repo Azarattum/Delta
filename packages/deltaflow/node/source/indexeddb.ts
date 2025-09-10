@@ -59,7 +59,7 @@ export async function indexeddb<T extends object>(
 export function createStore<T extends string>(
   db: IDBDatabase,
   name: string,
-  shape: Shape<Record<T, any>>,
+  shape: Shape<Record<T, Primitive>>,
   indexed: T[] = [],
 ) {
   const keyPath = shape.keys.filter((_, i) => shape.types[i] & TYPE.PRIMARY);
@@ -148,3 +148,5 @@ async function queryWithOrdering<T>(
   }
   return scan;
 }
+
+type Primitive = string | number | boolean | null | undefined | bigint | symbol;

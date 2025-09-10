@@ -132,7 +132,13 @@ type Shape<T = any> = Readonly<{
   keys: readonly (keyof T)[];
   order: readonly number[];
   types: readonly (typeof TYPE)[keyof typeof TYPE][];
-  children: Record<keyof T, { single: boolean; shape: Shape<T[keyof T]> }>;
+  children: 0 extends 1 & T ? any
+  : {
+      [K in keyof T as T[K] extends object ? K : never]: {
+        single: boolean;
+        shape: Shape<T[K]>;
+      };
+    };
 }>;
 
 type Template<T = unknown> = (
@@ -176,7 +182,7 @@ type ExtractConstNumbers<T extends any[]> = {
   : never;
 }[number];
 
-type Children<T> = [string, NonNullable<Shape<T>["children"]>[keyof T]][];
+type Children<T> = [string, Shape<T>["children"][keyof Shape<T>["children"]]][];
 
 export { TYPE, shape, children, compare, reorder, either, nest };
 export type { Shape, Children };
