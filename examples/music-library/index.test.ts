@@ -64,11 +64,18 @@ it("represents library correctly", async () => {
 
   const library = sink(
     join(
-      join(tracks, "album", albums, "id", "albums", true),
+      join(
+        tracks,
+        "album",
+        join(attributions, "artist", artists, "id", "artists", true),
+        "album",
+        "attributions",
+      ),
       "album",
-      join(attributions, "artist", artists, "id", "artists"),
+      albums,
+      "id",
       "album",
-      "attributions",
+      true,
     ),
   );
 
@@ -117,18 +124,17 @@ it("represents library correctly", async () => {
       id: 0,
       title: "A",
       duration: 1,
-      album: 0,
-      albums: { id: 0, title: "Album A", year: 2000 },
+      album: { id: 0, title: "Album A", year: 2000 },
       attributions: [
         {
           album: 0,
           artist: 0,
-          artists: [{ id: 0, title: "Artist A", following: true }],
+          artists: { id: 0, title: "Artist A", following: true },
         },
         {
           album: 0,
           artist: 1,
-          artists: [{ id: 1, title: "Artist B", following: false }],
+          artists: { id: 1, title: "Artist B", following: false },
         },
       ],
     },
@@ -136,13 +142,12 @@ it("represents library correctly", async () => {
       id: 1,
       title: "B",
       duration: 2,
-      album: 1,
-      albums: { id: 1, title: "Album B", year: 2001 },
+      album: { id: 1, title: "Album B", year: 2001 },
       attributions: [
         {
           album: 1,
           artist: 1,
-          artists: [{ id: 1, title: "Artist B", following: false }],
+          artists: { id: 1, title: "Artist B", following: false },
         },
       ],
     },
@@ -150,22 +155,21 @@ it("represents library correctly", async () => {
       id: 3,
       title: "C",
       duration: 2,
-      album: 1,
-      albums: { id: 1, title: "Album B", year: 2001 },
+      album: { id: 1, title: "Album B", year: 2001 },
       attributions: [
         {
           album: 1,
           artist: 1,
-          artists: [{ id: 1, title: "Artist B", following: false }],
+          artists: { id: 1, title: "Artist B", following: false },
         },
       ],
     },
   ]);
 
   expect(meta).toEqual([1, 1, 1] as any);
-  expect(meta["albums"]).toEqual([1, 1, 1]);
+  expect(meta["album"]).toEqual([1, 1, 1]);
   expect(meta.attributions).toEqual([[1, 1], [1], [1]] as any);
-  expect(meta.attributions[0].artists).toEqual([[1], [1]]);
-  expect(meta.attributions[1].artists).toEqual([[1]]);
-  expect(meta.attributions[2].artists).toEqual([[1]]);
+  expect(meta.attributions[0]["artists"]).toEqual([1, 1]);
+  expect(meta.attributions[1]["artists"]).toEqual([1]);
+  expect(meta.attributions[2]["artists"]).toEqual([1]);
 });

@@ -389,7 +389,7 @@ it("multiplies through deep nesting with no matches", () => {
     const tmp = multiply(copy(zsetB), "id", zsetC, "id", "deep");
     const result = multiply(copy(zsetA), "id", tmp, "id", "deep", true);
 
-    expect(result[0]).toEqual([{ id: 2, rel: 1, deep: null }]);
+    expect(result[0]).toEqual([{ id: 2, rel: 1, deep: undefined }]);
     expect(result[1]).toEqual([3] as any);
     expect(result[1]["deep"]).toEqual([] as any);
     expect(result[1]["deep"]["deep"]).toEqual([] as any);
@@ -398,7 +398,7 @@ it("multiplies through deep nesting with no matches", () => {
     const tmp = multiply(copy(zsetB), "id", zsetC, "id", "deep", true);
     const result = multiply(copy(zsetA), "id", tmp, "id", "deep", true);
 
-    expect(result[0]).toEqual([{ id: 2, rel: 1, deep: null }]);
+    expect(result[0]).toEqual([{ id: 2, rel: 1, deep: undefined }]);
     expect(result[1]).toEqual([3] as any);
     expect(result[1]["deep"]).toEqual([] as any);
     expect(result[1]["deep"]["deep"]).toEqual([] as any);

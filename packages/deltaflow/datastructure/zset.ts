@@ -53,9 +53,9 @@ function multiply<A, B, K extends string, S extends boolean = false>(
 
     for (let i = 0; i < aData.length && bData.length; i++) {
       const id = seen.get(aData[i][aKey]);
-      (aData[i] as any)[relationship] ??= id != null ? bData[id] : null;
       if (id === undefined) continue;
-      (aMeta as any)[relationship][i] ??= bMeta[id];
+      (aData[i] as any)[relationship] = bData[id];
+      (aMeta as any)[relationship][i] = bMeta[id];
       pushMeta([aMeta[relationship], bMeta], childKeys, id);
     }
   } else {
@@ -80,7 +80,9 @@ function multiply<A, B, K extends string, S extends boolean = false>(
   }
 
   (a as MetaSet)[2] = nest(aShape, relationship, bShape, single);
-  return a as ZSet<A & { [_ in K]: S extends true ? B | null : B[] }>;
+  return a as ZSet<
+    Omit<A, K> & (S extends true ? { [_ in K]?: B } : { [_ in K]: B[] })
+  >;
 }
 
 function distinct<T>(item: ZSet<T>) {
