@@ -26,7 +26,9 @@ export function join<
       };
       const aKeys = a && {
         [bKey]: new Set(
-          a[0].filter((_, i) => a[1][i] > 0).map((x) => x[aKey] as ValidKey),
+          a[0]
+            .filter((_, i) => a[1][i] > 0 || Object.is(a[1][i], -0))
+            .map((x) => x[aKey] as ValidKey),
         ),
       };
 

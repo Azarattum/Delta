@@ -8,20 +8,11 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
   return traverse(
     {
       combine(aData, aMeta, bData, bMeta) {
-        const isObject = typeof aData === "object" && aData;
-
-        if (aData === bData && isObject) {
-          return [aData, aMeta];
+        if (aMeta + bMeta || (Object.is(aMeta, 0) && Object.is(bMeta, 0))) {
+          return [bData, aMeta + bMeta];
         }
 
-        if (aMeta === 0 || bMeta === 0) {
-          if (!isObject) return [bData, aMeta + bMeta];
-          for (const key in aData) {
-            if (typeof aData[key] !== "object") aData[key] = bData![key];
-          }
-        }
-
-        return [aData, aMeta + bMeta];
+        return [aMeta > bMeta ? aData : bData, -0];
       },
     },
     a,

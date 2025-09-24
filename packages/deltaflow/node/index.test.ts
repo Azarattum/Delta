@@ -52,8 +52,8 @@ it("performs basic CRUD", () => {
   expect(predicate).toHaveBeenCalled();
 
   // Create
-  users.push([[{ id: 2, name: "Alex" }], [1], user]);
   users.push([[{ id: 2, name: "Nobody" }], [1], user]);
+  users.push([[{ id: 2, name: "Alex" }], [1], user]);
   expect(view.pull()).toEqual([
     [
       { id: 1, name: "Alice" },
@@ -450,10 +450,10 @@ it("processes full pipeline", () => {
       }
     ),
   );
-  const view = sink(changes);
 
-  const spy = mock();
-  changes.subscribe(spy);
+  let lastDelta: any = undefined;
+  changes.connect((x) => (lastDelta = structuredClone(x)));
+  const view = sink(changes);
 
   {
     const [data, meta, shape] = view.pull();
@@ -520,7 +520,7 @@ it("processes full pipeline", () => {
     expect(shape).toEqual(userWithMessages as any);
   }
 
-  expect(spy).toHaveBeenLastCalledWith([
+  expect(lastDelta).toEqual([
     [
       {
         id: 2,
@@ -689,6 +689,114 @@ it("joins changes correctly", () => {
   joined.push(undefined, undefined);
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([[], []]);
+});
+
+it("joins with foreign key updates", () => {
+  const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), profile: t.INT }));
+  const profile = shape((t) => ({ id: t(t.INT, t.PRIMARY), bio: t.STRING }));
+
+  const users = memory(user, [
+    { id: 0, profile: 0 },
+    { id: 1, profile: 1 },
+  ]);
+  const profiles = memory(profile, [
+    { id: 0, bio: "Zero" },
+    { id: 1, bio: "One" },
+    { id: 2, bio: "Two" },
+  ]);
+
+  const joined = join(users, "profile", profiles, "id", "profile", true);
+  expect(joined.pull()[0]).toEqual([
+    { id: 0, profile: { id: 0, bio: "Zero" } },
+    { id: 1, profile: { id: 1, bio: "One" } },
+  ]);
+
+  const spy = mock();
+  joined.connect(spy);
+
+  users.push([[{ id: 1, profile: 2 }], [1], user]);
+  users.push([[{ id: 1, profile: 1 }], [-1], user]);
+  joined.flush();
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 1, profile: { id: 2, bio: "Two" } }],
+    [-0],
+    nest(user, "profile", profile, true),
+  ]);
+
+  profiles.push([[{ id: 2, bio: "3" }], [1], profile]);
+  profiles.push([[{ id: 2, bio: "2" }], [0], profile]);
+  joined.flush();
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 1, profile: { id: 2, bio: "2" } }],
+    [0],
+    nest(user, "profile", profile, true),
+  ]);
+
+  users.push([[{ id: 2, profile: 3 }], [1], user]);
+  profiles.push([[{ id: 3, bio: "Three" }], [1], profile]);
+  joined.flush();
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 2, profile: { id: 3, bio: "Three" } }],
+    [1],
+    nest(user, "profile", profile, true),
+  ]);
+
+  expect(joined.pull()[0]).toEqual([
+    { id: 0, profile: { id: 0, bio: "Zero" } },
+    { id: 1, profile: { id: 2, bio: "2" } },
+    { id: 2, profile: { id: 3, bio: "Three" } },
+  ]);
+});
+
+it("propagates middle-level foreign key updates", () => {
+  const A = shape((t) => ({ id: t(t.INT, t.PRIMARY), b: t.INT }));
+  const B = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const C = shape((t) => ({ id: t(t.INT, t.PRIMARY), b: t.INT, x: t.STRING }));
+
+  const a = memory(A, [{ id: 1, b: 1 }]);
+  const b = memory(B, [{ id: 1 }, { id: 2 }]);
+  const c = memory(C, [
+    { id: 10, b: 1, x: "x" },
+    { id: 11, b: 2, x: "y" },
+  ]);
+
+  const bWithCs = join(b, "id", c, "b", "cs");
+  const full = sink(join(a, "b", bWithCs, "id", "b", true));
+
+  expect(full.pull()[0]).toEqual([
+    { id: 1, b: { id: 1, cs: [{ id: 10, b: 1, x: "x" }] } },
+  ]);
+
+  c.push([[{ id: 10, b: 1, x: "x" }], [-1], C]);
+  c.push([[{ id: 10, b: 2, x: "x" }], [1], C]);
+  a.push([[{ id: 1, b: 1 }], [-1], A]);
+  a.push([[{ id: 1, b: 2 }], [1], A]);
+
+  const [data, meta] = full.pull();
+  expect(data).toEqual([
+    {
+      id: 1,
+      b: {
+        id: 2,
+        cs: [
+          { id: 10, b: 2, x: "x" },
+          { id: 11, b: 2, x: "y" },
+        ],
+      },
+    },
+  ]);
+  expect(meta).toEqual([1]);
+  expect(meta["b"]).toEqual([1]);
+  expect(meta["b"].cs).toEqual([[1, 1]]);
+
+  c.push([[{ id: 10, b: 2, x: "x" }], [-1], C]);
+  full.flush(); // TODO: improve join, such that this works without flush
+  c.push([[{ id: 10, b: 1, x: "x" }], [1], C]);
+  expect(full.pull()[0]).toEqual([
+    { id: 1, b: { id: 2, cs: [{ id: 11, b: 2, x: "y" }] } },
+  ]);
+
+  // TODO: test FK updates on other levels too
 });
 
 it("converts ZSet to CLSet", async () => {
@@ -1184,4 +1292,60 @@ it("handles deeply nested joins", () => {
   expect(calls[2][1].comments).toEqual([[1], [1]]);
   expect(calls[2][1].comments[0].likes).toEqual([1]);
   expect(calls[2][1].comments[1].likes).toEqual([1]);
+});
+
+it("updates nested chains", () => {
+  const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t.INT,
+    text: t.STRING,
+  }));
+
+  const users = memory(user, [
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+  ]);
+  const messages = memory(message, [
+    { id: 0, user: 0, text: "Hello" },
+    { id: 1, user: 1, text: "Hi" },
+  ]);
+
+  const joined = sink(join(users, "id", messages, "user", "messages"));
+  expect(joined.pull()[0]).toEqual([
+    { id: 0, name: "Bob", messages: [{ id: 0, user: 0, text: "Hello" }] },
+    { id: 1, name: "Alice", messages: [{ id: 1, user: 1, text: "Hi" }] },
+  ]);
+
+  users.push([[{ id: 0, name: "BOB" }], [0], user]);
+  expect(joined.pull()[0]).toEqual([
+    { id: 0, name: "BOB", messages: [{ id: 0, user: 0, text: "Hello" }] },
+    { id: 1, name: "Alice", messages: [{ id: 1, user: 1, text: "Hi" }] },
+  ]);
+
+  messages.push([[{ id: 2, user: 0, text: "there" }], [1], message]);
+  expect(joined.pull()[0]).toEqual([
+    {
+      id: 0,
+      name: "BOB",
+      messages: [
+        { id: 0, user: 0, text: "Hello" },
+        { id: 2, user: 0, text: "there" },
+      ],
+    },
+    { id: 1, name: "Alice", messages: [{ id: 1, user: 1, text: "Hi" }] },
+  ]);
+
+  messages.push([[{ id: 2, user: 0, text: "there!" }], [0], message]);
+  expect(joined.pull()[0]).toEqual([
+    {
+      id: 0,
+      name: "BOB",
+      messages: [
+        { id: 0, user: 0, text: "Hello" },
+        { id: 2, user: 0, text: "there!" },
+      ],
+    },
+    { id: 1, name: "Alice", messages: [{ id: 1, user: 1, text: "Hi" }] },
+  ]);
 });
