@@ -806,13 +806,10 @@ it("propagates middle-level foreign key updates", () => {
   expect(meta["b"].cs).toEqual([[1, 1]]);
 
   c.push([[{ id: 10, b: 2, x: "x" }], [-1], C]);
-  full.flush(); // TODO: improve join, such that this works without flush
   c.push([[{ id: 10, b: 1, x: "x" }], [1], C]);
   expect(full.pull()[0]).toEqual([
     { id: 1, b: { id: 2, cs: [{ id: 11, b: 2, x: "y" }] } },
   ]);
-
-  // TODO: test FK updates on other levels too
 });
 
 it("converts ZSet to CLSet", async () => {
