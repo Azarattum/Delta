@@ -10,8 +10,10 @@ function add<T>(a: ZSet<T>, b: ZSet<T>) {
   const result = traverse(
     {
       combine(aData, aMeta, bData, bMeta) {
-        if (!(aMeta + bMeta)) mark(bData, previous, oldest(aData));
-        return [bData, aMeta + bMeta];
+        const sum = aMeta + bMeta;
+        const reinserted = (!sum && (aMeta || bMeta)) || has(aData, previous);
+        if (reinserted) mark(bData, previous, oldest(aData));
+        return [bData, sum];
       },
     },
     a,
@@ -121,16 +123,19 @@ function sort<T>(item: ZSet<T>, compare: (a: T, b: T) => number) {
 function expand<T>(item: ZSet<T>, key: keyof T) {
   const childKeys = children(item[2]);
 
-  item[0].forEach((x, i) => {
-    if (item[1][i] !== 0) return;
-    if (!has(x, previous, key) || x[key] === x[previous][key]) return;
+  for (let i = 0; i < item[0].length; i++) {
+    if (item[1][i] !== 0) continue;
+
+    const x = item[0][i];
+    if (!has(x, previous, key) || x[key] === x[previous][key]) continue;
 
     item[1][i] = 1;
     item[1].splice(i, 0, -1);
-    copyMeta([item[1]], childKeys, i);
+    shiftMeta([item[1]], childKeys, i);
     item[0].splice(i, 0, x[previous] as T);
-    delete (x as any)[previous];
-  });
+    delete (x as { [previous]: unknown })[previous];
+    i++;
+  }
 
   return item;
 }
@@ -139,8 +144,9 @@ const initMeta = recurse(([meta], key) => (meta[key] ??= []));
 const pushMeta = recurse(([aMeta, bMeta], key, i: number) =>
   aMeta[key].push(bMeta[key][i]),
 );
-const copyMeta = recurse(([meta], key, i: number) => {
-  meta[key].splice(i, 0, meta[key][i]);
+const shiftMeta = recurse(([meta], key, i: number) => {
+  meta[key].splice(i, 0, undefined);
+  delete meta[key][i];
 });
 
 const oldest = <T>(x: T): T =>

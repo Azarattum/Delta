@@ -1419,3 +1419,115 @@ it("handles join key child updates", () => {
     { id: 0, name: "Bob", msg: 0, messages: [] },
   ]);
 });
+
+it("handles multiple simultaneous join key updates", () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    msg: t.INT,
+    name: t.STRING,
+  }));
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t.INT,
+    text: t.STRING,
+  }));
+
+  const users = memory(user, [
+    { id: 0, name: "Alice", msg: 0 },
+    { id: 1, name: "Bob", msg: 1 },
+  ]);
+  const messages = memory(message, [
+    { id: 0, user: 0, text: "Hello" },
+    { id: 1, user: 1, text: "Hi" },
+  ]);
+
+  const joined = sink(join(users, "msg", messages, "user", "messages"));
+  joined.pull();
+
+  messages.push([[{ id: 0, user: 0, text: "Hello" }], [-1], message]);
+  messages.push([[{ id: 0, user: 2, text: "Hello" }], [1], message]);
+  messages.push([[{ id: 1, user: 1, text: "Hi" }], [-1], message]);
+  messages.push([[{ id: 1, user: 0, text: "Hi" }], [1], message]);
+
+  expect(joined.pull()[0]).toEqual([
+    {
+      id: 0,
+      name: "Alice",
+      msg: 0,
+      messages: [{ id: 1, user: 0, text: "Hi" }],
+    },
+    { id: 1, name: "Bob", msg: 1, messages: [] },
+  ]);
+});
+
+it("handles chained join key updates correctly", () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    msg: t.INT,
+    name: t.STRING,
+  }));
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t.INT,
+    text: t.STRING,
+  }));
+
+  const users = memory(user, [{ id: 0, name: "Alice", msg: 0 }]);
+  const messages = memory(message, [
+    { id: 0, user: 0, text: "Hello" },
+    { id: 1, user: 1, text: "Hi" },
+    { id: 2, user: 2, text: "Hey" },
+  ]);
+
+  const joined = sink(join(users, "msg", messages, "user", "messages"));
+  joined.pull();
+
+  // Update user's msg 0 -> 1 -> 2 in sequence
+  users.push([[{ id: 0, name: "Alice", msg: 0 }], [-1], user]);
+  users.push([[{ id: 0, name: "Alice", msg: 1 }], [1], user]);
+  users.push([[{ id: 0, name: "Alice", msg: 1 }], [-1], user]);
+  users.push([[{ id: 0, name: "Alice", msg: 2 }], [1], user]);
+
+  const result = joined.pull()[0];
+  expect(result).toEqual([
+    {
+      id: 0,
+      name: "Alice",
+      msg: 2,
+      messages: [{ id: 2, user: 2, text: "Hey" }],
+    },
+  ]);
+});
+
+it("handles empty join with key updates", () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    msg: t.INT,
+    name: t.STRING,
+  }));
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t.INT,
+    text: t.STRING,
+  }));
+
+  const users = memory(user, [{ id: 0, name: "Alice", msg: 99 }]);
+  const messages = memory(message, [{ id: 0, user: 0, text: "Hello" }]);
+
+  const joined = sink(join(users, "msg", messages, "user", "messages"));
+  expect(joined.pull()[0]).toEqual([
+    { id: 0, name: "Alice", msg: 99, messages: [] },
+  ]);
+
+  users.push([[{ id: 0, name: "Alice", msg: 99 }], [-1], user]);
+  users.push([[{ id: 0, name: "Alice", msg: 0 }], [1], user]);
+
+  expect(joined.pull()[0]).toEqual([
+    {
+      id: 0,
+      name: "Alice",
+      msg: 0,
+      messages: [{ id: 0, user: 0, text: "Hello" }],
+    },
+  ]);
+});

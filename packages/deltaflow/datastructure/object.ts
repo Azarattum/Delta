@@ -12,9 +12,9 @@ export function has<K extends (keyof any)[]>(
   });
 }
 
-export function mark(target: unknown, mark: symbol, value: unknown = true) {
-  if (typeof target !== "object" || target === null) return;
-  Object.defineProperty(target, mark, {
+export function mark<T>(target: T, mark: symbol, value: unknown = true): T {
+  if (typeof target !== "object" || target === null) return target;
+  return Object.defineProperty(target, mark, {
     configurable: true,
     enumerable: false,
     value,

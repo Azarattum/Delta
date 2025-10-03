@@ -1,6 +1,16 @@
-import { add, copy, distinct, multiply, zero, type ZSet } from "./zset";
+import {
+  add,
+  copy,
+  distinct,
+  expand,
+  multiply,
+  previous,
+  zero,
+  type ZSet,
+} from "./zset";
 import { nest, shape } from "./shape";
 import { expect, it } from "bun:test";
+import { has, mark } from "./object";
 
 it("performs one-to-one multiplication", () => {
   const a = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
@@ -776,4 +786,108 @@ it("multiplies through double deep nesting & multiple matches", () => {
     expect(result[0][0].deep1).toBe(result[0][1].deep1);
     expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
   }
+});
+
+it("tracks previous values through multiple updates", () => {
+  const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY), v: t.INT }));
+  const v1 = { id: 1, v: 1 };
+  const v2 = { id: 1, v: 2 };
+  const v3 = { id: 1, v: 3 };
+
+  const a: ZSet<(typeof idShape)["~type"]> = [[v1], [1], idShape];
+  const b: ZSet<(typeof idShape)["~type"]> = [[v2], [-1], idShape];
+
+  add(a, b);
+  expect(a[1][0]).toBe(0);
+  expect(a[0][0]).toBe(v2);
+
+  expect((a[0][0] as any)[previous]).toBe(v1);
+
+  const c: ZSet<(typeof idShape)["~type"]> = [[v3], [-1], idShape];
+  add(a, c);
+  expect(a[1][0]).toBe(-1);
+  expect(a[0][0]).toBe(v3);
+
+  expect((a[0][0] as any)[previous]).toBe(v1);
+});
+
+it("add condition is minimal for zero detection", () => {
+  const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY), v: t.INT }));
+
+  const cases: Array<[number, number, boolean, string]> = [
+    [1, -1, true, "1 + -1 = 0, should mark"],
+    [-1, 1, true, "-1 + 1 = 0, should mark"],
+    [2, -2, true, "2 + -2 = 0, should mark"],
+    [0, 0, false, "0 + 0 = 0, should NOT mark"],
+    [1, 1, false, "1 + 1 = 2, should NOT mark"],
+    [1, 0, false, "1 + 0 = 1, should NOT mark"],
+    [0, 1, false, "0 + 1 = 1, should NOT mark"],
+    [-1, -1, false, "-1 + -1 = -2, should NOT mark"],
+  ];
+
+  for (const [aMeta, bMeta, shouldMark, desc] of cases) {
+    const a: ZSet<(typeof idShape)["~type"]> = [
+      [{ id: 1, v: 1 }],
+      [aMeta],
+      idShape,
+    ];
+    const b: ZSet<(typeof idShape)["~type"]> = [
+      [{ id: 1, v: 2 }],
+      [bMeta],
+      idShape,
+    ];
+
+    add(a, b);
+    expect(has(a[0][0], previous), desc).toBe(shouldMark);
+    expect(a[1][0]).toBe(aMeta + bMeta);
+  }
+});
+
+it("expand correctly copies nested metadata", () => {
+  const msg = shape((t) => ({ id: t(t.INT, t.PRIMARY), uid: t.INT }));
+  const detail = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+
+  const oldMsg = { id: 1, uid: 1 };
+  const newMsg = mark({ id: 1, uid: 2 }, previous, oldMsg);
+
+  const messages: ZSet<(typeof msg)["~type"]> = [[newMsg], [0], msg];
+  const details: ZSet<(typeof detail)["~type"]> = [
+    [{ id: 1 }, { id: 2 }],
+    [1, 1],
+    detail,
+  ];
+
+  multiply(details, "id", copy(details), "id", "details2", true);
+  multiply(messages, "uid", details, "id", "details", true);
+
+  expand(messages, "uid");
+
+  expect(messages[0].length).toBe(2);
+  expect(messages[1].length).toBe(2);
+
+  expect(messages[0][0]).toBe(oldMsg);
+  expect(messages[1][0]).toBe(-1);
+  expect(messages[0][1]).toBe(newMsg);
+  expect(messages[1][1]).toBe(1);
+
+  expect(messages[1]["details"].length).toBe(2);
+  expect(messages[1]["details"]["details2"].length).toBe(2);
+  expect(has(messages[1]["details"], 0)).toBe(false);
+  expect(has(messages[1]["details"]["details2"], 0)).toBe(false);
+
+  expect(has(messages[0][0], previous)).toBe(false);
+  expect(has(messages[0][1], previous)).toBe(false);
+});
+
+it("expand handles same key value correctly", () => {
+  const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY), v: t.INT }));
+
+  const oldItem = { id: 1, v: 5 };
+  const newItem = mark({ id: 1, v: 5 }, previous, oldItem);
+
+  const item: ZSet<(typeof idShape)["~type"]> = [[newItem], [0], idShape];
+
+  const before = item[0].length;
+  expand(item, "v");
+  expect(item[0].length).toBe(before);
 });
