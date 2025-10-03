@@ -18,7 +18,7 @@ const zStream = <
   stream({
     compress: (queue) => {
       return [
-        queue.map((x) => x?.reduce((acc, x) => add(acc, x))),
+        queue.map((x) => x?.reduce((acc, x) => add(acc, x, false))),
       ] as PartialEntities<TIn>[];
     },
     ...options,

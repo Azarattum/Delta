@@ -119,6 +119,7 @@ const TYPE = {
   PRIMARY: 16,
   FTS: 32,
   ORDER: 64,
+  RELATION: 2147418112, // 2**31 - 2**16
 } as const;
 
 const combineFlags = <T extends number[]>(...flags: T) =>

@@ -1,8 +1,6 @@
-import { add, expand, multiply, previous, zero } from "../datastructure/zset";
 import { zStream, type OfZStream, type ZStream } from "./stream";
-import { authoritative } from "../datastructure/metaset";
+import { add, multiply, zero } from "../datastructure/zset";
 import { SyncPromise, type ValidKey } from "../stream";
-import { has, mark } from "../datastructure/object";
 import type { ZSet } from "../datastructure/zset";
 
 export function join<
@@ -24,17 +22,11 @@ export function join<
   return zStream({
     push(a?: ZSet<A>, b?: ZSet<B>) {
       const bKeys = b && {
-        [aKey]: new Set(expand(b, bKey)[0].map((x) => x[bKey] as ValidKey)),
+        [aKey]: new Set(b[0].map((x) => x[bKey] as ValidKey)),
       };
       const aKeys = a && {
         [bKey]: new Set(
-          a[0]
-            .filter((x, i) => {
-              if (a[1][i] > 0) return true;
-              if (a[1][i] < 0) return false;
-              return has(x, previous, aKey) && x[aKey] !== x[previous][aKey];
-            })
-            .map((x) => x[aKey] as ValidKey),
+          a[0].filter((_, i) => a[1][i] > 0).map((x) => x[aKey] as ValidKey),
         ),
       };
 
@@ -51,14 +43,6 @@ export function join<
 
         if (aPulled && bPulled) {
           multiply(aPulled, aKey, bPulled, bKey, relationship, single);
-        }
-
-        if (aPulled && !single) {
-          aPulled[0].forEach((x, i) => {
-            if (aKeys?.[bKey].has(x[aKey] as ValidKey)) {
-              mark(aPulled[1][relationship][i], authoritative);
-            }
-          });
         }
 
         return (aPulled || zero()) as C;

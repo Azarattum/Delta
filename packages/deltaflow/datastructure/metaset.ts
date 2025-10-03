@@ -6,19 +6,14 @@ import type {
   MetaSet,
   Visit,
 } from "./metaset.types";
-import { children, compare, either } from "./shape";
+import { children, compare as defaultCompare, either } from "./shape";
 
 function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   const shape = either(target[2], source?.[2]);
   const childKeys = children(shape);
   const deep = visit(fns, shape);
 
-  if (source && authoritative in source[1]) {
-    [target[0], target[1]] = source;
-    source = undefined;
-  }
-
-  const { container } = fns;
+  const { container, compare = defaultCompare } = fns;
   if (container) {
     target[0] = container(target[0], false);
     target[1] = container(target[1], !!childKeys.length) as (typeof target)[1];
@@ -124,5 +119,4 @@ function recurse<TFn extends RecurseFn>(fn: TFn): Recurse<TFn> {
 
 const pruneMeta = recurse(([meta], key, n: number) => (meta[key].length -= n));
 
-export const authoritative = Symbol("authoritative");
 export { traverse, recurse, type MetaSet, type Visitors };

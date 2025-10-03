@@ -80,6 +80,8 @@ type Visitors<T extends MetaSet> = {
     : unknown[],
     deep: TDeep,
   ) => TDeep extends true ? Record<string, unknown> & unknown[] : unknown[];
+
+  compare?: <T>(a: T, b: T, shape?: Shape<T>) => number;
 };
 
 type Visit<T extends MetaSet> = (

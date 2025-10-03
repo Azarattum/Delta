@@ -1,26 +1,30 @@
 import { recurse, traverse, type MetaSet } from "./metaset";
-import { children, nest } from "./shape";
-import { has, mark } from "./object";
+import { children, compare, nest, TYPE } from "./shape";
 
 type ZSet<T> = MetaSet<T, number>;
 
-function add<T>(a: ZSet<T>, b: ZSet<T>) {
+function add<T>(a: ZSet<T>, b: ZSet<T>, collapseFKs = true) {
   if (!b[0].length) return a;
 
-  const result = traverse(
+  return traverse(
     {
-      combine(aData, aMeta, bData, bMeta) {
-        const sum = aMeta + bMeta;
-        const reinserted = (!sum && (aMeta || bMeta)) || has(aData, previous);
-        if (reinserted) mark(bData, previous, oldest(aData));
-        return [bData, sum];
-      },
+      combine: (_, aMeta, bData, bMeta) => [bData, aMeta + bMeta],
+      compare:
+        collapseFKs ? compare : (
+          (aData, bData, shape) => {
+            const cmp = compare(aData, bData, shape);
+            if (cmp !== 0 || !shape) return cmp;
+            return -shape.types.some((x, i) => {
+              if (!(x & TYPE.RELATION)) return false;
+              const key = shape.keys[i];
+              return aData[key] !== bData[key];
+            });
+          }
+        ),
     },
     a,
     b,
   );
-
-  return result;
 }
 
 function multiply<A, B, K extends string, S extends boolean = false>(
@@ -81,13 +85,7 @@ function multiply<A, B, K extends string, S extends boolean = false>(
 
 function distinct<T>(item: ZSet<T>) {
   return traverse(
-    {
-      update: (data, meta) => {
-        if (meta <= 0) return;
-        if (has(data, previous)) delete data[previous];
-        return [data, 1];
-      },
-    },
+    { update: (data, meta) => (meta > 0 ? [data, 1] : undefined) },
     item,
   );
 }
@@ -120,38 +118,10 @@ function sort<T>(item: ZSet<T>, compare: (a: T, b: T) => number) {
   return item;
 }
 
-function expand<T>(item: ZSet<T>, key: keyof T) {
-  const childKeys = children(item[2]);
-
-  for (let i = 0; i < item[0].length; i++) {
-    if (item[1][i] !== 0) continue;
-
-    const x = item[0][i];
-    if (!has(x, previous, key) || x[key] === x[previous][key]) continue;
-
-    item[1][i] = 1;
-    item[1].splice(i, 0, -1);
-    shiftMeta([item[1]], childKeys, i);
-    item[0].splice(i, 0, x[previous] as T);
-    delete (x as { [previous]: unknown })[previous];
-    i++;
-  }
-
-  return item;
-}
-
 const initMeta = recurse(([meta], key) => (meta[key] ??= []));
 const pushMeta = recurse(([aMeta, bMeta], key, i: number) =>
   aMeta[key].push(bMeta[key][i]),
 );
-const shiftMeta = recurse(([meta], key, i: number) => {
-  meta[key].splice(i, 0, undefined);
-  delete meta[key][i];
-});
 
-const oldest = <T>(x: T): T =>
-  has(x, previous) ? (oldest(x[previous]) as T) : x;
-
-export const previous = Symbol("previous");
-export { add, sort, distinct, zero, copy, expand, multiply };
+export { add, sort, distinct, zero, copy, multiply };
 export type { ZSet };

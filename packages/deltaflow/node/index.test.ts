@@ -692,8 +692,14 @@ it("joins changes correctly", () => {
 });
 
 it("joins with foreign key updates", () => {
-  const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), profile: t.INT }));
-  const profile = shape((t) => ({ id: t(t.INT, t.PRIMARY), bio: t.STRING }));
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    profile: t(t.RELATION(1), t.INT),
+  }));
+  const profile = shape((t) => ({
+    id: t(t.INT, t.PRIMARY, t.RELATION(1)),
+    bio: t.STRING,
+  }));
 
   const users = memory(user, [
     { id: 0, profile: 0 },
@@ -718,8 +724,11 @@ it("joins with foreign key updates", () => {
   users.push([[{ id: 1, profile: 2 }], [1], user]);
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
-    [{ id: 1, profile: { id: 2, bio: "Two" } }],
-    [0],
+    [
+      { id: 1, profile: 1 },
+      { id: 1, profile: { id: 2, bio: "Two" } },
+    ],
+    [-1, 1],
     nest(user, "profile", profile, true),
   ]);
 
@@ -749,9 +758,16 @@ it("joins with foreign key updates", () => {
 });
 
 it("propagates middle-level foreign key updates", () => {
-  const A = shape((t) => ({ id: t(t.INT, t.PRIMARY), b: t.INT }));
-  const B = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
-  const C = shape((t) => ({ id: t(t.INT, t.PRIMARY), b: t.INT, x: t.STRING }));
+  const A = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    b: t(t.RELATION(1), t.INT),
+  }));
+  const B = shape((t) => ({ id: t(t.INT, t.RELATION(1), t.PRIMARY) }));
+  const C = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    b: t(t.RELATION(1), t.INT),
+    x: t.STRING,
+  }));
 
   const a = memory(A, [{ id: 1, b: 1 }]);
   const b = memory(B, [{ id: 1 }, { id: 2 }]);
@@ -1353,12 +1369,12 @@ it("updates nested chains", () => {
 it("handles join key parent updates", () => {
   const user = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
-    msg: t.INT,
+    msg: t(t.RELATION(1), t.INT),
     name: t.STRING,
   }));
   const message = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
-    user: t.INT,
+    user: t(t.INT, t.RELATION(1)),
     text: t.STRING,
   }));
 
@@ -1388,12 +1404,12 @@ it("handles join key parent updates", () => {
 it("handles join key child updates", () => {
   const user = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
-    msg: t.INT,
+    msg: t(t.INT, t.RELATION(1)),
     name: t.STRING,
   }));
   const message = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
-    user: t.INT,
+    user: t(t.INT, t.RELATION(1)),
     text: t.STRING,
   }));
 
@@ -1423,12 +1439,12 @@ it("handles join key child updates", () => {
 it("handles multiple simultaneous join key updates", () => {
   const user = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
-    msg: t.INT,
+    msg: t(t.RELATION(1), t.INT),
     name: t.STRING,
   }));
   const message = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
-    user: t.INT,
+    user: t(t.RELATION(1), t.INT),
     text: t.STRING,
   }));
 
@@ -1463,12 +1479,12 @@ it("handles multiple simultaneous join key updates", () => {
 it("handles chained join key updates correctly", () => {
   const user = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
-    msg: t.INT,
+    msg: t(t.RELATION(1), t.INT),
     name: t.STRING,
   }));
   const message = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
-    user: t.INT,
+    user: t(t.RELATION(1), t.INT),
     text: t.STRING,
   }));
 
@@ -1502,12 +1518,12 @@ it("handles chained join key updates correctly", () => {
 it("handles empty join with key updates", () => {
   const user = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
-    msg: t.INT,
+    msg: t(t.RELATION(1), t.INT),
     name: t.STRING,
   }));
   const message = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
-    user: t.INT,
+    user: t(t.INT, t.RELATION(1)),
     text: t.STRING,
   }));
 
