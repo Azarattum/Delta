@@ -8,15 +8,16 @@ function stream<
   TPush,
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends any[] = [Awaited<TPull>],
->(options: StreamOptions<TPush, TPull, TIn>) {
-  type Upstreams = { [K in keyof TIn]: Stream<unknown, [TIn[K]]> | null };
+  TOptions = unknown,
+>(options: StreamOptions<TPush, TPull, TIn, TOptions>) {
+  type Upstreams = { [K in keyof TIn]: Stream<any, [TIn[K]], TOptions> | null };
 
   return <
     TUpstreams extends Upstreams,
     TOut = InferOut<TPush, TPull, TUpstreams>,
   >(
     ...upstreams: TUpstreams
-  ): Stream<TOut, TIn> => {
+  ): Stream<TOut, TIn, TOptions> => {
     const push = options.push ?? ((...entity: TIn) => entity[0]);
     const pull =
       options.pull ??
@@ -124,7 +125,7 @@ type PartialEntities<T extends any[]> =
 type EntityQueue<T extends any[]> =
   T extends [any] ? [Awaited<T[0]>[]] : { [K in keyof T]?: Awaited<T[K]>[] };
 
-type Stream<TOut, TIn extends any[] = unknown[]> = {
+type Stream<TOut, TIn extends any[] = unknown[], TOptions = unknown> = {
   /** Subscribes to changes and immediately pulls the current state */
   subscribe(fn: (entity: Awaited<TOut>) => void): () => void;
   /** Subscribes to future changes without side-effects */
@@ -132,7 +133,7 @@ type Stream<TOut, TIn extends any[] = unknown[]> = {
   /** Pushes to the stream */
   push(...entities: PartialEntities<TIn>): void;
   /** Pulls from the stream */
-  pull(options?: PullOptions): TOut;
+  pull(options?: TOptions): TOut;
   /** Immediately flushes all the pending stream pushes */
   flush(): MaybePromise<void>;
   /** Checks if the stream has pending changes */
@@ -145,9 +146,10 @@ type StreamOptions<
   TOut,
   TPull extends MaybePromise<TOut> = MaybePromise<TOut>,
   TIn extends any[] = [Awaited<TPull>],
+  TOptions = undefined,
 > = {
   /** Describes the behavior when somebody tries to pull from the stream */
-  pull?: (options?: PullOptions) => TPull;
+  pull?: (options?: TOptions) => TPull;
   /** Describes the behavior when somebody pushes to the stream */
   push?: (...entities: PartialEntities<TIn>) => TOut;
   /** Describes any additional flush behavior */
@@ -156,15 +158,5 @@ type StreamOptions<
   compress?: (queue: EntityQueue<TIn>) => PartialEntities<TIn>[];
 };
 
-/** TODO: these should be datatype specific */
-type PullOptions = {
-  /** Lookup and order by provided keys */
-  constraints?: Record<keyof any, Set<ValidKey>>;
-  /** Order to pull in */
-  ordering?: (keyof any | [keyof any, ("asc" | "desc")?])[];
-};
-
-type ValidKey = number | string | Date | BufferSource;
-
 export { stream };
-export type { Stream, StreamOptions, PartialEntities, EntityQueue, ValidKey };
+export type { Stream, StreamOptions, PartialEntities, EntityQueue };

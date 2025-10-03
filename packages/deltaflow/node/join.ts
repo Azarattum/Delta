@@ -1,7 +1,7 @@
-import { zStream, type OfZStream, type ZStream } from "./stream";
+import { zStream, type OfZStream, type ValidKey, type ZStream } from "./stream";
 import { add, multiply, zero } from "../datastructure/zset";
-import { SyncPromise, type ValidKey } from "../stream";
 import type { ZSet } from "../datastructure/zset";
+import { SyncPromise } from "../stream";
 
 export function join<
   const AStream extends ZStream<A>,
