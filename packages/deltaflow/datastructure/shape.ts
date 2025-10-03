@@ -85,15 +85,12 @@ function compare<T>(a: T, b: T, shape?: Shape<T>) {
     if (y == null) return 1 * direction;
     if (x == null) return -1 * direction;
 
-    if (typeof x !== typeof y) {
-      throw new Error(`Mismatched types: ${typeof x} ${typeof y}`);
+    const type = typeof x;
+    if (type !== typeof y || type === "object" || type === "function") {
+      throw new Error(`Unsupported compare types: ${type} ${typeof y}`);
     }
 
-    // TODO: ensure it is OK to use localeCompare
-    if (typeof x === "string") return x.localeCompare(y as string) * direction;
-    if (typeof x === "number") return (x - (y as number)) * direction;
-    if (typeof x === "boolean") return (x ? 1 : -1) * direction;
-    throw new Error(`Unsupported compare type: ${typeof x}`);
+    return (x < y ? -1 : 1) * direction;
   }
 
   return 0;
