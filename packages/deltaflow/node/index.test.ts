@@ -1,6 +1,6 @@
 import { nest, reorder, shape } from "../datastructure/shape";
 import { expect, it, mock, spyOn } from "bun:test";
-import type { ZSet } from "../datastructure/zset";
+import { type ZSet } from "../datastructure/zset";
 import { stream } from "../stream";
 import {
   memoryReplication,
@@ -714,12 +714,12 @@ it("joins with foreign key updates", () => {
   const spy = mock();
   joined.connect(spy);
 
-  users.push([[{ id: 1, profile: 2 }], [1], user]);
   users.push([[{ id: 1, profile: 1 }], [-1], user]);
+  users.push([[{ id: 1, profile: 2 }], [1], user]);
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 1, profile: { id: 2, bio: "Two" } }],
-    [-0],
+    [0],
     nest(user, "profile", profile, true),
   ]);
 
@@ -1347,5 +1347,75 @@ it("updates nested chains", () => {
       ],
     },
     { id: 1, name: "Alice", messages: [{ id: 1, user: 1, text: "Hi" }] },
+  ]);
+});
+
+it("handles join key parent updates", () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    msg: t.INT,
+    name: t.STRING,
+  }));
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t.INT,
+    text: t.STRING,
+  }));
+
+  const users = memory(user, [{ id: 0, name: "Bob", msg: 0 }]);
+  const messages = memory(message, [
+    { id: 0, user: 0, text: "Hello" },
+    { id: 1, user: 1, text: "Hi" },
+  ]);
+
+  const joined = sink(join(users, "msg", messages, "user", "messages"));
+  expect(joined.pull()[0]).toEqual([
+    {
+      id: 0,
+      name: "Bob",
+      msg: 0,
+      messages: [{ id: 0, user: 0, text: "Hello" }],
+    },
+  ]);
+
+  users.push([[{ id: 0, name: "Bob", msg: 0 }], [-1], user]);
+  users.push([[{ id: 0, name: "Bob", msg: 1 }], [1], user]);
+  expect(joined.pull()[0]).toEqual([
+    { id: 0, name: "Bob", msg: 1, messages: [{ id: 1, user: 1, text: "Hi" }] },
+  ]);
+});
+
+it("handles join key child updates", () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    msg: t.INT,
+    name: t.STRING,
+  }));
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t.INT,
+    text: t.STRING,
+  }));
+
+  const users = memory(user, [{ id: 0, name: "Bob", msg: 0 }]);
+  const messages = memory(message, [
+    { id: 0, user: 0, text: "Hello" },
+    { id: 1, user: 1, text: "Hi" },
+  ]);
+
+  const joined = sink(join(users, "msg", messages, "user", "messages"));
+  expect(joined.pull()[0]).toEqual([
+    {
+      id: 0,
+      name: "Bob",
+      msg: 0,
+      messages: [{ id: 0, user: 0, text: "Hello" }],
+    },
+  ]);
+
+  messages.push([[{ id: 0, user: 0, text: "Hello" }], [-1], message]);
+  messages.push([[{ id: 0, user: 1, text: "Hello" }], [1], message]);
+  expect(joined.pull()[0]).toEqual([
+    { id: 0, name: "Bob", msg: 0, messages: [] },
   ]);
 });

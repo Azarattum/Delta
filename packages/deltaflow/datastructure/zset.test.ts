@@ -777,27 +777,3 @@ it("multiplies through double deep nesting & multiple matches", () => {
     expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
   }
 });
-
-it("creates -0 meta on reinsertion", () => {
-  const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY), v: t.INT }));
-  const a: ZSet<(typeof idShape)["~type"]> = [[{ id: 1, v: 1 }], [2], idShape];
-  const b: ZSet<(typeof idShape)["~type"]> = [[{ id: 1, v: 2 }], [-2], idShape];
-
-  add(a, b);
-
-  expect(Object.is(a[1][0], -0)).toBe(true);
-  expect(a[0][0]).toEqual({ id: 1, v: 1 });
-  expect(distinct(a)).toEqual([[], [], idShape]);
-});
-
-it("does not create -0 when both metas are zero", () => {
-  const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY), v: t.INT }));
-  const a: ZSet<(typeof idShape)["~type"]> = [[{ id: 1, v: 1 }], [0], idShape];
-  const b: ZSet<(typeof idShape)["~type"]> = [[{ id: 1, v: 2 }], [0], idShape];
-
-  add(a, b);
-
-  expect(a[1][0]).toBe(0);
-  expect(a[0][0]).toEqual({ id: 1, v: 2 });
-  expect(Object.is(a[1][0], -0)).toBe(false);
-});

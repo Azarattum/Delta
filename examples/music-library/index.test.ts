@@ -1,6 +1,6 @@
-import { it, expect } from "bun:test";
-import { join, memory, sink } from "deltaflow";
 import { album, artist, attribution, track } from "./schema";
+import { join, memory, sink } from "deltaflow";
+import { it, expect } from "bun:test";
 
 it("joins tracks with albums", async () => {
   const tracks = memory(track);
@@ -168,7 +168,7 @@ it("represents library correctly", async () => {
 
   expect(meta).toEqual([1, 1, 1] as any);
   expect(meta["album"]).toEqual([1, 1, 1]);
-  expect(meta.attributions).toEqual([[1, 1], [1], [1]] as any);
+  expect(meta.attributions).toEqual([[1, 1], [1], [1]]);
   expect(meta.attributions[0]["artists"]).toEqual([1, 1]);
   expect(meta.attributions[1]["artists"]).toEqual([1]);
   expect(meta.attributions[2]["artists"]).toEqual([1]);

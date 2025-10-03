@@ -13,6 +13,11 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   const childKeys = children(shape);
   const deep = visit(fns, shape);
 
+  if (source && authoritative in source[1]) {
+    [target[0], target[1]] = source;
+    source = undefined;
+  }
+
   const { container } = fns;
   if (container) {
     target[0] = container(target[0], false);
@@ -21,6 +26,8 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
       target[1][key] = container(target[1][key], !!children(shape).length);
     });
   }
+
+  if (!source && !fns.update && !fns.container) return target;
 
   const [tData, tMeta] = target;
   const [sData, sMeta] = source ?? ([[], []] as unknown as T);
@@ -117,4 +124,5 @@ function recurse<TFn extends RecurseFn>(fn: TFn): Recurse<TFn> {
 
 const pruneMeta = recurse(([meta], key, n: number) => (meta[key].length -= n));
 
+export const authoritative = Symbol("authoritative");
 export { traverse, recurse, type MetaSet, type Visitors };
