@@ -645,3 +645,29 @@ it("doesn't modify the original when inserting", () => {
   expect(emptySet[1]).toEqual([2, 3] as any);
   expect(emptySet[1].deep).toEqual([11, 21] as any);
 });
+
+it("processes concurrent deletions from updates and inserts", () => {
+  const setA: MetaSet<number, number> = [
+    [3, 10],
+    [30, 100],
+  ];
+  const setB: MetaSet<number, number> = [
+    [1, 2, 4],
+    [10, 20, 40],
+  ];
+
+  const updates: number[] = [];
+  const inserts: number[] = [];
+
+  const visitors: Visitors<typeof setA> = {
+    update: (data) => void updates.push(data),
+    insert: (data) => void inserts.push(data),
+  };
+
+  traverse(visitors, setA, setB);
+
+  expect(setA[0]).toEqual([]);
+  expect(setA[1]).toEqual([]);
+  expect(updates).toEqual([3, 10]);
+  expect(inserts).toEqual([1, 2, 4]);
+});

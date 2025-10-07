@@ -43,7 +43,7 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
       : deep("combine", [tData[i], sData[j]], [tMeta, sMeta], [i, j], deleted);
 
     const ti = i - deleted;
-    if (!next) cmp <= 0 && deleted++;
+    if (!next) cmp <= 0 ? deleted++ : i--;
     else if (cmp <= 0) [tData[ti], tMeta[ti]] = next;
     else {
       tData.splice(ti, 0, next[0]);
