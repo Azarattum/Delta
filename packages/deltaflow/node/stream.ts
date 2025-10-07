@@ -45,6 +45,8 @@ type PullOptions = {
   constraints?: Record<keyof any, Set<ValidKey>>;
   /** Order to pull in */
   ordering?: (keyof any | [keyof any, ("asc" | "desc")?])[];
+  /** Default weight to initialize data with */
+  weight?: number;
 };
 
 type ValidKey = number | string | Date | BufferSource;

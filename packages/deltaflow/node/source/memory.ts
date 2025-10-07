@@ -23,7 +23,7 @@ export function memory<T extends Record<string, any>>(
   });
 
   return zStream({
-    pull: ({ ordering, constraints } = {}) => {
+    pull: ({ ordering, constraints, weight = 1 } = {}) => {
       const checks = constraints && Object.entries(constraints);
       const scan = structuredClone(
         checks ?
@@ -31,9 +31,8 @@ export function memory<T extends Record<string, any>>(
         : data[0],
       );
 
-      const scanShape = ordering ? reorder(shape, ...(ordering as any)) : shape;
-      const scanMeta =
-        constraints ? Array(scan.length).fill(1) : structuredClone(data[1]);
+      const scanShape = ordering ? reorder(shape, ...ordering) : shape;
+      const scanMeta = Array(scan.length).fill(weight);
       const scanSet = [scan, scanMeta, scanShape] as ZSet<T>;
 
       if (ordering) sort(scanSet, (a, b) => compare(a, b, scanShape));

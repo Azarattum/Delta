@@ -31,10 +31,9 @@ export function join<
       };
 
       return SyncPromise.all([
-        bKeys?.[aKey].size && aUpstream.pull({ constraints: bKeys }),
+        bKeys?.[aKey].size && aUpstream.pull({ constraints: bKeys, weight: 0 }),
         aKeys?.[bKey].size && bUpstream.pull({ constraints: aKeys }),
       ] as const).then(([aPulled, bPulled]) => {
-        if (aPulled) zero(aPulled);
         if (aPulled && a) add(aPulled, a);
         else if (a) aPulled = a;
 

@@ -19,7 +19,7 @@ export async function indexeddb<T extends object>(
   );
 
   return zStream({
-    pull: async ({ constraints, ordering } = {}) => {
+    pull: async ({ constraints, ordering, weight = 1 } = {}) => {
       const store = db.transaction([table], "readonly").objectStore(table);
       let scan: T[];
 
@@ -33,7 +33,7 @@ export async function indexeddb<T extends object>(
         );
       }
 
-      return [scan, Array(scan.length).fill(1), shape] as ZSet<T>;
+      return [scan, Array(scan.length).fill(weight), shape] as ZSet<T>;
     },
     flush: async (changes: [ZSet<T>][]) => {
       if (changes.length === 0) return;

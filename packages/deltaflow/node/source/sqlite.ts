@@ -30,7 +30,7 @@ export function sqlite<T extends Record<string, any>>(
   );
 
   return zStream({
-    pull: ({ constraints, ordering } = {}) => {
+    pull: ({ constraints, ordering, weight = 1 } = {}) => {
       const orderBy =
         ordering ?
           `ORDER BY ${ordering?.map((x) => (Array.isArray(x) ? x.join(" ") : x)).join(", ")}`
@@ -45,7 +45,7 @@ export function sqlite<T extends Record<string, any>>(
 
       const scan = db.query(`SELECT * FROM ${table} ${where} ${orderBy}`).all();
 
-      return [scan, Array(scan.length).fill(1), shape] as ZSet<T>;
+      return [scan, Array(scan.length).fill(weight), shape] as ZSet<T>;
     },
     push: (x?: ZSet<T>) => {
       for (let i = 0; i < x![0].length; i++) {

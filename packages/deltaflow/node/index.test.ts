@@ -93,11 +93,7 @@ it("updates children", () => {
       { id: 0, name: "Bob", children: [] },
       { id: 1, name: "Alice", children: [{ id: 3, name: "Clara" }] },
     ]);
-    expect({ ...meta } as any).toEqual({
-      0: 1,
-      1: 1,
-      children: [[], [1]],
-    });
+    expect(meta).toEqual([1, 1] as any);
     expect(shape).toBe(parent);
   }
 
@@ -119,11 +115,7 @@ it("updates children", () => {
         ],
       },
     ]);
-    expect({ ...meta } as any).toEqual({
-      0: 1,
-      1: 1,
-      children: [[], [1, 1]],
-    });
+    expect(meta).toEqual([1, 1] as any);
     expect(shape).toBe(parent);
   }
 
@@ -145,11 +137,7 @@ it("updates children", () => {
         ],
       },
     ]);
-    expect({ ...meta } as any).toEqual({
-      0: 1,
-      1: 1,
-      children: [[], [1, 1]],
-    });
+    expect(meta).toEqual([1, 1] as any);
     expect(shape).toBe(parent);
   }
 
@@ -167,11 +155,7 @@ it("updates children", () => {
       { id: 0, name: "Bob", children: [{ id: 5, name: "Hank" }] },
       { id: 1, name: "Alice", children: [{ id: 4, name: "Katelyn" }] },
     ]);
-    expect({ ...meta } as any).toEqual({
-      0: 1,
-      1: 1,
-      children: [[1], [1]],
-    });
+    expect(meta).toEqual([1, 1] as any);
     expect(shape).toBe(parent);
   }
 
@@ -189,11 +173,7 @@ it("updates children", () => {
       { id: 0, name: "Bob", children: [] },
       { id: 1, name: "Alice", children: [] },
     ]);
-    expect({ ...meta } as any).toEqual({
-      0: 1,
-      1: 1,
-      children: [[], []],
-    });
+    expect(meta).toEqual([1, 1] as any);
     expect(shape).toBe(parent);
   }
 });
