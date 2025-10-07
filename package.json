@@ -6,7 +6,7 @@
     "examples/*"
   ],
   "scripts": {
-    "verify": "bun test && bun run -F '*' check"
+    "verify": "bun test --concurrent && bun run -F '*' check"
   },
   "dependencies": {},
   "devDependencies": {
