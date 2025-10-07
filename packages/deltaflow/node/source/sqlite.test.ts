@@ -1,9 +1,9 @@
+import { join, limit, order, range, sink } from "..";
+import { shape } from "../../datastructure/shape";
 import { it, expect, afterAll } from "bun:test";
 import { rm } from "node:fs/promises";
-import { join, order, sink } from "..";
 import { sqlite } from "./sqlite";
 import SQLite from "bun:sqlite";
-import { shape } from "../../datastructure/shape";
 
 const db = new SQLite("test.db");
 
@@ -100,6 +100,13 @@ it("works with sqlite", async () => {
     { id: 4, text: "Nice to meet you!", user: 1 },
     { id: 0, text: "Hello", user: 0 },
     { id: 1, text: "I'm Bob", user: 0 },
+  ]);
+
+  const windowedMessages = range(messagesByUser, limit(3, 1));
+  expect(windowedMessages.pull()[0]).toEqual([
+    { id: 2, text: "And I'm Alice!", user: 1 },
+    { id: 4, text: "Nice to meet you!", user: 1 },
+    { id: 0, text: "Hello", user: 0 },
   ]);
 });
 

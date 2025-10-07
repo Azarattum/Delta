@@ -30,9 +30,9 @@ export function sqlite<T extends Record<string, any>>(
   );
 
   return zStream({
-    pull: ({ constraints, ordering, weight = 1 } = {}) => {
+    pull: ({ constraints, ordering, range, weight = 1 } = {}) => {
       const orderBy =
-        ordering ?
+        ordering && !constraints ?
           `ORDER BY ${ordering?.map((x) => (Array.isArray(x) ? x.join(" ") : x)).join(", ")}`
         : "";
 
@@ -43,7 +43,11 @@ export function sqlite<T extends Record<string, any>>(
             .join(" AND ")}`
         : "";
 
-      const scan = db.query(`SELECT * FROM ${table} ${where} ${orderBy}`).all();
+      const limit = range ? `LIMIT ${range[0]} OFFSET ${range[1]}` : "";
+
+      const scan = db
+        .query(`SELECT * FROM ${table} ${where} ${orderBy} ${limit}`)
+        .all();
 
       return [scan, Array(scan.length).fill(weight), shape] as ZSet<T>;
     },

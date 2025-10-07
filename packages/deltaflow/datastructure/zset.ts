@@ -118,10 +118,23 @@ function sort<T>(item: ZSet<T>, compare: (a: T, b: T) => number) {
   return item;
 }
 
+function cut<T>(item: ZSet<T>, limit: number, offset = 0) {
+  item[0].splice(0, offset);
+  item[0].splice(limit);
+  item[1].splice(0, offset);
+  item[1].splice(limit);
+  spliceMeta([item[1]], children(item[2]), limit, offset);
+  return item;
+}
+
 const initMeta = recurse(([meta], key) => (meta[key] ??= []));
 const pushMeta = recurse(([aMeta, bMeta], key, i: number) =>
   aMeta[key].push(bMeta[key][i]),
 );
+const spliceMeta = recurse(([meta], key, limit: number, offset = 0) => {
+  meta[key].splice(0, offset);
+  meta[key].splice(limit);
+});
 
-export { add, sort, distinct, zero, copy, multiply };
+export { add, cut, sort, distinct, zero, copy, multiply };
 export type { ZSet };

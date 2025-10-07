@@ -47,6 +47,8 @@ type PullOptions = {
   ordering?: (keyof any | [keyof any, ("asc" | "desc")?])[];
   /** Default weight to initialize data with */
   weight?: number;
+  /** Limit and offset for pagination */
+  range?: readonly [limit: number, offset: number];
 };
 
 type ValidKey = number | string | Date | BufferSource;

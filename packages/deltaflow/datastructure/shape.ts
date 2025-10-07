@@ -78,8 +78,8 @@ function compare<T>(a: T, b: T, shape?: Shape<T>) {
   for (let i = 0; i < (shape?.order.length ?? 1); i++) {
     const direction = shape && shape.order[i] & 1 ? -1 : 1;
     const key = shape?.keys[shape.order[i] >> 1];
-    const x = key ? a[key] : a;
-    const y = key ? b[key] : b;
+    const x = key ? a?.[key] : a;
+    const y = key ? b?.[key] : b;
 
     if (x === y) continue;
     if (y == null) return 1 * direction;
