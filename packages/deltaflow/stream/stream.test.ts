@@ -1,7 +1,6 @@
-import { expect, it, mock, spyOn } from "bun:test";
+import { expect, expectTypeOf, it, mock, spyOn } from "bun:test";
 import { type Stream, stream } from "./stream";
 import type { MaybePromise } from "./promise";
-import "typotest";
 
 it("streams lazily", () => {
   const spyPull = mock(() => 123);
@@ -24,8 +23,8 @@ it("handles async pulls", () => {
     pull: () => 42,
   })(null);
 
-  expect(asyncSource).toBeOfType<Stream<Promise<number>, [number]>>();
-  expect(syncSource).toBeOfType<Stream<number, [number]>>();
+  expectTypeOf(asyncSource).toEqualTypeOf<Stream<Promise<number>, [number]>>();
+  expectTypeOf(syncSource).toEqualTypeOf<Stream<number, [number]>>();
 
   const spy = mock();
   asyncSource.connect(spy);
@@ -34,7 +33,7 @@ it("handles async pulls", () => {
   expect(spy).toHaveBeenLastCalledWith(5);
 
   expect(asyncSource.pull()).toBeInstanceOf(Promise);
-  expect(asyncSource.pull()).toBeOfType<Promise<number>>();
+  expectTypeOf(asyncSource.pull()).toEqualTypeOf<Promise<number>>();
 
   const single = stream({ push: (x: number) => x.toString() });
   const multiple = stream({
@@ -43,33 +42,37 @@ it("handles async pulls", () => {
 
   {
     const fromAsync = single(asyncSource);
-    expect(fromAsync).toBeOfType<Stream<Promise<string>, [number]>>();
+    expectTypeOf(fromAsync).toEqualTypeOf<Stream<Promise<string>, [number]>>();
     expect(fromAsync.pull()).toBeInstanceOf(Promise);
     expect(fromAsync.pull()).resolves.toBe("42");
-    expect(fromAsync.pull()).toBeOfType<Promise<string>>();
+    expectTypeOf(fromAsync.pull()).toEqualTypeOf<Promise<string>>();
 
     const fromSync = single(syncSource);
-    expect(fromSync).toBeOfType<Stream<string, [number]>>();
+    expectTypeOf(fromSync).toEqualTypeOf<Stream<string, [number]>>();
     expect(fromSync.pull()).toBe("42");
-    expect(fromSync.pull()).toBeOfType<string>();
+    expectTypeOf(fromSync.pull()).toEqualTypeOf<string>();
   }
   {
     const fromAsync = multiple(asyncSource, asyncSource);
-    expect(fromAsync).toBeOfType<Stream<Promise<string>, [number, number]>>();
+    expectTypeOf(fromAsync).toEqualTypeOf<
+      Stream<Promise<string>, [number, number]>
+    >();
     expect(fromAsync.pull()).toBeInstanceOf(Promise);
     expect(fromAsync.pull()).resolves.toBe("84");
-    expect(fromAsync.pull()).toBeOfType<Promise<string>>();
+    expectTypeOf(fromAsync.pull()).toEqualTypeOf<Promise<string>>();
 
     const fromSync = multiple(syncSource, syncSource);
-    expect(fromSync).toBeOfType<Stream<string, [number, number]>>();
+    expectTypeOf(fromSync).toEqualTypeOf<Stream<string, [number, number]>>();
     expect(fromSync.pull()).toBe("84");
-    expect(fromSync.pull()).toBeOfType<string>();
+    expectTypeOf(fromSync.pull()).toEqualTypeOf<string>();
 
     const fromBoth = multiple(syncSource, asyncSource);
-    expect(fromBoth).toBeOfType<Stream<Promise<string>, [number, number]>>();
+    expectTypeOf(fromBoth).toEqualTypeOf<
+      Stream<Promise<string>, [number, number]>
+    >();
     expect(fromBoth.pull()).toBeInstanceOf(Promise);
     expect(fromBoth.pull()).resolves.toBe("84");
-    expect(fromBoth.pull()).toBeOfType<Promise<string>>();
+    expectTypeOf(fromBoth.pull()).toEqualTypeOf<Promise<string>>();
   }
 
   const syncify = stream({
@@ -79,9 +82,9 @@ it("handles async pulls", () => {
 
   {
     const fromAsync = syncify(asyncSource);
-    expect(fromAsync).toBeOfType<Stream<string, [number]>>();
+    expectTypeOf(fromAsync).toEqualTypeOf<Stream<string, [number]>>();
     expect(fromAsync.pull()).toBe("1337");
-    expect(fromAsync.pull()).toBeOfType<string>();
+    expectTypeOf(fromAsync.pull()).toEqualTypeOf<string>();
   }
 });
 
@@ -117,14 +120,14 @@ it("merges batched changes", async () => {
   const source1 = stream({ pull: () => 42 })(null);
   const source2 = stream({ pull: () => 1337 })(null);
 
-  expect(source1).toBeOfType<Stream<number, [number]>>();
+  expectTypeOf(source1).toEqualTypeOf<Stream<number, [number]>>();
 
   {
     const spy = mock((_1?: number, _2?: number) => 0 as const);
     const joined = stream({ push: spy })(source1, source2);
 
-    expect(joined.flush).toHaveReturnTypeOf<MaybePromise<void>>();
-    expect(joined.pull).toHaveReturnTypeOf<0>();
+    expectTypeOf(joined.flush).returns.toEqualTypeOf<MaybePromise<void>>();
+    expectTypeOf(joined.pull).returns.toEqualTypeOf<0>();
 
     source1.push(1);
     source2.push(2);
@@ -149,8 +152,8 @@ it("merges batched changes", async () => {
     const spy = mock(async (_1?: number, _2?: number) => 0 as const);
     const joined = stream({ push: spy })(source1, source2);
 
-    expect(joined.flush).toHaveReturnTypeOf<MaybePromise<void>>();
-    expect(joined.pull).toHaveReturnTypeOf<Promise<0>>();
+    expectTypeOf(joined.flush).returns.toEqualTypeOf<MaybePromise<void>>();
+    expectTypeOf(joined.pull).returns.toEqualTypeOf<Promise<0>>();
 
     source1.push(1);
     source2.push(2);
@@ -178,7 +181,7 @@ it("handles async pushes", async () => {
     push: (x: number) => Promise.resolve(x),
   })(null);
 
-  expect(source).toBeOfType<Stream<never, [number]>>();
+  expectTypeOf(source).toEqualTypeOf<Stream<never, [number]>>();
 
   let count = 0;
   const view = stream({
@@ -186,14 +189,14 @@ it("handles async pushes", async () => {
     pull: () => count,
   })(source);
 
-  expect(view).toBeOfType<Stream<number, [number]>>();
+  expectTypeOf(view).toEqualTypeOf<Stream<number, [number]>>();
 
-  expect(source.pull).toHaveReturnTypeOf<never>();
-  expect(source.flush).toHaveReturnTypeOf<MaybePromise<void>>();
-  expect(view.pull).toHaveReturnTypeOf<number>();
-  expect(view.flush).toHaveReturnTypeOf<MaybePromise<void>>();
-  expect(source.push).toHaveReturnTypeOf<void>();
-  expect(view.push).toHaveReturnTypeOf<void>();
+  expectTypeOf(source.pull).returns.toEqualTypeOf<never>();
+  expectTypeOf(source.flush).returns.toEqualTypeOf<MaybePromise<void>>();
+  expectTypeOf(view.pull).returns.toEqualTypeOf<number>();
+  expectTypeOf(view.flush).returns.toEqualTypeOf<MaybePromise<void>>();
+  expectTypeOf(source.push).returns.toEqualTypeOf<void>();
+  expectTypeOf(view.push).returns.toEqualTypeOf<void>();
 
   source.push(1);
   expect(view.isDirty).toBe(true);
@@ -212,13 +215,13 @@ it("handles async pushes", async () => {
     pull: () => count,
   })(source1, source2);
 
-  expect(joined.pull).toHaveReturnTypeOf<number>();
+  expectTypeOf(joined.pull).returns.toEqualTypeOf<number>();
   expect(joined.pull()).toBe(0);
   expect(count).toBe(0);
 
   source1.push(1);
   source2.push(2);
-  expect(joined.flush).toHaveReturnTypeOf<MaybePromise<void>>();
+  expectTypeOf(joined.flush).returns.toEqualTypeOf<MaybePromise<void>>();
   const promise = joined.flush();
   expect(promise).toBeInstanceOf(Promise);
   expect(count).toBe(0);
@@ -237,8 +240,8 @@ it("calls external flush", async () => {
     flush,
   })(null);
 
-  expect(source).toBeOfType<Stream<never, [number]>>();
-  expect(source.flush).toHaveReturnTypeOf<MaybePromise<void>>();
+  expectTypeOf(source).toEqualTypeOf<Stream<never, [number]>>();
+  expectTypeOf(source.flush).returns.toEqualTypeOf<MaybePromise<void>>();
   source.push(0);
 
   expect(flush).not.toHaveBeenCalled();
@@ -254,7 +257,7 @@ it("calls external flush", async () => {
   const noop = stream({})(source);
   source.push(1);
 
-  expect(noop).toBeOfType<Stream<unknown, [unknown]>>();
+  expectTypeOf(noop).toEqualTypeOf<Stream<unknown, [unknown]>>();
   noop.flush();
   expect(flush).toHaveBeenCalledTimes(2);
 });
@@ -397,14 +400,14 @@ it("flushes async with async downstreams", async () => {
   const spy = mock(async (_) => {});
 
   const source = stream({ push: (x: number) => x })(null);
-  expect(source.flush).toHaveReturnTypeOf<MaybePromise<void>>();
+  expectTypeOf(source.flush).returns.toEqualTypeOf<MaybePromise<void>>();
 
   expect(source.flush()).toBe(undefined);
   source.push(42);
   expect(source.flush()).toBe(undefined);
 
   const view = stream({ flush: spy })(source);
-  expect(view.flush).toHaveReturnTypeOf<MaybePromise<void>>();
+  expectTypeOf(view.flush).returns.toEqualTypeOf<MaybePromise<void>>();
 
   expect(source.flush()).toBe(undefined);
   source.push(42);

@@ -10,7 +10,6 @@
     "indexeddb",
     "metas",
     "metaset",
-    "typotest",
     "zset"
   ]
 }

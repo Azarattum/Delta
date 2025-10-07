@@ -15,8 +15,7 @@
   "type": "module",
   "dependencies": {},
   "devDependencies": {
-    "typotest": "workspace:*",
-    "fake-indexeddb": "^6.0.0",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "fake-indexeddb": "^6.0.0"
   }
 }
