@@ -104,5 +104,8 @@ export function range<TStream extends ZStream<T>, T = OfZStream<TStream>>(
         );
       });
     },
+    compress([sets, ranges]) {
+      return [[sets?.reduce((acc, x) => add(acc, x, false)), ranges?.at(-1)]];
+    },
   })(upstream, range);
 }
