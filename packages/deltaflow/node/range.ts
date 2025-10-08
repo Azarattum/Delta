@@ -60,9 +60,7 @@ export function range<TStream extends ZStream<T>, T = OfZStream<TStream>>(
                 shallow: true,
                 combine: (_, aMeta, bData, bMeta) => [bData, aMeta + bMeta],
                 insert: (data, meta) => {
-                  const isStart =
-                    (deltaStart > 0 && meta > 0) || (deltaEnd < 0 && meta < 0);
-
+                  const isStart = compare(data, extraEnd[0][0], shape) < 0;
                   if (offset < Math.abs(isStart ? deltaStart : deltaEnd)) {
                     offset += Math.abs(Math.sign(meta));
                     return;
