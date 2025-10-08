@@ -37,12 +37,14 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
       +(i >= tData.length) ||
       compare(tData[i], sData[j], shape);
 
+    const ti = i - deleted;
+    if (cmp > 0) insertMeta([tMeta, sMeta], childKeys, ti, j);
+
     const next =
       cmp < 0 ? deep("update", [tData[i]], [tMeta], [i], deleted)
       : cmp > 0 ? deep("insert", [sData[j]], [sMeta, tMeta], [j, i], deleted)
       : deep("combine", [tData[i], sData[j]], [tMeta, sMeta], [i, j], deleted);
 
-    const ti = i - deleted;
     if (!next) cmp <= 0 ? deleted++ : i--;
     else if (cmp <= 0) [tData[ti], tMeta[ti]] = next;
     else {
@@ -74,11 +76,12 @@ function visit<T extends MetaSet>(fns: Visitors<T>, shape: T[2]): Visit<T> {
           shape,
         );
 
-    if (!childKeys.length) return result;
+    if (!childKeys.length || fns.shallow) return result;
     if (!result) type = "delete";
 
     const isInsert = type === "insert";
-    const fns2 = isInsert ? { ...fns, update: fns.insert } : fns;
+    const fns2: Visitors<MetaSet> =
+      isInsert ? { ...fns, update: fns.insert } : fns;
     const resultIdx = idx[+isInsert] - deleted;
     const resultMeta = metas[+isInsert];
 
@@ -93,7 +96,6 @@ function visit<T extends MetaSet>(fns: Visitors<T>, shape: T[2]): Visit<T> {
           visit(fns2, shape)(type, items2, metas2, idx, deleted)
         : traverse<any>(fns2, [tData, tMeta, shape], sData && [sData, sMeta]);
 
-      if (isInsert) resultMeta[key].splice(resultIdx, 0, tMeta[idx[0]]);
       if (next) [result![0][key], resultMeta[key][resultIdx]] = next;
       else {
         if (result) delete result[0][key];
@@ -118,5 +120,10 @@ function recurse<TFn extends RecurseFn>(fn: TFn): Recurse<TFn> {
 }
 
 const pruneMeta = recurse(([meta], key, n: number) => (meta[key].length -= n));
+const insertMeta = recurse(([aMeta, bMeta], key, i: number, j: number) => {
+  const nonExistent = !(j in bMeta[key]);
+  aMeta[key].splice(i, 0, bMeta[key][j]);
+  if (nonExistent) delete aMeta[key][i];
+});
 
 export { traverse, recurse, type MetaSet, type Visitors };

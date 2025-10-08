@@ -56,24 +56,29 @@ type RecordKeys<T> =
     }[keyof T]
   : never;
 
-type Visitors<T extends MetaSet> = {
+type GenericVisitors<
+  TData,
+  TMeta extends Meta<TData, any>,
+  TShape extends Shape,
+  TShallow extends boolean,
+> = {
   update?: (
-    data: InferEntry<T>,
-    meta: InferMeta<T>,
-    shape: TraverseShape<T[2]>,
-  ) => [InferEntry<T>, InferMeta<T>] | undefined;
+    data: TData,
+    meta: TMeta,
+    shape: TShape,
+  ) => [TData, TMeta] | undefined;
   insert?: (
-    data: InferEntry<T>,
-    meta: InferMeta<T>,
-    shape: TraverseShape<T[2]>,
-  ) => [InferEntry<T>, InferMeta<T>] | undefined;
+    data: TData,
+    meta: TMeta,
+    shape: TShape,
+  ) => [TData, TMeta] | undefined;
   combine?: (
-    aData: InferEntry<T>,
-    aMeta: InferMeta<T>,
-    bData: InferEntry<T>,
-    bMeta: InferMeta<T>,
-    shape: TraverseShape<T[2]>,
-  ) => [InferEntry<T>, InferMeta<T>] | undefined;
+    aData: TData,
+    aMeta: TMeta,
+    bData: TData,
+    bMeta: TMeta,
+    shape: TShape,
+  ) => [TData, TMeta] | undefined;
 
   container?: <TDeep extends boolean>(
     container: TDeep extends true ? Record<string, unknown> & unknown[]
@@ -82,7 +87,11 @@ type Visitors<T extends MetaSet> = {
   ) => TDeep extends true ? Record<string, unknown> & unknown[] : unknown[];
 
   compare?: <T>(a: T, b: T, shape?: Shape<T>) => number;
-};
+} & (TShallow extends true ? { shallow: true } : { shallow?: false });
+
+type Visitors<T extends MetaSet> =
+  | GenericVisitors<InferData<T>, InferMeta<T>, T[2], true>
+  | GenericVisitors<InferEntry<T>, InferMeta<T>, TraverseShape<T[2]>, false>;
 
 type Visit<T extends MetaSet> = (
   type: Exclude<keyof Visitors<T>, "container"> | "delete",

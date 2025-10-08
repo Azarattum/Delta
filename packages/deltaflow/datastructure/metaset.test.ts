@@ -671,3 +671,73 @@ it("processes concurrent deletions from updates and inserts", () => {
   expect(updates).toEqual([3, 10]);
   expect(inserts).toEqual([1, 2, 4]);
 });
+
+it("processes with shallow visitors", () => {
+  const shape = nest(idShape, "deep", idShape, true);
+
+  const setA: MetaSet<(typeof shape)["~type"], number> = [
+    [
+      { id: 1, deep: { id: 10 } },
+      { id: 3, deep: { id: 30 } },
+    ],
+    Object.assign([1, 3], { deep: [10, 30] }),
+    shape,
+  ];
+
+  const setB: MetaSet<(typeof shape)["~type"], number> = [
+    [{ id: 2, deep: { id: 20 } }],
+    Object.assign([2], { deep: [20] }),
+    shape,
+  ];
+
+  const visitors = {
+    shallow: true,
+    update: mock((data, meta) => [data, meta]),
+    insert: mock((data, meta) => [data, meta]),
+  } as unknown as Visitors<typeof setA>;
+
+  traverse(visitors, setA, setB);
+
+  expect(visitors.update).toHaveBeenCalledTimes(2);
+  expect(visitors.insert).toHaveBeenCalledTimes(1);
+
+  expect(setA[0]).toEqual([
+    { id: 1, deep: { id: 10 } },
+    { id: 2, deep: { id: 20 } },
+    { id: 3, deep: { id: 30 } },
+  ]);
+
+  expect(setA[1]).toEqual([1, 2, 3] as any);
+  expect(setA[1].deep).toEqual([10, 20, 30] as any);
+});
+
+it("keeps empty metas on inserts", () => {
+  const shape = nest(idShape, "deep", idShape, true);
+
+  const setA: MetaSet<(typeof shape)["~type"], number> = [
+    [
+      { id: 1, deep: { id: 10 } },
+      { id: 3, deep: { id: 30 } },
+    ],
+    Object.assign([1, 3], { deep: [10, 30] }),
+    shape,
+  ];
+
+  const setB: MetaSet<(typeof shape)["~type"], number> = [
+    [{ id: 2, deep: { id: 20 } }],
+    Object.assign([2], { deep: [] }),
+    shape,
+  ];
+
+  traverse({}, setA, setB);
+
+  expect(setA[0]).toEqual([
+    { id: 1, deep: { id: 10 } },
+    { id: 2, deep: { id: 20 } },
+    { id: 3, deep: { id: 30 } },
+  ]);
+
+  expect(setA[1]).toEqual([1, 2, 3] as any);
+  expect(setA[1].deep).toEqual([10, , 30] as any);
+  expect(1 in setA[1].deep).toBe(false);
+});
