@@ -4,14 +4,6 @@ import { add, type ZSet } from "../datastructure/zset";
 import { traverse } from "../datastructure/metaset";
 import { compare } from "../datastructure/shape";
 
-export function limit(limit: number, offset = 0) {
-  let current = [limit, offset] as const;
-  return stream({
-    push: (next) => (current = next),
-    pull: () => current,
-  })(null);
-}
-
 export function range<TStream extends ZStream<T>, T = OfZStream<TStream>>(
   upstream: TStream,
   range: Stream<readonly [limit: number, offset: number]>,
@@ -20,21 +12,20 @@ export function range<TStream extends ZStream<T>, T = OfZStream<TStream>>(
   let size = 0;
 
   return stream({
-    push(set?: ZSet<T>, nextRange?: readonly [number, number]) {
-      if (set && bounds && !nextRange) {
-        const [data, meta, shape] = set;
+    push(set?: ZSet<T>, [deltaStart, deltaEnd]: [number, number] = [0, 0]) {
+      // TODO: do something when both `set` and `nextRange` are set
+      if (bounds) {
+        // TODO: do something meaningful when bounds are not set
         const [first, last] = bounds;
-
-        let deltaStart = 0;
-        let deltaEnd = 0;
         let overlap = 0;
 
-        data.forEach((x, i) => {
-          const value = Math.sign(meta[i]);
-          if (compare(x, first, shape) < 0) {
+        // TODO: optimize by skipping full iteration when possible
+        set?.[0].forEach((x, i) => {
+          const value = Math.sign(set[1][i]);
+          if (compare(x, first, set[2]) < 0) {
             deltaStart += value;
             deltaEnd += value;
-          } else if (compare(x, last, shape) <= 0) {
+          } else if (compare(x, last, set[2]) <= 0) {
             deltaEnd += value;
           } else if (deltaEnd < 0 && value < 0) {
             overlap++;
@@ -44,6 +35,7 @@ export function range<TStream extends ZStream<T>, T = OfZStream<TStream>>(
         return SyncPromise.one(range.pull()).then(([limit, offset]) => {
           const offsetStart = offset - Math.max(deltaStart, 0);
           const offsetEnd = offset + limit - Math.max(deltaEnd, 0);
+          // TODO: decide is full re-pull would be more efficient
           return SyncPromise.all([
             upstream.pull({
               range: [Math.abs(deltaStart), offsetStart],
@@ -54,17 +46,21 @@ export function range<TStream extends ZStream<T>, T = OfZStream<TStream>>(
               weight: deltaEnd > 0 ? -1 : 1,
             }),
           ]).then(([extraStart, extraEnd]) => {
+            const extra = add(extraStart, extraEnd);
+            if (!set) return extra;
+
             let offset = 0;
             return traverse(
               {
                 shallow: true,
                 combine: (_, aMeta, bData, bMeta) => [bData, aMeta + bMeta],
-                insert: (data, meta) => {
+                insert: (data, meta, shape) => {
                   const isStart = compare(data, extraEnd[0][0], shape) < 0;
                   if (offset < Math.abs(isStart ? deltaStart : deltaEnd)) {
                     offset += Math.abs(Math.sign(meta));
                     return;
                   }
+                  // TODO: update bounds
                   return [data, meta];
                 },
                 update: (data, meta, shape) => {
@@ -84,7 +80,7 @@ export function range<TStream extends ZStream<T>, T = OfZStream<TStream>>(
                 },
               },
               set,
-              add(extraStart, extraEnd),
+              extra,
             );
           });
         });
@@ -106,4 +102,18 @@ export function range<TStream extends ZStream<T>, T = OfZStream<TStream>>(
       return [[sets?.reduce((acc, x) => add(acc, x, false)), ranges?.at(-1)]];
     },
   })(upstream, range);
+}
+
+export function limit(limit: number, offset = 0) {
+  let current = [limit, offset] as const;
+  return stream({
+    flush: (next) => void (next.length && (current = next.at(-1)![0])),
+    compress: ([updates]) => [[updates.at(-1)!]],
+    pull: () => current,
+    push: (next) => {
+      const deltaStart = current[1] - next[1];
+      const deltaEnd = current[0] + current[1] - (next[0] + next[1]);
+      return [deltaStart, deltaEnd] as const;
+    },
+  })(null);
 }

@@ -196,3 +196,56 @@ describe.each([
     expect(view.pull()[0]).toEqual(expected.slice(0, i));
   });
 });
+
+it("moves window dynamically", async () => {
+  const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
+
+  const users = memory(user, [
+    { id: 0, name: "Aron" },
+    { id: 10, name: "Alice" },
+    { id: 20, name: "Bob" },
+    { id: 30, name: "Clara" },
+    { id: 40, name: "Dave" },
+    { id: 50, name: "Eve" },
+  ]);
+
+  const window = limit(3, 1);
+  const view = sink(range(users, window));
+
+  expect(view.pull()[0]).toEqual([
+    { id: 10, name: "Alice" },
+    { id: 20, name: "Bob" },
+    { id: 30, name: "Clara" },
+  ]);
+
+  window.push([3, 2]);
+
+  expect(view.pull()[0]).toEqual([
+    { id: 20, name: "Bob" },
+    { id: 30, name: "Clara" },
+    { id: 40, name: "Dave" },
+  ]);
+
+  window.push([3, 3]);
+
+  expect(view.pull()[0]).toEqual([
+    { id: 30, name: "Clara" },
+    { id: 40, name: "Dave" },
+    { id: 50, name: "Eve" },
+  ]);
+
+  window.push([3, 4]);
+
+  expect(view.pull()[0]).toEqual([
+    { id: 40, name: "Dave" },
+    { id: 50, name: "Eve" },
+  ]);
+
+  window.push([3, 5]);
+
+  expect(view.pull()[0]).toEqual([{ id: 50, name: "Eve" }]);
+
+  window.push([3, 6]);
+
+  expect(view.pull()[0]).toEqual([]);
+});
