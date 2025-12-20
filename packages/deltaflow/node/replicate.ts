@@ -7,20 +7,19 @@ import { stream, SyncPromise } from "../stream";
 export function replicate<
   AStream extends ZStream<T>,
   BStream extends CLStream<T>,
-  T = OfZStream<AStream>,
+  T extends Record<string, unknown> = OfZStream<AStream>,
 >(aUpstream: AStream, bUpstream: BStream, global: CLGlobal) {
   return stream({
     push(a: ZSet<T>) {
-      // TODO: don't use id here!
-      const aKeys = a && {
-        id: new Set(
-          a[0].filter((_, i) => a[1][i] <= 0).map((x) => (x as any)["id"]),
-        ),
+      const aRef = a && {
+        // TODO: don't use id here!
+        keys: [["id"]] as const,
+        items: a[0].filter((_, i) => a[1][i] <= 0),
       };
 
       // TODO: CLSet should also have a zero type (or maybe unite them?)
-      if (!aKeys) return [[], []] as CLSet<T>;
-      return SyncPromise.one(bUpstream.pull({ constraints: aKeys })).then(
+      if (!aRef) return [[], []] as CLSet<T>;
+      return SyncPromise.one(bUpstream.pull({ filter: [aRef] })).then(
         (pulled) => {
           const keys = pulled[2]?.keys.filter(
             (_, i) => !(pulled[2]!.types[i] & TYPE.PRIMARY),

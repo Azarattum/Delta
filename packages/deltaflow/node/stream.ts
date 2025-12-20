@@ -41,14 +41,30 @@ type CLStream<T = any> = Stream<MaybePromise<CLSet<T>>, unknown[], PullOptions>;
 type OfCLStream<T extends Stream<any>> =
   T extends CLStream<infer U> ? U : never;
 
-type PullOptions = {
-  /** Lookup and order by provided keys */
-  constraints?: Record<keyof any, Set<ValidKey>>;
+type PullOptions<T = Record<string, unknown>> = {
+  /** Apply filtering based on the provided subset */
+  filter?: {
+    /** Keys to filter by (optionally reference keys if not the same) */
+    keys: readonly [readonly string[], (readonly string[])?];
+    /** Reference items to filter by */
+    items: readonly T[];
+    /** Whether to exclude the items instead of including them */
+    exclude?: boolean;
+  }[];
   /** Order to pull in */
-  order?: Order<Record<string, unknown>>;
+  order?: Order<T>;
   /** Default weight to initialize data with */
   weight?: number;
-  /** Limit and offset for pagination */
+  /** Cursor for precise pagination control */
+  cursor?: {
+    // TODO: docs
+    skip?: readonly T[];
+    anchor?: T;
+    offset?: number;
+    count?: number;
+  };
+
+  /** @deprecated */
   range?: readonly [limit: number, offset: number];
 };
 

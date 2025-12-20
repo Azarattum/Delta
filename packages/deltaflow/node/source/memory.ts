@@ -6,7 +6,7 @@ import type { Shape } from "../../datastructure/shape";
 import type { ZSet } from "../../datastructure/zset";
 import { SyncPromise } from "../../stream";
 
-export function memory<T extends Record<string, any>>(
+export function memory<T extends Record<string, unknown>>(
   shape: Shape<T>,
   initialData: T[] = [],
   // TODO: allow memory to accept upstream (e.g. to allow pushes to it)
@@ -19,15 +19,25 @@ export function memory<T extends Record<string, any>>(
 
   children(shape).forEach(([key]) => {
     (data[1] as Record<string, unknown>)[key] ??= [];
-    data[0].forEach((x, i) => (data[1][key][i] = Array(x[key].length).fill(1)));
+    data[0].forEach(
+      (x, i) => (data[1][key][i] = Array((x[key] as unknown[]).length).fill(1)),
+    );
   });
 
   return zStream({
-    pull: ({ order, range, constraints, weight = 1 } = {}) => {
-      const checks = constraints && Object.entries(constraints);
+    pull: ({ order, range, filter, weight = 1 } = {}) => {
       const scan = structuredClone(
-        checks ?
-          data[0].filter((x) => checks.every(([k, v]) => v.has(x[k])))
+        filter?.length ?
+          data[0].filter((x) =>
+            filter.every(({ items, keys, exclude }) => {
+              const refKeys = keys[1] ?? keys[0];
+              const contains = items.find((ref) =>
+                keys[0].every((k, i) => x[k] === ref[refKeys[i]]),
+              );
+
+              return !!contains !== !!exclude;
+            }),
+          )
         : data[0],
       );
 
@@ -36,6 +46,7 @@ export function memory<T extends Record<string, any>>(
       const scanSet = [scan, scanMeta, scanShape] as ZSet<T>;
 
       if (order) sort(scanSet, (a, b) => compare(a, b, scanShape));
+      // TODO: support cursor instead of range
       if (range) cut(scanSet, range[0], range[1]);
       return scanSet;
     },

@@ -192,7 +192,7 @@ type Children<T extends Shape> = [
 
 type Order<T> = (
   | NoInfer<keyof T & string>
-  | [NoInfer<keyof T & string>, ("asc" | "desc")?]
+  | readonly [NoInfer<keyof T & string>, ("asc" | "desc")?]
 )[];
 
 export { TYPE, shape, children, compare, reorder, either, nest };
