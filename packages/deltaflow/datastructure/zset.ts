@@ -1,5 +1,5 @@
 import { recurse, traverse, type MetaSet } from "./metaset";
-import { children, compare, nest, TYPE } from "./shape";
+import { children, compare, nest, TYPE, type Shape } from "./shape";
 
 type ZSet<T> = MetaSet<T, number>;
 
@@ -127,6 +127,13 @@ function cut<T>(item: ZSet<T>, limit: number, offset = 0) {
   return item;
 }
 
+function transform<T, U>(
+  item: ZSet<T>,
+  fn: (data: T, meta: number, shape: Shape) => [U, number] | undefined | false,
+) {
+  return traverse({ shallow: true, update: fn as any }, item) as any as ZSet<U>;
+}
+
 const initMeta = recurse(([meta], key) => (meta[key] ??= []));
 const pushMeta = recurse(([aMeta, bMeta], key, i: number) =>
   aMeta[key].push(bMeta[key][i]),
@@ -136,5 +143,5 @@ const spliceMeta = recurse(([meta], key, limit: number, offset = 0) => {
   meta[key].splice(limit);
 });
 
-export { add, cut, sort, distinct, zero, copy, multiply };
+export { add, cut, sort, distinct, zero, copy, transform, multiply };
 export type { ZSet };
