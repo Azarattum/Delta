@@ -7,6 +7,7 @@ import {
 } from "../stream";
 import { add, type ZSet } from "../datastructure/zset";
 import type { CLSet } from "../datastructure/clset";
+import type { Order } from "../datastructure/shape";
 
 const zStream = <
   TPush extends ZSet<any>,
@@ -44,7 +45,7 @@ type PullOptions = {
   /** Lookup and order by provided keys */
   constraints?: Record<keyof any, Set<ValidKey>>;
   /** Order to pull in */
-  ordering?: (keyof any | [keyof any, ("asc" | "desc")?])[];
+  order?: Order<Record<string, unknown>>;
   /** Default weight to initialize data with */
   weight?: number;
   /** Limit and offset for pagination */

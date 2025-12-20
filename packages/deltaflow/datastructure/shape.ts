@@ -13,12 +13,12 @@ function shape<T extends Template>(template: T): Shape<FromTemplate<T>> {
 
 function reorder<TShape extends Shape<T> | undefined, T = any>(
   shape: TShape,
-  ...ordering: (NoInfer<keyof T> | [NoInfer<keyof T>, ("asc" | "desc")?])[]
+  ...order: Order<T>
 ): TShape {
   if (!shape) return shape;
 
   const primary = shape.types.map((x, i) => (x & TYPE.PRIMARY ? i << 1 : null));
-  const order = ordering.map((entry) => {
+  const encoded = order.map((entry) => {
     const [key, dir = "asc"] = Array.isArray(entry) ? entry : [entry];
     const index = shape.keys.indexOf(key as keyof T);
     primary[index] = null;
@@ -26,11 +26,11 @@ function reorder<TShape extends Shape<T> | undefined, T = any>(
   });
 
   // Append unused primary keys to ensure uniqueness
-  order.push(...primary.filter((x) => x !== null));
+  encoded.push(...primary.filter((x) => x !== null));
 
-  const hash = checksum(shape.types, order);
+  const hash = checksum(shape.types, encoded);
   if (hash === shape.hash) return shape;
-  return { ...shape, order, hash };
+  return { ...shape, order: encoded, hash };
 }
 
 function nest<
@@ -190,5 +190,10 @@ type Children<T extends Shape> = [
   NonNullable<T>["children"][keyof NonNullable<T>["children"]],
 ][];
 
+type Order<T> = (
+  | NoInfer<keyof T & string>
+  | [NoInfer<keyof T & string>, ("asc" | "desc")?]
+)[];
+
 export { TYPE, shape, children, compare, reorder, either, nest };
-export type { Shape, Children };
+export type { Shape, Children, Order };

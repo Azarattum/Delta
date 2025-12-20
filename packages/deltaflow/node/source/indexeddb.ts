@@ -19,15 +19,15 @@ export async function indexeddb<T extends object>(
   );
 
   return zStream({
-    pull: async ({ constraints, ordering, range, weight = 1 } = {}) => {
+    pull: async ({ constraints, order, range, weight = 1 } = {}) => {
       if (range) throw new Error("TODO: support range in indexeddb source");
       const store = db.transaction([table], "readonly").objectStore(table);
       let scan: T[];
 
       if (constraints) {
         scan = await queryWithConstraints(store, constraints);
-      } else if (ordering) {
-        scan = await queryWithOrdering(store, ordering);
+      } else if (order) {
+        scan = await queryWithOrdering(store, order);
       } else {
         scan = await new Promise<T[]>(
           (r) => (store.getAll().onsuccess = (e: any) => r(e.target.result)),

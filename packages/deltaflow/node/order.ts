@@ -1,14 +1,14 @@
+import { reorder, compare, type Order } from "../datastructure/shape";
 import { zStream, type OfZStream, type ZStream } from "./stream";
-import { reorder, compare } from "../datastructure/shape";
 import { sort, type ZSet } from "../datastructure/zset";
 
 export function order<TStream extends ZStream<T>, T = OfZStream<TStream>>(
   upstream: TStream,
-  ...ordering: (NoInfer<keyof T> | [NoInfer<keyof T>, ("asc" | "desc")?])[]
+  ...order: Order<T>
 ) {
   return zStream({
     push: (x: ZSet<T>) => {
-      const shape = reorder(x[2], ...ordering);
+      const shape = reorder(x[2], ...order);
       if (shape !== x[2]) {
         sort(x, (a, b) => compare(a, b, shape));
         x[2] = shape;
@@ -18,7 +18,7 @@ export function order<TStream extends ZStream<T>, T = OfZStream<TStream>>(
     pull: (options) => {
       return upstream.pull({
         ...options,
-        ordering: [...(options?.ordering ?? []), ...ordering],
+        order: [...(options?.order ?? []), ...order],
       });
     },
   })(upstream);

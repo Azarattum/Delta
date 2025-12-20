@@ -30,10 +30,10 @@ export function sqlite<T extends Record<string, any>>(
   );
 
   return zStream({
-    pull: ({ constraints, ordering, range, weight = 1 } = {}) => {
+    pull: ({ constraints, order, range, weight = 1 } = {}) => {
       const orderBy =
-        ordering && !constraints ?
-          `ORDER BY ${ordering?.map((x) => (Array.isArray(x) ? x.join(" ") : x)).join(", ")}`
+        order && !constraints ?
+          `ORDER BY ${order?.map((x) => (Array.isArray(x) ? x.join(" ") : x)).join(", ")}`
         : "";
 
       const where =
