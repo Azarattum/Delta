@@ -23,7 +23,7 @@ it("limits simple queries", async () => {
   ]);
 
   users.push([[{ id: 40, name: "Eve" }], [1], user]);
-  await new Promise((r) => setTimeout(r));
+  await users.flush();
 
   expect(view.pull()[0]).toEqual([
     { id: 10, name: "Alice" },
@@ -40,7 +40,7 @@ it("limits simple queries", async () => {
     [1, 1, 1],
     user,
   ]);
-  await new Promise((r) => setTimeout(r));
+  await users.flush();
 
   expect(view.pull()[0]).toEqual([
     { id: 5, name: "Aron" },
@@ -74,7 +74,7 @@ it("respects limit bounds", async () => {
     [1, 1, 1],
     user,
   ]);
-  await new Promise((r) => setTimeout(r));
+  await users.flush();
 
   expect(view.pull()[0]).toEqual([
     { id: 10, name: "Alice" },
@@ -84,7 +84,7 @@ it("respects limit bounds", async () => {
 
   // TODO: this will work when we update bounds
   // users.push([[{ id: 28, name: "Hannah" }], [-1], user]);
-  // await new Promise((r) => setTimeout(r));
+  // await users.flush();
 
   // expect(view.pull()[0]).toEqual([
   //   { id: 10, name: "Alice" },
@@ -210,7 +210,7 @@ describe.each([
     );
 
     users.push(structuredClone([data, meta, user]));
-    await new Promise((r) => setTimeout(r));
+    await users.flush();
     expect(view.pull()[0]).toEqual(expected.slice(0, i));
   });
 });

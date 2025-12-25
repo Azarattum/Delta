@@ -69,8 +69,7 @@ it("works with sqlite", async () => {
   ]);
 
   users.push([[{ id: 2, name: "Emily" }], [1]]);
-  // TODO: await users.push should be enough, make `push` return a promise
-  await new Promise((r) => setTimeout(r));
+  await users.flush();
   expect(joined.pull()[0]).toEqual([
     {
       id: 0,
