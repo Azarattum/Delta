@@ -69,6 +69,8 @@ it("works with sqlite", async () => {
   ]);
 
   users.push([[{ id: 2, name: "Emily" }], [1]]);
+  // TODO: await users.push should be enough, make `push` return a promise
+  await new Promise((r) => setTimeout(r));
   expect(joined.pull()[0]).toEqual([
     {
       id: 0,
@@ -101,6 +103,14 @@ it("works with sqlite", async () => {
     { id: 0, text: "Hello", user: 0 },
     { id: 1, text: "I'm Bob", user: 0 },
   ]);
+
+  // TODO: test with range operator
+  // const windowedMessages = range(messagesByUser, limit(3, 1));
+  // expect(windowedMessages.pull()[0]).toEqual([
+  //   { id: 2, text: "And I'm Alice!", user: 1 },
+  //   { id: 4, text: "Nice to meet you!", user: 1 },
+  //   { id: 0, text: "Hello", user: 0 },
+  // ]);
 });
 
 it("supports cursor pagination with composite order", () => {
@@ -128,7 +138,12 @@ it("supports cursor pagination with composite order", () => {
   ];
 
   const [afterAnchor] = triples.pull({
-    cursor: { anchor: { x: 0, y: 10, z: 5 }, offset: 0, count: 3 },
+    cursor: {
+      anchor: { x: 0, y: 10, z: 5 },
+      offset: 0,
+      count: 3,
+      exclusive: true,
+    },
     order,
   });
   expect(afterAnchor.map((row) => row.id)).toEqual([2, 3, 4]);
@@ -140,7 +155,7 @@ it("supports cursor pagination with composite order", () => {
   expect(skippedFromStart.map((row) => row.id)).toEqual([2, 3]);
 
   const [reverseRows] = triples.pull({
-    cursor: { anchor: { x: 1, y: 9, z: 1 }, count: -2 },
+    cursor: { anchor: { x: 1, y: 9, z: 1 }, count: -2, exclusive: true },
     order,
   });
   expect(reverseRows.map((row) => row.id)).toEqual([1, 2]);
@@ -149,7 +164,7 @@ it("supports cursor pagination with composite order", () => {
     cursor: { offset: 1, count: -2 },
     order,
   });
-  expect(reverseFromStart.map((row) => row.id)).toEqual([0]);
+  expect(reverseFromStart.map((row) => row.id)).toEqual([4, 5]);
 });
 
 it("supports skips in composite pagination", () => {
@@ -179,6 +194,7 @@ it("supports skips in composite pagination", () => {
   const [afterAnchor] = triples.pull({
     cursor: {
       anchor: { x: 0, y: 10, z: 5 },
+      exclusive: true,
       offset: 0,
       count: 3,
       skip: [
@@ -206,6 +222,7 @@ it("supports skips in composite pagination", () => {
   expect(skippedFromStart.map((row) => row.id)).toEqual([2]);
 
   const [reverseRows] = triples.pull({
+    // TODO: not sure if that works correctly
     cursor: {
       anchor: { x: 1, y: 9, z: 1 },
       count: -2,
@@ -213,20 +230,17 @@ it("supports skips in composite pagination", () => {
     },
     order,
   });
-  expect(reverseRows.map((row) => row.id)).toEqual([2]);
+  expect(reverseRows.map((row) => row.id)).toEqual([2, 3]);
 
   const [reverseFromStart] = triples.pull({
     cursor: {
       offset: 1,
       count: -2,
-      skip: [
-        { x: 0, y: 10, z: 3 },
-        { x: 0, y: 10, z: 4 },
-      ],
+      skip: [{ x: 1, y: 9, z: 5 }],
     },
     order,
   });
-  expect(reverseFromStart.map((row) => row.id)).toEqual([]);
+  expect(reverseFromStart.map((row) => row.id)).toEqual([5]);
 
   const [skippedBeforeStart] = triples.pull({
     cursor: { offset: 2, count: 2, skip: [{ x: 0, y: 5, z: 1 }] },

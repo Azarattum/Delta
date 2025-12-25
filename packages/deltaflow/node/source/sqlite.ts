@@ -29,21 +29,30 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
     initialData.flatMap((x) => Object.values(x)),
   );
 
+  // TODO: use proper bindings to avoid SQL injection
   return zStream({
     pull: ({ filter, order, cursor, weight = 1 } = {}) => {
       order ??= primaryKeys;
       const orderKeys = order.map((x) => (Array.isArray(x) ? x[0] : x));
 
+      const reverse = cursor?.count != null && cursor.count < 0;
+      const effectiveOrder = order.map((x) => {
+        let [key, direction = "asc"] = Array.isArray(x) ? x : [x];
+        if (reverse) direction = direction === "asc" ? "desc" : "asc";
+        return [key, direction] as [string, "asc" | "desc"];
+      });
+
       const filtering = filter?.map(({ items, keys, exclude }) => {
+        const columnKeys = keys[0].map((k) => `${table}.${k}`);
         const tupleKeys = keys[1] ?? keys[0];
         const tuples = items.map(
           (x) => `(${tupleKeys.map((k) => JSON.stringify(x[k]))})`,
         );
 
-        return `(${keys[0]}) ${exclude ? "NOT" : ""} IN (${tuples})`;
+        return `(${columnKeys}) ${exclude ? "NOT" : ""} IN (${tuples})`;
       });
 
-      const cteOrderBy = `ORDER BY ${order.map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
+      const cteOrderBy = `ORDER BY ${(cursor?.anchor ? order : effectiveOrder).map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
       const cte =
         cursor ?
           `WITH cursor AS (SELECT ${orderKeys.join()} FROM ${table}
@@ -51,11 +60,8 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
           ${cteOrderBy} LIMIT 1 OFFSET ${cursor.offset ?? 0})`
         : "";
 
-      const reverse = cursor?.count != null && cursor.count < 0;
-      // TODO: consider if this could just be false
-      const inclusive = !cursor?.anchor && !reverse;
       const pagination = cursor && [
-        compareBy(order, table, "cursor", inclusive, reverse),
+        compareBy(order, table, "cursor", !cursor?.exclusive, reverse),
       ];
 
       const conditions = (filtering ?? [])
@@ -67,11 +73,6 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
         cursor?.count != null ? `LIMIT ${Math.abs(cursor.count)}` : "";
       const select = `SELECT ${shape.keys.map((k) => `${table}.${k}`).join(", ")}`;
 
-      const effectiveOrder = order.map((x) => {
-        let [key, direction = "asc"] = Array.isArray(x) ? x : [x];
-        if (reverse) direction = direction === "asc" ? "desc" : "asc";
-        return [key, direction] as [string, "asc" | "desc"];
-      });
       const orderBy = `ORDER BY ${effectiveOrder.map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
 
       const main = `${select}${cursor?.skip?.length ? ",false AS flag" : ""} FROM ${table}${cte ? ",cursor" : ""} ${where}`;
@@ -96,28 +97,29 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
       if (reverse) scan.reverse();
       return [scan, Array(scan.length).fill(weight), shape] as ZSet<T>;
     },
-    push: (x?: ZSet<T>) => {
-      for (let i = 0; i < x![0].length; i++) {
-        const op = x![1][i];
-        if (op < 0) {
-          db.run(
-            `DELETE FROM ${table} WHERE id = ?`,
-            (x![0][i] as any).id, // TODO: this is a hack for POC
-          );
-        } else if (op > 0) {
-          db.run(
-            `INSERT OR IGNORE INTO ${table} VALUES (${shape.keys.map(() => "?").join(",")})`,
-            Object.values(x![0][i]) as any[], // TODO: this is a hack for POC
-          );
-        } else {
-          db.run(
-            `UPDATE ${table} SET ${shape.keys.map((x) => `${x.toString()} = ?`).join(",")} WHERE id = ?`,
-            Object.values(x![0][i]) as any[], // TODO: this is a hack for POC
-            (x![0][i] as any).id, // TODO: this is a hack for POC
-          );
+    flush: async (changes: [ZSet<T>][]) => {
+      changes.forEach(([set]) => {
+        for (let i = 0; i < set![0].length; i++) {
+          const op = set![1][i];
+          if (op < 0) {
+            db.run(
+              `DELETE FROM ${table} WHERE id = ?`,
+              (set![0][i] as any).id, // TODO: this is a hack for POC
+            );
+          } else if (op > 0) {
+            db.run(
+              `INSERT OR IGNORE INTO ${table} VALUES (${shape.keys.map(() => "?").join(",")})`,
+              ...(Object.values(set![0][i]) as any[]), // TODO: this is a hack for POC
+            );
+          } else {
+            db.run(
+              `UPDATE ${table} SET ${shape.keys.map((x) => `${x.toString()} = ?`).join(",")} WHERE id = ?`,
+              ...(Object.values(set![0][i]) as any[]), // TODO: this is a hack for POC
+              (set![0][i] as any).id, // TODO: this is a hack for POC
+            );
+          }
         }
-      }
-      return x!;
+      });
     },
   })(null);
 }

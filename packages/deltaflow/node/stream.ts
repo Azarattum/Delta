@@ -60,6 +60,7 @@ type PullOptions<T = Record<string, unknown>> = {
     // TODO: docs
     skip?: readonly T[];
     anchor?: T;
+    exclusive?: boolean;
     offset?: number;
     count?: number;
   };

@@ -1,5 +1,5 @@
-import { recurse, traverse, type MetaSet } from "./metaset";
 import { children, compare, nest, TYPE, type Shape } from "./shape";
+import { recurse, traverse, type MetaSet } from "./metaset";
 
 type ZSet<T> = MetaSet<T, number>;
 
@@ -118,13 +118,30 @@ function sort<T>(item: ZSet<T>, compare: (a: T, b: T) => number) {
   return item;
 }
 
-function cut<T>(item: ZSet<T>, limit: number, offset = 0) {
-  item[0].splice(0, offset);
-  item[0].splice(limit);
-  item[1].splice(0, offset);
-  item[1].splice(limit);
-  spliceMeta([item[1]], children(item[2]), limit, offset);
-  return item;
+function cut<T, P extends number[]>(item: ZSet<T>, ...positions: P) {
+  let offset = 0;
+  const items = positions.map((position) => {
+    const at = position - offset;
+    offset += at;
+
+    const data2 = item[0].splice(at);
+    const meta2 = item[1].splice(at);
+    cutMeta([item[1], meta2 as any], children(item[2]), at);
+
+    try {
+      return item;
+    } finally {
+      item = [data2, meta2, item[2]] as ZSet<T>;
+    }
+  });
+  items.push(item);
+
+  type CutResult<P extends number[]> =
+    P extends [number, ...infer Rest extends number[]] ?
+      [ZSet<T>, ...CutResult<Rest>]
+    : [ZSet<T>];
+
+  return items as CutResult<P>;
 }
 
 function transform<T, U>(
@@ -138,9 +155,8 @@ const initMeta = recurse(([meta], key) => (meta[key] ??= []));
 const pushMeta = recurse(([aMeta, bMeta], key, i: number) =>
   aMeta[key].push(bMeta[key][i]),
 );
-const spliceMeta = recurse(([meta], key, limit: number, offset = 0) => {
-  meta[key].splice(0, offset);
-  meta[key].splice(limit);
+const cutMeta = recurse(([meta1, meta2], key, at: number) => {
+  meta2[key] = meta1[key].splice(at);
 });
 
 export { add, cut, sort, distinct, zero, copy, transform, multiply };

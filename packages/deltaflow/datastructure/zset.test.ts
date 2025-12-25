@@ -1,4 +1,4 @@
-import { add, copy, distinct, multiply, zero, type ZSet } from "./zset";
+import { add, copy, cut, distinct, multiply, zero, type ZSet } from "./zset";
 import { nest, shape } from "./shape";
 import { expect, it } from "bun:test";
 
@@ -775,5 +775,73 @@ it("multiplies through double deep nesting & multiple matches", () => {
 
     expect(result[0][0].deep1).toBe(result[0][1].deep1);
     expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
+  }
+});
+
+it("cuts sets correctly", () => {
+  const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+  const nested = nest(nest(idShape, "single", idShape, true), "multi", idShape);
+  const zset: ZSet<(typeof nested)["~type"]> = [
+    [
+      { id: 1, single: { id: 1 }, multi: [{ id: 1 }] },
+      { id: 2, single: { id: 2 }, multi: [{ id: 2 }] },
+      { id: 3, single: { id: 3 }, multi: [{ id: 3 }] },
+      { id: 4, single: { id: 4 }, multi: [{ id: 4 }] },
+      { id: 5, single: { id: 5 }, multi: [{ id: 5 }] },
+    ],
+    Object.assign([1, 1, 1, 1, 1], {
+      multi: [[1], [1], [1], [1], [1]],
+      single: [1, 1, 1, 1, 1],
+    }),
+    nested,
+  ];
+
+  {
+    const [zsetA, zsetB] = cut(copy(zset), 2);
+
+    expect(zsetA[0]).toEqual([
+      { id: 1, single: { id: 1 }, multi: [{ id: 1 }] },
+      { id: 2, single: { id: 2 }, multi: [{ id: 2 }] },
+    ]);
+    expect(zsetA[1] as any).toEqual([1, 1]);
+    expect(zsetA[1].multi).toEqual([[1], [1]]);
+    expect(zsetA[1].single).toEqual([1, 1]);
+
+    expect(zsetB[0]).toEqual([
+      { id: 3, single: { id: 3 }, multi: [{ id: 3 }] },
+      { id: 4, single: { id: 4 }, multi: [{ id: 4 }] },
+      { id: 5, single: { id: 5 }, multi: [{ id: 5 }] },
+    ]);
+    expect(zsetB[1] as any).toEqual([1, 1, 1]);
+    expect(zsetB[1].single).toEqual([1, 1, 1]);
+    expect(zsetB[1].multi).toEqual([[1], [1], [1]]);
+  }
+
+  {
+    const [zsetA, zsetB, zsetC] = cut(zset, 2, 4);
+
+    expect(zsetA[0]).toEqual([
+      { id: 1, single: { id: 1 }, multi: [{ id: 1 }] },
+      { id: 2, single: { id: 2 }, multi: [{ id: 2 }] },
+    ]);
+    expect(zsetA[1] as any).toEqual([1, 1]);
+    expect(zsetA[1].single).toEqual([1, 1]);
+    expect(zsetA[1].multi).toEqual([[1], [1]]);
+
+    expect(zsetB[0]).toEqual([
+      { id: 3, single: { id: 3 }, multi: [{ id: 3 }] },
+      { id: 4, single: { id: 4 }, multi: [{ id: 4 }] },
+    ]);
+    expect(zsetB[1] as any).toEqual([1, 1]);
+    expect(zsetB[1].single).toEqual([1, 1]);
+    expect(zsetB[1].multi).toEqual([[1], [1]]);
+
+    expect(zsetC[0]).toEqual([
+      { id: 5, single: { id: 5 }, multi: [{ id: 5 }] },
+    ]);
+    expect(zsetC[1] as any).toEqual([1]);
+    expect(zsetC[1].single).toEqual([1]);
+    expect(zsetC[1].multi).toEqual([[1]]);
+    expect(zsetA).toBe(zset);
   }
 });
