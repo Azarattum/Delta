@@ -97,7 +97,7 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
       if (reverse) scan.reverse();
       return [scan, Array(scan.length).fill(weight), shape] as ZSet<T>;
     },
-    flush: async (changes: [ZSet<T>][]) => {
+    flush: (changes: [ZSet<T>][]) => {
       changes.forEach(([set]) => {
         for (let i = 0; i < set![0].length; i++) {
           const op = set![1][i];

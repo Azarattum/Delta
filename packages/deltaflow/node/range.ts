@@ -1,7 +1,8 @@
 import type { ZStream, OfZStream, PullOptions } from "./stream";
 import { stream, SyncPromise, type Stream } from "../stream";
-import { add, cut, transform, type ZSet } from "../datastructure/zset";
+import { add, transform, type ZSet } from "../datastructure/zset";
 import { compare, TYPE } from "../datastructure/shape";
+import { traverse } from "../datastructure/metaset";
 
 export function range<
   TStream extends ZStream<T>,
@@ -12,79 +13,48 @@ export function range<
 
   return stream({
     push(set?: ZSet<T>, [deltaStart, deltaEnd]: [number, number] = [0, 0]) {
-      // console.log([1, 2, "[", 3, 4, 5, 6]);
-      // console.log(set?.[0].map((x, i) => (x as any).id * (set?.[1][i] ?? NaN)));
-
-      // if (bounds.length && set) {
       const [lower, upper] = bounds;
       if (!lower) return [[], [], set?.[2]]; // TODO: handle better with `missing` like upper
 
       let countLower = 0;
+      let countWithin = 0;
       let countUpper = 0;
 
       let shiftLower = deltaStart;
       let shiftUpper = deltaEnd;
 
-      let excessiveLower = 0;
-      let skipLower: T[] = [];
       let removedLower: T[] = [];
-
-      let excessiveUpper = 0;
-      let skipUpper: T[] = [];
+      let removedWithin: T[] = [];
       let removedUpper: T[] = [];
 
-      set &&
+      if (set) {
         transform(set, (data, meta, shape) => {
-          const cmpLower = lower ? compare(data, lower, shape) : 1;
-          const cmpUpper = upper ? compare(data, upper, shape) : -1;
+          const isLower = lower && compare(data, lower, shape) < 0;
+          const isUpper = !isLower && upper && compare(data, upper, shape) > 0;
 
           // Compute the lower bound
-          if (cmpLower < 0) {
+          if (isLower) {
             shiftLower -= Math.sign(meta);
-            shiftUpper -= Math.sign(meta); // TODO: refactor
+            shiftUpper -= Math.sign(meta);
+            if (shiftLower >= 0) return;
+            if (meta < 0) return void removedLower.push(data);
             countLower += 1;
-
-            if (meta > 0) {
-              // skipLower.length <= -shiftLower TODO: is this correct? how to not overpush?
-              if (shiftLower < 0) skipLower.push(data);
-              else return void (countLower -= 1);
-              // TODO: since shift is dynamic, could there be a situation where we remove something eligible for skip?
-            } else {
-              if (shiftLower < 0) removedLower.push(data);
-              return void ((countLower -= 1), (excessiveLower += 1));
-            }
-          } else {
-            if (shiftLower > 0 && meta < 0) removedLower.push(data);
-          }
-
-          // Compute the upper bound
-          if (cmpUpper > 0) {
+          } else if (isUpper) {
+            if (shiftUpper <= 0) return;
+            if (meta < 0) return void removedUpper.push(data);
             countUpper += 1;
-            if (meta > 0) {
-              if (shiftUpper > 0 && skipUpper.length < shiftUpper) {
-                skipUpper.push(data);
-              } else return void (countUpper -= 1);
-            } else {
-              if (shiftUpper > 0) removedUpper.push(data);
-              return void (countUpper -= 1);
-            }
           } else {
-            if (shiftUpper < 0 && meta > 0 && cmpLower > 0) {
-              skipUpper.push(data); // TODO: sure? is this optimal?
+            shiftUpper -= Math.sign(meta);
+
+            if (shiftLower >= 0 || shiftUpper <= 0) {
+              if (meta < 0) removedWithin.push(data);
             }
-            if (cmpLower >= 0) {
-              // TODO: refactor
-              shiftUpper -= Math.sign(meta);
-            }
+            countWithin += 1;
           }
 
           return [data, meta];
         });
-
-      // TODO: for anchor update
-      // if (shift >= 0) {
-      // shift += 1;
-      // }
+      }
 
       const keys =
         set &&
@@ -92,88 +62,153 @@ export function range<
           set[2]?.keys.filter((_, i) => set![2]!.types[i] & TYPE.PRIMARY)!,
         ] as const); // TODO: handle null
 
-      const expectedUpper =
+      const expectedLower = shiftLower;
+      const expectedUpper = // This accounts for a case where there aren't enough items to fill out window
         upper ? shiftUpper : Math.min(missing + shiftUpper, 0);
 
       return SyncPromise.all([
         upstream.pull({
           cursor: {
             anchor: lower,
-            skip: skipLower,
-            count: shiftLower,
+            count: expectedLower,
             exclusive: shiftLower < 0,
           },
-          filter: keys && [{ keys, items: removedLower, exclude: true }],
+          filter: keys && [
+            {
+              keys,
+              items: shiftLower < 0 ? removedLower : removedWithin,
+              exclude: true,
+            },
+          ],
           weight: -Math.sign(shiftLower),
         }),
         upstream.pull({
           cursor: {
             anchor: upper,
-            skip: skipUpper,
             count: expectedUpper,
             exclusive: shiftUpper > 0,
           },
-          filter: keys && [{ keys, items: removedUpper, exclude: true }],
+          filter: keys && [
+            {
+              keys,
+              items: shiftUpper > 0 ? removedUpper : removedWithin,
+              exclude: true,
+            },
+          ],
           weight: Math.sign(shiftUpper),
         }),
       ]).then(([pulledLower, pulledUpper]) => {
-        // console.log(cursor);
-        // console.log(
-        //   "upper:",
-        //   pulledUpper[0].map((n, i) => n.id * Math.sign(pulledUpper[1][i])),
-        // );
-        // if (!set) throw new Error("TODO: don't care for now");
-
-        // console.log(
-        //   set[0]?.map((x) => (x as any).id),
-        //   lowerCount,
-        //   upperCount,
-        // );
-
-        // console.log(
-        //   `upper (${shiftUpper}):`,
-        //   pulledUpper[0].map(
-        //     (x, i) => (pulledUpper[1][i] < 0 ? "-" : "") + (x as any).name,
-        //   ),
-        //   // shiftUpper,
-        //   // upper ? shiftUpper : Math.min(missing + shiftUpper, 0),
-        //   // skipUpper,
-        //   // shiftUpper,
-        // );
-
-        if (!set) return add(pulledLower, pulledUpper);
-
-        excessiveLower += pulledLower[0].length;
-        excessiveLower = Math.min(excessiveLower, countLower);
-
-        if (shiftUpper < 0) {
-          excessiveUpper += Math.abs(expectedUpper) - pulledUpper[0].length;
-          excessiveUpper = Math.min(excessiveUpper, set[0].length - countLower);
-        } else {
-          excessiveUpper += pulledUpper[0].length;
-          excessiveUpper = Math.min(excessiveUpper, countUpper);
-        }
-        // countUpper = shiftUpper > 0 ? countUpper : set[0].length - countLower;
-        // excessiveUpper += Math.abs(expectedUpper) - pulledUpper[0].length;
-        // console.log(expectedUpper);
-        // console.log(excessiveUpper, countUpper);
-        // excessiveUpper = Math.min(excessiveUpper, countUpper);
-
-        if (excessiveUpper || excessiveLower) {
-          set = cut(set, excessiveLower, -excessiveUpper || set[0].length)[1];
-        }
-
+        const pulledLowerLen = pulledLower[0].length;
+        const pulledUpperLen = pulledUpper[0].length;
         const pulled = add(pulledLower, pulledUpper);
-        const final = add(pulled, set);
-        // console.table(final[0]);
-        // console.log(final);
-        return final;
-        // return add(pulledUpper, set);
-      });
-      // }
+        if (!set) return pulled;
 
-      // console.log(set, deltaStart);
-      // throw new Error("Range stream push without bounds is not implemented");
+        const totalLower = countLower + pulledLowerLen;
+        const enterLower = Math.max(0, -shiftLower);
+        const enterUpper = Math.max(0, shiftUpper);
+
+        // Lower entering: skip first items (furthest from window), keep last enterLower
+        const skipLower = enterLower > 0 ? totalLower - enterLower : 0;
+        // Lower leaving: keep first min(shiftLower, shiftUpper) if both positive
+        const keepLowerLeave =
+          shiftLower > 0 ?
+            Math.min(shiftLower, shiftUpper > 0 ? shiftUpper : shiftLower)
+          : 0;
+
+        // For lower leaving: within adds positioned before last pulled lower absorb exits
+        const lastPulledLower = pulled[0][pulledLowerLen - 1];
+
+        // Count absorbable items
+        let absorbableLower = 0;
+        for (let i = 0; i < set[0].length; i++) {
+          if (lower && compare(set[0][i], lower, set[2]) < 0) continue;
+          if (upper && compare(set[0][i], upper, set[2]) > 0) continue;
+          if (set[1][i] > 0) {
+            if (compare(set[0][i], lastPulledLower, set[2]) < 0)
+              absorbableLower++;
+          }
+        }
+        const absorbedLower = Math.min(absorbableLower, keepLowerLeave);
+        // Effective slots for within adds = pulled items leaving + within removes - items entering from lower
+        // Items entering from lower push everything right, reducing slots for upper
+        const effectiveSlots =
+          pulledUpperLen + removedWithin.length - enterLower;
+
+        let posLower = 0,
+          posUpper = 0;
+        let pulledLowerPos = 0,
+          pulledUpperPos = 0;
+        let filteredLower = 0;
+        let withinAddsSeen = 0;
+
+        return traverse(
+          {
+            shallow: true,
+            combine: (aData, aMeta, _, bMeta) => [aData, aMeta + bMeta],
+            insert: (data, meta) => {
+              // Pulled items: first pulledLowerLen are from lower, rest from upper
+              if (pulledLowerPos < pulledLowerLen) {
+                pulledLowerPos++;
+                posLower++;
+                if (shiftLower < 0 && posLower <= skipLower) return;
+                // Lower leaving: keep first keepLowerLeave items
+                if (shiftLower > 0 && pulledLowerPos > keepLowerLeave) return;
+                return [data, meta];
+              }
+              // Upper pulled item: leave if newPosition > windowSize
+              // newPosition = originalPosition + withinAddsSeen
+              // originalPosition = windowSize - pulledUpperLen + pulledUpperPos
+              // So leave if: pulledUpperPos + withinAddsSeen > pulledUpperLen
+              pulledUpperPos++;
+              posUpper++;
+              if (shiftUpper > 0 && posUpper > enterUpper) return;
+              if (
+                upper &&
+                shiftUpper < 0 &&
+                pulledUpperPos + withinAddsSeen <= effectiveSlots
+              )
+                return;
+              return [data, meta];
+            },
+            update: (data, meta, shape) => {
+              if (lower && compare(data, lower, shape) < 0) {
+                posLower++;
+                if (shiftLower < 0 && posLower <= skipLower) return;
+                return [data, meta];
+              }
+              if (upper && compare(data, upper, shape) > 0) {
+                posUpper++;
+                if (shiftUpper > 0 && posUpper > enterUpper) return;
+                return [data, meta];
+              }
+              // Within: track adds and filter appropriately
+              if (meta > 0) {
+                withinAddsSeen++;
+                // Filter adds close to lower that absorb lower exits
+                if (
+                  filteredLower < absorbedLower &&
+                  compare(data, lastPulledLower, shape) < 0
+                ) {
+                  filteredLower++;
+                  return;
+                }
+                // Filter adds that don't fit (only when there's an upper bound)
+                // An add fits if position <= effectiveSlots (pulledUpperLen + withinRemoves)
+                if (
+                  upper &&
+                  shiftUpper < 0 &&
+                  pulledUpperPos + withinAddsSeen > effectiveSlots
+                ) {
+                  return;
+                }
+              }
+              return [data, meta];
+            },
+          },
+          set,
+          pulled,
+        );
+      });
     },
     pull(options?: PullOptions) {
       return SyncPromise.one(range.pull()).then((range) => {
