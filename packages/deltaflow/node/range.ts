@@ -17,9 +17,6 @@ export function range<
       if (!lower) return [[], [], set?.[2]]; // TODO: handle better with `missing` like upper
 
       let countLower = 0;
-      let countWithin = 0;
-      let countUpper = 0;
-
       let shiftLower = deltaStart;
       let shiftUpper = deltaEnd;
 
@@ -29,7 +26,7 @@ export function range<
 
       if (set) {
         transform(set, (data, meta, shape) => {
-          const isLower = lower && compare(data, lower, shape) < 0;
+          const isLower = compare(data, lower, shape) < 0;
           const isUpper = !isLower && upper && compare(data, upper, shape) > 0;
 
           // Compute the lower bound
@@ -42,14 +39,12 @@ export function range<
           } else if (isUpper) {
             if (shiftUpper <= 0) return;
             if (meta < 0) return void removedUpper.push(data);
-            countUpper += 1;
           } else {
             shiftUpper -= Math.sign(meta);
 
             if (shiftLower >= 0 || shiftUpper <= 0) {
               if (meta < 0) removedWithin.push(data);
             }
-            countWithin += 1;
           }
 
           return [data, meta];
@@ -100,6 +95,8 @@ export function range<
       ]).then(([pulledLower, pulledUpper]) => {
         const pulledLowerLen = pulledLower[0].length;
         const pulledUpperLen = pulledUpper[0].length;
+        // For lower leaving: within adds positioned before last pulled lower absorb exits
+        const lastPulledLower = pulledLower[0].at(-1);
         const pulled = add(pulledLower, pulledUpper);
         if (!set) return pulled;
 
@@ -108,17 +105,13 @@ export function range<
         const enterUpper = Math.max(0, shiftUpper);
 
         // Lower entering: skip first items (furthest from window), keep last enterLower
-        const skipLower = enterLower > 0 ? totalLower - enterLower : 0;
+        const skipLower = totalLower - enterLower;
         // Lower leaving: keep first min(shiftLower, shiftUpper) if both positive
         const keepLowerLeave =
           shiftLower > 0 ?
             Math.min(shiftLower, shiftUpper > 0 ? shiftUpper : shiftLower)
           : 0;
 
-        // For lower leaving: within adds positioned before last pulled lower absorb exits
-        const lastPulledLower = pulled[0][pulledLowerLen - 1];
-        // The actual absorbable count is naturally limited by items before lastPulledLower
-        const absorbedLower = keepLowerLeave;
         // Effective slots for within adds = pulled items leaving + within removes - items entering from lower
         // Items entering from lower push everything right, reducing slots for upper
         const effectiveSlots =
@@ -161,7 +154,7 @@ export function range<
               return [data, meta];
             },
             update: (data, meta, shape) => {
-              if (lower && compare(data, lower, shape) < 0) {
+              if (compare(data, lower, shape) < 0) {
                 posLower++;
                 if (shiftLower < 0 && posLower <= skipLower) return;
                 return [data, meta];
@@ -176,7 +169,7 @@ export function range<
                 withinAddsSeen++;
                 // Filter adds close to lower that absorb lower exits
                 if (
-                  filteredLower < absorbedLower &&
+                  filteredLower < keepLowerLeave &&
                   compare(data, lastPulledLower, shape) < 0
                 ) {
                   filteredLower++;
