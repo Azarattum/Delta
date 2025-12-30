@@ -117,18 +117,8 @@ export function range<
 
         // For lower leaving: within adds positioned before last pulled lower absorb exits
         const lastPulledLower = pulled[0][pulledLowerLen - 1];
-
-        // Count absorbable items
-        let absorbableLower = 0;
-        for (let i = 0; i < set[0].length; i++) {
-          if (lower && compare(set[0][i], lower, set[2]) < 0) continue;
-          if (upper && compare(set[0][i], upper, set[2]) > 0) continue;
-          if (set[1][i] > 0) {
-            if (compare(set[0][i], lastPulledLower, set[2]) < 0)
-              absorbableLower++;
-          }
-        }
-        const absorbedLower = Math.min(absorbableLower, keepLowerLeave);
+        // The actual absorbable count is naturally limited by items before lastPulledLower
+        const absorbedLower = keepLowerLeave;
         // Effective slots for within adds = pulled items leaving + within removes - items entering from lower
         // Items entering from lower push everything right, reducing slots for upper
         const effectiveSlots =
