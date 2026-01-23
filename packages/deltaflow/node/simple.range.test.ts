@@ -100,9 +100,9 @@ describe("limits lower bound with", async () => {
   });
 
   it("adds>removes (interleaf)", async () => {
-    await items.push([ids(1, 2, 2.5, 3.5), [-1, -1, 1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3, 3.5), [-1, 1]);
-    await expectLowerBound(4);
+    await items.push([ids(1, 2, 2.5, 3.5, 5.5), [-1, -1, 1, 1, 1], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3, 3.5, 5.5), [-1, 1, 1]);
+    await expectLowerBound(3.5);
   });
 
   it("adds<removes (no interleaf)", async () => {
@@ -148,8 +148,8 @@ describe("limits lower bound with", async () => {
   });
 
   it("skips within", async () => {
-    await items.push([ids(1, 2, 3.5), [-1, -1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3), [-1]);
+    await items.push([ids(1, 2, 3.5, 5.5), [-1, -1, 1, 1], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3, 5.5), [-1, 1]);
     await expectLowerBound(4);
   });
 });
@@ -191,10 +191,16 @@ describe("limits upper bound with", async () => {
     });
   });
 
-  it("adds (no interleaf)", async () => {
+  it("adds (out of range)", async () => {
     await items.push([ids(4.5), [1], idShape]);
     expect(delta).toHaveBeenLastCalledWith(ids(), []);
     await expectUpperBound(4);
+  });
+
+  it("adds (no interleaf)", async () => {
+    await items.push([ids(1.5), [1], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 4), [1, -1]);
+    await expectUpperBound(3);
   });
 
   it("adds (interleaf)", async () => {
@@ -285,5 +291,66 @@ describe("limits upper bound with", async () => {
     await items.push([ids(1.5, 3.5), [1, 1], idShape]);
     expect(delta).toHaveBeenLastCalledWith(ids(1.5, 4), [1, -1]);
     await expectUpperBound(3);
+  });
+});
+
+describe("limits both bounds with", async () => {
+  let items: ReturnType<typeof sqlite<{ id: number }>>;
+  let delta: ReturnType<
+    typeof vi.fn<(data: { id: number }[], meta: number[]) => void>
+  >;
+
+  async function expectBounds(lower: number, upper: number) {
+    items.push([
+      ids(lower - 0.001, lower + 0.001, upper - 0.001),
+      [-1, 1, 1],
+      idShape,
+    ]);
+    await items.flush();
+    expect(delta).toHaveBeenLastCalledWith(
+      ids(lower, lower + 0.001, upper),
+      [-1, 1, -1],
+    );
+  }
+
+  beforeEach(() => {
+    console.log([1, 2, "[", 3, 4, "]", 5, 6]);
+    const db = new SQLite(":memory:");
+    items = sqlite(db, "items", idShape, ids(1, 2, 3, 4, 5, 6));
+    const view = range(items, limit(2, 2));
+    expect(view.pull()[0]).toEqual(ids(3, 4));
+
+    delta = vi.fn();
+    view.connect((x) => {
+      console.log(
+        "final delta:",
+        x[0].map((n, i) => n.id * Math.sign(x[1][i])),
+      );
+      delta(x[0], x[1]);
+
+      const applied = distinct(add([ids(3, 4), [1, 1], idShape], x));
+      console.log(
+        "final view:",
+        applied[0].map((n, i) => n.id * Math.sign(applied[1][i])),
+      );
+    });
+  });
+
+  it("multiple adds below - multiple enter, multiple leave", async () => {
+    await items.push([ids(1.5, 2.5), [1, 1], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2, 2.5, 3, 4), [1, 1, -1, -1]);
+    await expectBounds(2, 2.5);
+  });
+
+  it("add below - item enters from below, item leaves from upper", async () => {
+    await items.push([ids(1.5), [1], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2, 4), [1, -1]);
+    await expectBounds(2, 3);
+  });
+
+  it("add just below lower - enters directly, upper pushed out", async () => {
+    await items.push([ids(2.5), [1], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2.5, 4), [1, -1]);
+    await expectBounds(2.5, 3);
   });
 });

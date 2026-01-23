@@ -82,15 +82,14 @@ it("respects limit bounds", async () => {
     { id: 25, name: "Agatha" },
   ]);
 
-  // TODO: this will work when we update bounds
-  // users.push([[{ id: 28, name: "Hannah" }], [-1], user]);
-  // await users.flush();
+  users.push([[{ id: 28, name: "Hannah" }], [-1], user]);
+  await users.flush();
 
-  // expect(view.pull()[0]).toEqual([
-  //   { id: 10, name: "Alice" },
-  //   { id: 20, name: "Bob" },
-  //   { id: 25, name: "Agatha" },
-  // ]);
+  expect(view.pull()[0]).toEqual([
+    { id: 10, name: "Alice" },
+    { id: 20, name: "Bob" },
+    { id: 25, name: "Agatha" },
+  ]);
 });
 
 describe.each([
@@ -245,27 +244,26 @@ it("moves window dynamically", async () => {
     { id: 40, name: "Dave" },
   ]);
 
-  // TODO: this will work when we update bounds
-  // window.push([3, 3]);
+  window.push([3, 3]);
 
-  // expect(view.pull()[0]).toEqual([
-  //   { id: 30, name: "Clara" },
-  //   { id: 40, name: "Dave" },
-  //   { id: 50, name: "Eve" },
-  // ]);
+  expect(view.pull()[0]).toEqual([
+    { id: 30, name: "Clara" },
+    { id: 40, name: "Dave" },
+    { id: 50, name: "Eve" },
+  ]);
 
-  // window.push([3, 4]);
+  window.push([3, 4]);
 
-  // expect(view.pull()[0]).toEqual([
-  //   { id: 40, name: "Dave" },
-  //   { id: 50, name: "Eve" },
-  // ]);
+  expect(view.pull()[0]).toEqual([
+    { id: 40, name: "Dave" },
+    { id: 50, name: "Eve" },
+  ]);
 
-  // window.push([3, 5]);
+  window.push([3, 5]);
 
-  // expect(view.pull()[0]).toEqual([{ id: 50, name: "Eve" }]);
+  expect(view.pull()[0]).toEqual([{ id: 50, name: "Eve" }]);
 
-  // window.push([3, 6]);
+  window.push([3, 6]);
 
-  // expect(view.pull()[0]).toEqual([]);
+  expect(view.pull()[0]).toEqual([]);
 });
