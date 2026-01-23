@@ -144,6 +144,11 @@ function cut<T, P extends number[]>(item: ZSet<T>, ...positions: P) {
   return items as CutResult<P>;
 }
 
+function len<T>(item: ZSet<T>) {
+  if (item[0].length !== item[1].length) throw new Error("Corrupted ZSet");
+  return item[0].length;
+}
+
 function transform<T, U>(
   item: ZSet<T>,
   fn: (data: T, meta: number, shape: Shape) => [U, number] | undefined | false,
@@ -159,5 +164,5 @@ const cutMeta = recurse(([meta1, meta2], key, at: number) => {
   meta2[key] = meta1[key].splice(at);
 });
 
-export { add, cut, sort, distinct, zero, copy, transform, multiply };
+export { add, cut, len, sort, distinct, zero, copy, transform, multiply };
 export type { ZSet };
