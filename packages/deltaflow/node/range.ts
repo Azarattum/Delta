@@ -1,7 +1,7 @@
 import type { ZStream, OfZStream, PullOptions } from "./stream";
 import { stream, SyncPromise, type Stream } from "../stream";
 import { add, cut, len, transform, type ZSet } from "../datastructure/zset";
-import { compare, primary, type Shape } from "../datastructure/shape";
+import { compare, primary } from "../datastructure/shape";
 import { traverse } from "../datastructure/metaset";
 
 export function range<
@@ -51,10 +51,10 @@ export function range<
         });
       }
 
+      const shrinkUpper = shiftUpper < 0 && upper;
       const keys = set && ([primary(set[2])] as const);
       const needExtraLower = shiftLower > 0; // TODO: this is weird, why no removed check here?
-      const needExtraUpper =
-        (shiftUpper < 0 && upper) || (upperRemoved && shiftUpper <= 0);
+      const needExtraUpper = shrinkUpper || (upperRemoved && shiftUpper <= 0);
 
       return SyncPromise.all([
         upstream.pull({
@@ -107,38 +107,38 @@ export function range<
           if (shiftUpper > 0) upper = undefined;
         }
 
-        const shrinkUpper = upper && shiftUpper < 0;
         const enterLower = Math.max(0, -shiftLower);
         const slots =
           pulledLenUpper + removed.length + +upperRemoved - enterLower;
-        let keepLowerLeave =
+        let keepWithin =
           shiftUpper > 0 ? Math.min(shiftLower, shiftUpper) : shiftLower;
 
-        let lowerTracked = false;
+        let lowerSetOnce = false;
+        const setLower = (x: T) =>
+          void (lowerSetOnce || ((lowerSetOnce = true), (lower = x)));
+        const setUpper = (x: T) =>
+          void (shrinkUpper && compare(x, upper, set[2]) > 0 && (upper = x));
 
         let skipLower = lenLower + pulledLenLower - enterLower;
-        const processLower = (data: T, meta: number, shape: Shape) => {
+        const processLower = (data: T, meta: number) => {
           if (shiftLower < 0) {
             if (skipLower-- > 0) return;
-            if (!lowerTracked) (lowerTracked = true), (lower = data);
+            setLower(data);
           }
-          if (shiftLower > 0 && i > keepLowerLeave) {
-            if (!lowerTracked) (lowerTracked = true), (lower = data);
-            return;
-          }
-          if (shrinkUpper && compare(data, upper, shape) > 0) upper = data;
+          if (shiftLower > 0 && i > keepWithin) return setLower(data);
+          setUpper(data);
           return [data, meta] as [T, number];
         };
 
         let slotWithin = 0;
-        const processWithin = (data: T, meta: number, shape: Shape) => {
+        const processWithin = (data: T, meta: number) => {
           if (shrinkUpper) {
             if (++slotWithin > slots) return;
-            if (compare(data, upper, shape) > 0) upper = data;
+            setUpper(data);
           }
           if (shiftLower > 0) {
-            if (i < pulledLenLower) return void keepLowerLeave--;
-            if (!lowerTracked) (lowerTracked = true), (lower = data);
+            if (i < pulledLenLower) return void keepWithin--;
+            setLower(data);
           }
           return [data, meta] as [T, number];
         };
@@ -158,14 +158,14 @@ export function range<
           {
             shallow: true,
             combine: (aData, aMeta, _, bMeta) => (j++, [aData, aMeta + bMeta]),
-            insert: (data, meta, shape) => {
-              if (i++ < pulledLenLower) return processLower(data, meta, shape);
+            insert: (data, meta) => {
+              if (i++ < pulledLenLower) return processLower(data, meta);
               else return processUpper(data, meta);
             },
-            update: (data, meta, shape) => {
-              if (j++ < lenLower) return processLower(data, meta, shape);
+            update: (data, meta) => {
+              if (j++ < lenLower) return processLower(data, meta);
               if (j > lenLower + lenWithin) return processUpper(data, meta);
-              if (meta > 0) return processWithin(data, meta, shape);
+              if (meta > 0) return processWithin(data, meta);
               return [data, meta];
             },
           },
