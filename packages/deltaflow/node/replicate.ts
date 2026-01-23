@@ -1,6 +1,6 @@
 import type { CLGlobal, CLSet } from "../datastructure/clset";
 import type { CLStream, OfZStream, ZStream } from "./stream";
-import { either, TYPE } from "../datastructure/shape";
+import { either, nonPrimary } from "../datastructure/shape";
 import type { ZSet } from "../datastructure/zset";
 import { stream, SyncPromise } from "../stream";
 
@@ -21,9 +21,7 @@ export function replicate<
       if (!aRef) return [[], []] as CLSet<T>;
       return SyncPromise.one(bUpstream.pull({ filter: [aRef] })).then(
         (pulled) => {
-          const keys = pulled[2]?.keys.filter(
-            (_, i) => !(pulled[2]!.types[i] & TYPE.PRIMARY),
-          );
+          const keys = nonPrimary(pulled[2]);
           const nextVersion = (global.version ?? 0) + 1;
 
           let j = 0;

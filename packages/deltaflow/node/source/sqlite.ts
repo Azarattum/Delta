@@ -1,4 +1,4 @@
-import { TYPE, type Shape } from "../../datastructure/shape";
+import { primary, type Shape } from "../../datastructure/shape";
 import type { SQLQueryBindings, Database } from "bun:sqlite";
 import type { ZSet } from "../../datastructure/zset";
 import { zStream, type PullOptions } from "../stream";
@@ -15,14 +15,11 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
   // sqlite.query = (...args) => (
   //   console.log("SQL:", args[0]), orig.call(sqlite, ...args)
   // );
-
-  const primaryKeys = shape.keys.filter(
-    (_, i) => shape.types[i] & TYPE.PRIMARY,
-  );
+  const pks = primary(shape);
 
   // Autocreating for testing convenience (TODO: remove later)
   db.run(
-    `CREATE TABLE IF NOT EXISTS ${table} (${shape.keys}, PRIMARY KEY (${primaryKeys}))`,
+    `CREATE TABLE IF NOT EXISTS ${table} (${shape.keys}, PRIMARY KEY (${pks}))`,
   );
   db.run(
     `INSERT OR IGNORE INTO ${table} VALUES ${initialData.map(() => `(${shape.keys.map(() => "?").join(",")})`)}`,
@@ -32,7 +29,7 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
   // TODO: use proper bindings to avoid SQL injection
   return zStream({
     pull: ({ filter, order, cursor, weight = 1 } = {}) => {
-      order ??= primaryKeys;
+      order ??= pks;
       const orderKeys = order.map((x) => (Array.isArray(x) ? x[0] : x));
 
       const reverse = cursor?.count != null && cursor.count < 0;

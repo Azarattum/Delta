@@ -74,6 +74,14 @@ function children<T extends Shape>(shape: T) {
   return Object.entries(shape?.children ?? {}) as Children<T>;
 }
 
+function primary<T extends Record<string, unknown>>(shape?: Shape<T>) {
+  return shape?.keys.filter((_, i) => shape.types[i] & TYPE.PRIMARY) ?? [];
+}
+
+function nonPrimary<T extends Record<string, unknown>>(shape?: Shape<T>) {
+  return shape?.keys.filter((_, i) => !(shape.types[i] & TYPE.PRIMARY)) ?? [];
+}
+
 function compare<T>(a: T, b: T, shape?: Shape<T>) {
   for (let i = 0; i < (shape?.order.length ?? 1); i++) {
     const direction = shape && shape.order[i] & 1 ? -1 : 1;
@@ -195,5 +203,15 @@ type Order<T> = (
   | readonly [NoInfer<keyof T & string>, ("asc" | "desc")?]
 )[];
 
-export { TYPE, shape, children, compare, reorder, either, nest };
+export {
+  TYPE,
+  nonPrimary,
+  children,
+  primary,
+  compare,
+  reorder,
+  either,
+  shape,
+  nest,
+};
 export type { Shape, Children, Order };

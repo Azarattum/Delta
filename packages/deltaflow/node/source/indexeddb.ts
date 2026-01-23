@@ -1,4 +1,9 @@
-import { TYPE, type Order, type Shape } from "../../datastructure/shape";
+import {
+  TYPE,
+  primary,
+  type Order,
+  type Shape,
+} from "../../datastructure/shape";
 import type { ZSet } from "../../datastructure/zset";
 import { zStream, type PullOptions } from "../stream";
 
@@ -14,9 +19,7 @@ export async function indexeddb<T extends Record<string, unknown>>(
   initialData.forEach((x) => store.put(x));
   await new Promise((resolve) => (store.transaction.oncomplete = resolve));
 
-  const primaryKeys = shape.keys.filter(
-    (_, i) => shape.types[i] & TYPE.PRIMARY,
-  );
+  const pks = primary(shape);
 
   return zStream({
     pull: async ({ filter, order, range, weight = 1 } = {}) => {
@@ -49,7 +52,7 @@ export async function indexeddb<T extends Record<string, unknown>>(
 
           if (op === 0) store.put(item);
           else if (op > 0) store.add(item);
-          else store.delete(primaryKeys.map((key) => item[key]) as string[]);
+          else store.delete(pks.map((key) => item[key] as IDBValidKey));
         }
       }
 
@@ -66,7 +69,7 @@ export function createStore<T extends Record<string, unknown>>(
   shape: Shape<T>,
   indexed: (keyof T)[] = [],
 ) {
-  const keyPath = shape.keys.filter((_, i) => shape.types[i] & TYPE.PRIMARY);
+  const keyPath = primary(shape);
   const store = db.createObjectStore(name, { keyPath });
   const relations = shape.keys.filter(
     (_, i) => shape.types[i] >> 16 && !(shape.types[i] & TYPE.PRIMARY),

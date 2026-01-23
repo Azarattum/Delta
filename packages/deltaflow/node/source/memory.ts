@@ -1,9 +1,13 @@
-import { children, compare, reorder, TYPE } from "../../datastructure/shape";
-import { zStream, clStream, type OfZStream, type ZStream } from "../stream";
+import {
+  children,
+  compare,
+  nonPrimary,
+  reorder,
+  type Shape,
+} from "../../datastructure/shape";
 import type { CLGlobal, CLMeta, CLSet } from "../../datastructure/clset";
-import { add, sort, distinct, cut } from "../../datastructure/zset";
-import type { Shape } from "../../datastructure/shape";
-import type { ZSet } from "../../datastructure/zset";
+import { add, sort, distinct, cut, type ZSet } from "../../datastructure/zset";
+import { zStream, clStream, type OfZStream, type ZStream } from "../stream";
 import { SyncPromise } from "../../stream";
 
 export function memory<T extends Record<string, unknown>>(
@@ -56,7 +60,7 @@ export function memory<T extends Record<string, unknown>>(
 
 export function memoryReplication<
   TStream extends ZStream<T>,
-  T = OfZStream<TStream>,
+  T extends Record<string, unknown> = OfZStream<TStream>,
 >(dataStream: TStream, global: CLGlobal, initialData: [number, CLMeta][] = []) {
   // TODO: use generic key, not a number
   const stored = new Map<number, CLMeta>(initialData);
@@ -66,10 +70,7 @@ export function memoryReplication<
       return SyncPromise.one(dataStream.pull(options)).then((zset) => {
         const [data, _, shape] = zset;
 
-        const emptyCols =
-          shape?.keys
-            .filter((_, i) => !(shape.types[i] & TYPE.PRIMARY))
-            .flatMap(() => [0, global.peer]) ?? [];
+        const emptyCols = nonPrimary(shape).flatMap(() => [0, global.peer]);
 
         // TODO: do not use the ID, but actual key!
         const meta = data.map(
