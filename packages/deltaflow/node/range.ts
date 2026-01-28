@@ -1,6 +1,6 @@
-import type { ZStream, OfZStream, PullOptions } from "./stream";
-import { stream, SyncPromise, type Stream } from "../stream";
+import { stream, SyncPromise, type MaybePromise, type Stream } from "../stream";
 import { add, cut, len, transform, type ZSet } from "../datastructure/zset";
+import type { ZStream, OfZStream, PullOptions } from "./stream";
 import { compare, primary } from "../datastructure/shape";
 import { traverse } from "../datastructure/metaset";
 
@@ -8,45 +8,24 @@ export function range<
   TStream extends ZStream<T>,
   T extends Record<string, unknown> = OfZStream<TStream>,
 >(upstream: TStream, range: Stream<readonly [limit: number, offset: number]>) {
-  let bounds: [T?, T?] = [];
-  let missing = 0;
+  let bounds: [T?, T?] | undefined;
+  let [missing, size] = [0, 0];
 
   return stream({
-    push(set?: ZSet<T>, [deltaStart, deltaEnd]: [number, number] = [0, 0]) {
-      let [lower, upper] = bounds;
-
-      if (!lower) {
-        if (!set && deltaEnd <= 0) return [[], [], undefined];
-
-        if (deltaEnd > 0) {
-          const count = missing + deltaEnd;
-          return SyncPromise.one(
-            upstream.pull({ cursor: { offset: 0, count } }), // TODO: not necessarily 0
-          ).then((pulled) => {
-            const len = pulled[0].length;
-            missing = count - len;
-            bounds =
-              len ? [pulled[0][0], missing ? undefined : pulled[0].at(-1)] : [];
-            return pulled;
-          });
-        }
-
-        cut(set!, missing);
-        const length = len(set!);
-        if (!length) return [[], [], set![2]];
-        missing -= set![0].length;
-        bounds = [set![0][0], missing ? undefined : set![0].at(-1)];
-        return set!;
+    push(set?: ZSet<T>, range?: [number, number]): MaybePromise<ZSet<T>> {
+      if (!bounds) {
+        return SyncPromise.one(this.pull!()).then(() => this.push!(set, range));
       }
 
-      let lenLower = 0;
-      let lenUpper = 0;
-      let shiftLower = deltaStart;
-      let shiftUpper = deltaEnd;
+      let [shiftLower, shiftUpper] = range ?? [0, 0];
+      missing += shiftUpper - shiftLower;
+      size += shiftUpper - shiftLower;
+      if (size <= 0) return [[], []] as ZSet<T>;
 
+      let [lowerRemoved, upperRemoved] = [false, false];
+      let [lenLower, lenUpper] = [0, 0];
+      let [lower, upper] = bounds!;
       let removed: T[] = [];
-      let lowerRemoved = false;
-      let upperRemoved = false;
 
       if (set) {
         transform(set, (data, meta, shape) => {
@@ -91,14 +70,13 @@ export function range<
         }),
         upstream.pull({
           cursor: {
-            anchor: upper,
-            count:
-              (upper ? shiftUpper : Math.min(missing + shiftUpper, 0)) -
-              (needExtraUpper ? 1 : 0),
-            exclusive: shiftUpper > 0 || upperRemoved,
+            anchor: upper ?? lower,
+            offset: upper ? undefined : size - missing,
+            count: upper ? shiftUpper - (needExtraUpper ? 1 : 0) : missing,
+            exclusive: (shiftUpper > 0 || upperRemoved) && !!upper,
           },
           filter: keys && [{ keys, items: removed, exclude: true }],
-          weight: Math.sign(shiftUpper),
+          weight: upper ? Math.sign(shiftUpper) : 1,
         }),
       ]).then(([pulledLower, pulledUpper]) => {
         const hasExtraLower =
@@ -129,14 +107,15 @@ export function range<
         if (shiftUpper > 0) upper = undefined;
 
         const enterLower = Math.max(0, -shiftLower);
+        const maxNew = missing > 0 ? missing : Infinity;
         const slots =
           pulledLenUpper + removed.length + +upperRemoved - enterLower;
 
-        let keepLower =
-          shiftUpper > 0 ? Math.min(shiftLower, shiftUpper) : shiftLower;
         let skipLower = lenLower + pulledLenLower - enterLower;
-        let slotWithin = 0;
+        let keepLower = shiftLower;
         let keepUpper = shiftUpper;
+        let addedMissing = 0;
+        let slotWithin = 0;
 
         let lowerSetOnce = false;
         const setLower = (x: T) =>
@@ -150,14 +129,16 @@ export function range<
             if (shrinkUpper && compare(data, upper, set![2]) > 0) upper = data;
           } else if (region > 0) {
             if (shiftUpper > 0 && keepUpper-- <= 0) return;
+            if (missing > 0 && meta > 0 && ++addedMissing > maxNew) return; // TODO: confirm this is needed
             if (shiftUpper > 0 || ++slotWithin <= slots) upper = data;
             if (shrinkUpper && slotWithin <= slots) return;
           } else if (meta > 0) {
+            if (missing > 0 && ++addedMissing > maxNew) return;
             if (shiftLower > 0 && i < pulledLenLower) return void keepLower--;
             if (shiftLower > 0) setLower(data);
             if (shrinkUpper && ++slotWithin > slots) return;
             if (shrinkUpper && compare(data, upper, set![2]) > 0) upper = data;
-            else if (missing > 0 && missing <= -shiftUpper) upper = data;
+            else if (missing > 0 && addedMissing >= maxNew) upper = data;
           }
           return [data, meta] as [T, number];
         };
@@ -176,7 +157,7 @@ export function range<
           pulled,
         );
 
-        if (missing > 0 && shiftUpper < 0) missing += shiftUpper;
+        if (missing > 0) missing += shiftUpper;
         bounds = [lower, upper];
         return set;
       });
@@ -186,7 +167,7 @@ export function range<
         SyncPromise.one(
           upstream.pull({ ...options, cursor: { offset, count: limit } }),
         ).then((set) => {
-          missing = limit - set[0].length;
+          [missing, size] = [limit - len(set), limit];
           bounds = [set[0][0], missing ? undefined : set[0].at(-1)];
           return set;
         }),

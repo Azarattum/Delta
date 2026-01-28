@@ -18,15 +18,15 @@ function stream<
   >(
     ...upstreams: TUpstreams
   ): Stream<TOut, TIn, TOptions> => {
-    const push = options.push ?? ((...entity: TIn) => entity[0]);
+    const push = options.push?.bind(options) ?? ((...entity: TIn) => entity[0]);
     const pull =
-      options.pull ??
+      options.pull?.bind(options) ??
       ((options?) => {
         const entities = upstreams.map((x) => x?.pull(options));
         return SyncPromise.all(entities).then((x) => push(...(x as TIn)));
       });
     const compress =
-      options.compress ??
+      options.compress?.bind(options) ??
       ((queue) => {
         const length = queue.reduce((max, a) => Math.max(max, a!.length), 1);
         return Array.from({ length }, (_, i) =>
