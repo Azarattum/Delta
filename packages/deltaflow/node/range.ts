@@ -14,10 +14,33 @@ export function range<
   return stream({
     push(set?: ZSet<T>, [deltaStart, deltaEnd]: [number, number] = [0, 0]) {
       let [lower, upper] = bounds;
-      if (!lower) return [[], [], set?.[2]];
+
+      if (!lower) {
+        if (!set && deltaEnd <= 0) return [[], [], undefined];
+
+        if (deltaEnd > 0) {
+          const count = missing + deltaEnd;
+          return SyncPromise.one(
+            upstream.pull({ cursor: { offset: 0, count } }), // TODO: not necessarily 0
+          ).then((pulled) => {
+            const len = pulled[0].length;
+            missing = count - len;
+            bounds =
+              len ? [pulled[0][0], missing ? undefined : pulled[0].at(-1)] : [];
+            return pulled;
+          });
+        }
+
+        cut(set!, missing);
+        const length = len(set!);
+        if (!length) return [[], [], set![2]];
+        missing -= set![0].length;
+        bounds = [set![0][0], missing ? undefined : set![0].at(-1)];
+        return set!;
+      }
 
       let lenLower = 0;
-      let lenWithin = 0;
+      let lenUpper = 0;
       let shiftLower = deltaStart;
       let shiftUpper = deltaEnd;
 
@@ -36,7 +59,7 @@ export function range<
           if (cmpLower < 0) {
             if (shiftLower >= 0) return;
             if (meta < 0) return void removed.push(data);
-            lenLower += 1;
+            (lenLower += 1), (lenUpper += 1);
           } else if (cmpUpper > 0) {
             if (shiftUpper <= 0) return;
             if (meta < 0) return void removed.push(data);
@@ -44,7 +67,7 @@ export function range<
             if (cmpLower === 0 && meta < 0) lowerRemoved = true;
             else if (cmpUpper === 0 && meta < 0) upperRemoved = true;
             else if (meta < 0) removed.push(data);
-            lenWithin += 1;
+            lenUpper += 1;
           }
 
           return [data, meta];
@@ -98,58 +121,44 @@ export function range<
         if (!set) {
           if (shiftLower < 0 && pulledLenLower) lower = pulledLower[0].at(-1);
           if (shiftUpper > 0 && pulledLenUpper) upper = pulledUpper[0].at(-1);
-          if (!lower) upper = undefined;
+          missing += shiftUpper - pulledLenUpper;
           bounds = [lower, upper];
-          missing -= shiftUpper; // TODO: this makes no sense
           return pulled;
-        } else {
-          if (shiftLower < 0) lower = undefined;
-          if (shiftUpper > 0) upper = undefined;
         }
+        if (shiftLower < 0) lower = undefined;
+        if (shiftUpper > 0) upper = undefined;
 
         const enterLower = Math.max(0, -shiftLower);
         const slots =
           pulledLenUpper + removed.length + +upperRemoved - enterLower;
-        let keepWithin =
+
+        let keepLower =
           shiftUpper > 0 ? Math.min(shiftLower, shiftUpper) : shiftLower;
+        let skipLower = lenLower + pulledLenLower - enterLower;
+        let slotWithin = 0;
+        let keepUpper = shiftUpper;
 
         let lowerSetOnce = false;
         const setLower = (x: T) =>
-          void (lowerSetOnce || ((lowerSetOnce = true), (lower = x)));
-        const setUpper = (x: T) =>
-          void (shrinkUpper && compare(x, upper, set[2]) > 0 && (upper = x));
+          lowerSetOnce || ((lowerSetOnce = true), (lower = x));
 
-        let skipLower = lenLower + pulledLenLower - enterLower;
-        const processLower = (data: T, meta: number) => {
-          if (shiftLower < 0) {
-            if (skipLower-- > 0) return;
-            setLower(data);
+        const process = (data: T, meta: number, region: number) => {
+          if (region < 0) {
+            if (shiftLower < 0 && skipLower-- > 0) return;
+            if (shiftLower < 0 || i > keepLower) setLower(data);
+            if (shiftLower > 0 && i > keepLower) return;
+            if (shrinkUpper && compare(data, upper, set![2]) > 0) upper = data;
+          } else if (region > 0) {
+            if (shiftUpper > 0 && keepUpper-- <= 0) return;
+            if (shiftUpper > 0 || ++slotWithin <= slots) upper = data;
+            if (shrinkUpper && slotWithin <= slots) return;
+          } else if (meta > 0) {
+            if (shiftLower > 0 && i < pulledLenLower) return void keepLower--;
+            if (shiftLower > 0) setLower(data);
+            if (shrinkUpper && ++slotWithin > slots) return;
+            if (shrinkUpper && compare(data, upper, set![2]) > 0) upper = data;
+            else if (missing > 0 && missing <= -shiftUpper) upper = data;
           }
-          if (shiftLower > 0 && i > keepWithin) return setLower(data);
-          setUpper(data);
-          return [data, meta] as [T, number];
-        };
-
-        let slotWithin = 0;
-        const processWithin = (data: T, meta: number) => {
-          if (shrinkUpper) {
-            if (++slotWithin > slots) return;
-            setUpper(data);
-          }
-          if (shiftLower > 0) {
-            if (i < pulledLenLower) return void keepWithin--;
-            setLower(data);
-          }
-          return [data, meta] as [T, number];
-        };
-
-        let keepUpper = shiftUpper;
-        const processUpper = (data: T, meta: number) => {
-          if (shiftUpper > 0) {
-            if (keepUpper-- <= 0) return;
-            upper = data;
-          }
-          if (shrinkUpper && ++slotWithin <= slots) return void (upper = data);
           return [data, meta] as [T, number];
         };
 
@@ -158,39 +167,30 @@ export function range<
           {
             shallow: true,
             combine: (aData, aMeta, _, bMeta) => (j++, [aData, aMeta + bMeta]),
-            insert: (data, meta) => {
-              if (i++ < pulledLenLower) return processLower(data, meta);
-              else return processUpper(data, meta);
-            },
-            update: (data, meta) => {
-              if (j++ < lenLower) return processLower(data, meta);
-              if (j > lenLower + lenWithin) return processUpper(data, meta);
-              if (meta > 0) return processWithin(data, meta);
-              return [data, meta];
-            },
+            update: (data, meta) =>
+              process(data, meta, +(++j > lenLower) + +(j > lenUpper) - 1),
+            insert: (data, meta) =>
+              process(data, meta, i++ < pulledLenLower ? -1 : 1),
           },
           set,
           pulled,
         );
 
+        if (missing > 0 && shiftUpper < 0) missing += shiftUpper;
         bounds = [lower, upper];
-        missing -= shiftUpper; // TODO: this makes no sense
         return set;
       });
     },
     pull(options?: PullOptions) {
-      return SyncPromise.one(range.pull()).then((range) => {
-        return SyncPromise.one(
-          upstream.pull({
-            ...options,
-            cursor: { offset: range[1], count: range[0] },
-          }),
+      return SyncPromise.one(range.pull()).then(([limit, offset]) =>
+        SyncPromise.one(
+          upstream.pull({ ...options, cursor: { offset, count: limit } }),
         ).then((set) => {
-          missing = range[0] - set[0].length;
+          missing = limit - set[0].length;
           bounds = [set[0][0], missing ? undefined : set[0].at(-1)];
           return set;
-        });
-      });
+        }),
+      );
     },
     compress([sets, ranges]) {
       return [[sets?.reduce((acc, x) => add(acc, x, false)), ranges?.at(-1)]];
