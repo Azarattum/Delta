@@ -55,7 +55,7 @@ export function range<
 
       const shrinkUpper = shiftUpper < 0 && upper;
       const keys = set && ([primary(set[2])] as const);
-      const needExtraLower = shiftLower > 0; // TODO: this is weird, why no removed check here?
+      const needExtraLower = shiftLower > 0 || (lowerRemoved && !shiftLower);
       const needExtraUpper = shrinkUpper || (upperRemoved && shiftUpper <= 0);
 
       return SyncPromise.all([
@@ -124,7 +124,7 @@ export function range<
         const process = (data: T, meta: number, region: number) => {
           if (region < 0) {
             if (shiftLower < 0 && skipLower-- > 0) return;
-            if (shiftLower < 0 || i > keepLower) setLower(data);
+            if (shiftLower <= 0 || i > keepLower) setLower(data);
             if (shiftLower > 0 && i > keepLower) return;
             if (shrinkUpper && compare(data, upper, set![2]) > 0) upper = data;
           } else if (region > 0) {
