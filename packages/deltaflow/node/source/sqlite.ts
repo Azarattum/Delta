@@ -21,10 +21,12 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
   db.run(
     `CREATE TABLE IF NOT EXISTS ${table} (${shape.keys}, PRIMARY KEY (${pks}))`,
   );
-  db.run(
-    `INSERT OR IGNORE INTO ${table} VALUES ${initialData.map(() => `(${shape.keys.map(() => "?").join(",")})`)}`,
-    initialData.flatMap((x) => Object.values(x)),
-  );
+  if (initialData.length) {
+    db.run(
+      `INSERT OR IGNORE INTO ${table} VALUES ${initialData.map(() => `(${shape.keys.map(() => "?").join(",")})`)}`,
+      initialData.flatMap((x) => Object.values(x)),
+    );
+  }
 
   // TODO: use proper bindings to avoid SQL injection
   return zStream({
