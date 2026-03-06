@@ -159,6 +159,17 @@ it("supports cursor pagination with composite order", () => {
   });
   expect(reverseRows.map((row) => row.id)).toEqual([1, 2]);
 
+  const [reverseWithOffset] = triples.pull({
+    cursor: {
+      anchor: { x: 1, y: 9, z: 1 },
+      offset: 1,
+      count: -2,
+      exclusive: true,
+    },
+    order,
+  });
+  expect(reverseWithOffset.map((row) => row.id)).toEqual([0, 1]);
+
   const [reverseFromStart] = triples.pull({
     cursor: { offset: 1, count: -2 },
     order,

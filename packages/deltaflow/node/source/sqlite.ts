@@ -51,11 +51,16 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
         return `(${columnKeys}) ${exclude ? "NOT" : ""} IN (${tuples})`;
       });
 
-      const cteOrderBy = `ORDER BY ${(cursor?.anchor ? order : effectiveOrder).map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
+      const cteReverse = reverse && !!cursor?.anchor;
+      const cteOrder =
+        cteReverse ? effectiveOrder
+        : cursor?.anchor ? order
+        : effectiveOrder;
+      const cteOrderBy = `ORDER BY ${cteOrder.map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
       const cte =
         cursor ?
           `WITH cursor AS (SELECT ${orderKeys.join()} FROM ${table}
-          ${cursor.anchor ? `WHERE ${compareBy(order, table, cursor.anchor, true)}` : ""}
+          ${cursor.anchor ? `WHERE ${compareBy(order, table, cursor.anchor, true, cteReverse)}` : ""}
           ${cteOrderBy} LIMIT 1 OFFSET ${cursor.offset ?? 0})`
         : "";
 
