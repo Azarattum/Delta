@@ -30,7 +30,7 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
 
   // TODO: use proper bindings to avoid SQL injection
   return zStream({
-    pull: ({ filter, order, cursor, weight = 1 } = {}) => {
+    pull: ({ filter, order, cursor, weight = 1, total } = {}) => {
       order ??= pks;
       const orderKeys = order.map((x) => (Array.isArray(x) ? x[0] : x));
 
@@ -99,6 +99,14 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
 
       const scan = db.query(query).all();
       if (reverse) scan.reverse();
+
+      if (total) {
+        const filterWhere = filtering ? `WHERE ${filtering.join(" AND ")}` : "";
+        total.out = db
+          .query(`SELECT COUNT(*) as count FROM ${table} ${filterWhere}`)
+          .get()!["count" as keyof {}] as number;
+      }
+
       return [scan, Array(scan.length).fill(weight), shape] as ZSet<T>;
     },
     flush: (changes: [ZSet<T>][]) => {

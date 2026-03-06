@@ -64,6 +64,8 @@ type PullOptions<T = Record<string, unknown>> = {
     offset?: number;
     count?: number;
   };
+  /** Mutable out-parameter for total row count (ignores cursor, respects filters) */
+  total?: { out: number };
 
   /** @deprecated */
   range?: readonly [limit: number, offset: number];
