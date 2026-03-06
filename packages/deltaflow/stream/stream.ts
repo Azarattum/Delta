@@ -106,16 +106,21 @@ function stream<
   };
 }
 
+type IsAsyncStream<TStream, TTrue = true, TFalse = false> = HasPromise<
+  TStream extends Stream<infer TOut, any> ? TOut : never,
+  TTrue,
+  TFalse
+>;
+
 type InferOut<TPush, TPull, TUpstreams extends any[]> =
   // Check if TPull is exactly T | Promise<T> for some T
   (<U>() => U extends TPull ? 1 : 2) extends (
     <U>() => U extends MaybePromise<TPull> ? 1 : 2
   ) ?
-    // Check if the push or any upstream TOut has a Promise
-    HasPromise<
-      TUpstreams[number] extends Stream<infer TOut, any> ? TOut | TPush : never,
+    IsAsyncStream<
+      TUpstreams[number],
       Promise<Awaited<TPull>>,
-      Awaited<TPull>
+      HasPromise<TPush, Promise<Awaited<TPull>>, Awaited<TPull>>
     >
   : TPull;
 
@@ -160,3 +165,4 @@ type StreamOptions<
 
 export { stream };
 export type { Stream, StreamOptions, PartialEntities, EntityQueue };
+export type { IsAsyncStream };

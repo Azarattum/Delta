@@ -257,7 +257,7 @@ it("calls external flush", async () => {
   const noop = stream({})(source);
   source.push(1);
 
-  expectTypeOf(noop).toEqualTypeOf<Stream<unknown, [unknown]>>();
+  expectTypeOf(noop).toEqualTypeOf<Stream<never, [unknown]>>();
   noop.flush();
   expect(flush).toHaveBeenCalledTimes(2);
 });
