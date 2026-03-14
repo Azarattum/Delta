@@ -1,5 +1,5 @@
 import { stream, SyncPromise, type MaybePromise, type Stream } from "../stream";
-import { add, len, transform, zero } from "../datastructure/zset";
+import { add, distinct, len, transform, zero } from "../datastructure/zset";
 import type { ZStream, OfZStream, PullOptions } from "./stream";
 import { compare, primary } from "../datastructure/shape";
 import { traverse } from "../datastructure/metaset";
@@ -11,30 +11,30 @@ export function range<
 >(upstream: TStream, range: Stream<Range>) {
   let bounds: [T?, T?] | undefined;
   let [missing, quantity] = [0, 0];
-  let limits: Range = [0, 0];
+  let limits: Range | undefined;
 
   // TODO: remove `tmp` property definition
   const tmp = stream({
-    push(set?: ZSet<T>, range?: [number, number]): MaybePromise<ZSet<T>> {
-      if (!bounds) {
-        return SyncPromise.one(this.pull!()).then(() => this.push!(set, range));
-      }
-
-      let [shiftLower, shiftUpper] = range ?? [0, 0];
-      let [lower, upper] = bounds!;
-
+    push(set?: ZSet<T>, range?: Range, base?: ZSet<T>): MaybePromise<ZSet<T>> {
       // TODO: refactor usage of these values
-      const counterOffset = Math.max(0, quantity - limits[0] - limits[1]);
-      const oldWindow = limits[0] - missing;
-      const oldLimit = limits[0];
-      const oldQuantity = quantity;
-      const gap = Math.max(0, limits[1] - quantity);
+      const [oldLimit, oldOffset] = limits ?? [0, 0];
+      let [shiftLower, shiftUpper] = range ?? [0, 0];
+      let [lower, upper] = bounds ?? [undefined, undefined];
+      const oldWindow = oldLimit - missing;
 
-      limits = [limits[0] + shiftUpper - shiftLower, limits[1] + shiftLower];
+      limits = [oldLimit + shiftUpper - shiftLower, oldOffset + shiftLower];
       missing += shiftUpper - shiftLower;
       const [limit, offset] = limits;
 
+      // TODO: check if this approach covers uninitialized range
+      if (!lower && set && !oldLimit && limit) {
+        return SyncPromise.one(this.pull!()).then((pulled) =>
+          this.push!(set, undefined, pulled),
+        );
+      }
+
       // Normalize out of bounds shifts
+      const gap = Math.max(0, oldOffset - quantity);
       shiftLower -= gap * Math.sign(shiftLower);
       shiftUpper -= gap * Math.sign(shiftUpper);
 
@@ -85,14 +85,14 @@ export function range<
       const filter = keys && [{ keys, items: removed, exclude: true }];
 
       let lowerCount = shiftLower;
-      let lowerOffset = lower ? 0 : counterOffset;
+      let lowerOffset = 0;
       let upperCount = shiftUpper;
       let upperOffset = lower ? 0 : offset;
       const lowerExclusive = shiftLower < 0 && !!lower;
       const upperExclusive = shiftUpper > 0 && !!upper;
 
-      const lowerWeight = lower ? -Math.sign(shiftLower) : 1;
-      const upperWeight = lower ? Math.sign(shiftUpper) : 1;
+      const lowerWeight = -Math.sign(shiftLower);
+      const upperWeight = Math.sign(shiftUpper);
 
       // Remove up to `missing` items (optional optimization)
       if (upperCount < 0 && !upper) {
@@ -189,10 +189,11 @@ export function range<
         const pulled = add(pulledLower, pulledUpper);
 
         const slots = pulledLenUpper + removedWithin + missing + shiftLower;
-        const gap = Math.max(0, offset - oldQuantity);
 
         let skipLower =
-          lenLower + gap + (shiftLower <= 0 ? pulledLenLower + shiftLower : 0);
+          lenLower +
+          gap * (1 + Math.sign(offset - oldOffset)) +
+          (shiftLower <= 0 ? pulledLenLower + shiftLower : 0);
         let keepLower = Math.min(
           Math.abs(shiftLower),
           shiftLower <= 0 ? limit : oldLimit, // Remove by old limit, keep by new limit
@@ -251,12 +252,12 @@ export function range<
         if (missing >= limit) lower = undefined;
         bounds = [newLower ?? lower, upper];
 
-        return set;
+        return base ? distinct(add(base, set)) : set;
       });
     },
     pull(options?: PullOptions) {
       const total = { out: 0 };
-      return SyncPromise.one(range.pull()).then(([count, offset]) =>
+      return SyncPromise.one(limits ?? range.pull()).then(([count, offset]) =>
         SyncPromise.one(
           upstream.pull({ ...options, total, cursor: { offset, count } }),
         ).then((set) => {
@@ -271,7 +272,7 @@ export function range<
     compress([sets, ranges]) {
       return [[sets?.reduce((acc, x) => add(acc, x, false)), ranges?.at(-1)]];
     },
-  })(upstream, range);
+  })(upstream, range, null);
 
   return Object.defineProperty(tmp, "bounds", { get: () => bounds });
 }
