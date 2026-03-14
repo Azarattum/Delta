@@ -210,7 +210,8 @@ export function range<
           if (region < 0) {
             if (needExtraLower && !keepLower) newLower ??= data;
             if (skipLower-- > 0) return; // Skip first for the merge
-            if (keepLower-- <= 0) return; // Keep to prevent overflow
+            if (keepLower-- <= 0 && shiftLower <= 0) return; // Keep to prevent overflow
+            if (keepLower < 0 && slot++ < slots) return void (upper = data); // For right shifts, consume slots when exhausted
             if (shiftLower <= 0) newLower ??= data;
             if (needExtraUpper) upper = data;
           } else if (region > 0) {
@@ -220,8 +221,8 @@ export function range<
             if (shiftUpper < 0 && slot++ < slots) return void (upper = data); // Skip and occupy within slot // TODO: why not `shiftUpper <= 0`?
             if (needExtraLower || !lower) newLower ??= data;
           } else if (meta > 0) {
-            if (shiftUpper < 0 && slot++ >= slots) return; // Occupy slot, skip if no slots left
             if (shiftLower > 0 && keepLower-- > 0) return;
+            if (shiftUpper < 0 && slot++ >= slots) return; // Occupy slot, skip if no slots left
             if (needExtraLower) newLower ??= data;
             if (needExtraUpper) upper = data;
           }
