@@ -107,30 +107,32 @@ export function range<
         limit && (shiftUpper < 0 || (shiftUpper === 0 && upperRemoved));
       if (needExtraUpper) upperCount += -1;
 
-      if (lowerCount < 0 && upperCount < 0) {
-        const upperOverlap = -upperCount - (oldWindow - removedWithin);
-        if (upperOverlap > 0) {
-          upperCount -= -upperOverlap;
-        }
-
-        // TODO: enable optimized path (with dirty checks when set is present)
-        // const lowerOvershoot = -lowerCount - limit;
-        // if (!set && lowerOvershoot > 0) {
-        //   lowerCount -= -lowerOvershoot;
-        //   lowerOffset += lowerOvershoot;
-        // }
-      }
-
-      if (lowerCount > 0 && upperCount > 0) {
-        const lowerOverlap = lowerCount - (oldWindow - removedWithin);
+      let availableWindow = oldWindow - removedWithin;
+      if (lowerCount > 0) {
+        const lowerOverlap = lowerCount - availableWindow;
         if (lowerOverlap > 0) {
           lowerCount -= lowerOverlap;
         }
 
         // TODO: enable optimized path (with dirty checks when set is present)
-        // const upperOvershoot = upperCount - limit;
+        // const lowerOvershoot = lowerCount - limit;
+        // if (!set && lowerOvershoot > 0) {
+        //   lowerCount -= lowerOvershoot;
+        //   lowerOffset += lowerOvershoot;
+        // }
+      }
+
+      if (upperCount < 0) {
+        availableWindow -= Math.max(0, lowerCount);
+        const upperOverlap = -upperCount - availableWindow;
+        if (upperOverlap) {
+          upperCount -= -upperOverlap;
+        }
+
+        // TODO: enable optimized path (with dirty checks when set is present)
+        // const upperOvershoot = -upperCount - limit;
         // if (!set && upperOvershoot > 0) {
-        //   upperCount -= upperOvershoot;
+        //   upperCount -= -upperOvershoot;
         //   upperOffset += upperOvershoot;
         // }
       }
@@ -194,10 +196,10 @@ export function range<
           lenLower +
           gap * (1 + Math.sign(offset - oldOffset)) +
           (shiftLower <= 0 ? pulledLenLower + shiftLower : 0);
-        let keepLower = Math.min(
-          Math.abs(shiftLower),
-          shiftLower <= 0 ? limit : oldLimit, // Remove by old limit, keep by new limit
-        );
+        let keepLower =
+          shiftLower <= 0 ?
+            Math.min(Math.abs(shiftLower), limit) // Keep by new limit if growing
+          : Math.abs(shiftLower); // Need exact shifts accounting for intra-window inserts
 
         let keepUpper = Math.abs(shiftUpper); // TODO: why not limit here?..
         let skipUpper = keepUpper - limit; // TODO: aren't we supposed to `(shiftUpper >= 0 ? limit : oldLimit)` instead?
