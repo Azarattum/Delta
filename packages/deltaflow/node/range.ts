@@ -17,10 +17,10 @@ export function range<
   const tmp = stream({
     push(set?: ZSet<T>, range?: Range, base?: ZSet<T>): MaybePromise<ZSet<T>> {
       // TODO: refactor usage of these values
+      const oldMissing = missing;
       const [oldLimit, oldOffset] = limits ?? [0, 0];
       let [shiftLower, shiftUpper] = range ?? [0, 0];
       let [lower, upper] = bounds ?? [undefined, undefined];
-      const oldWindow = oldLimit - missing;
 
       limits = [oldLimit + shiftUpper - shiftLower, oldOffset + shiftLower];
       missing += shiftUpper - shiftLower;
@@ -37,17 +37,6 @@ export function range<
       const gap = Math.max(0, oldOffset - quantity);
       shiftLower -= gap * Math.sign(shiftLower);
       shiftUpper -= gap * Math.sign(shiftUpper);
-
-      // TODO: reintroduce as optimized path
-      // if (!set && limit <= 0) {
-      //   missing = limit;
-      //   bounds = [undefined, undefined];
-      //   const cursor = { anchor: lower, count: oldWindow };
-      //   return upstream.pull({ cursor, weight: -1 });
-      // } else if (!lower && set && missing <= 0) {
-      //   bounds = [undefined, undefined];
-      //   return zero<T>();
-      // }
 
       let [lowerRemoved, upperRemoved] = [false, false];
       let [lenLower, lenUpper] = [0, 0];
@@ -95,8 +84,8 @@ export function range<
       const upperWeight = Math.sign(shiftUpper);
 
       // Remove up to `missing` items (optional optimization)
-      if (upperCount < 0 && !upper) {
-        upperCount += Math.min(missing, -upperCount);
+      if (upperCount < 0) {
+        upperCount += Math.min(oldMissing, -upperCount);
       }
 
       const needExtraLower =
@@ -107,12 +96,10 @@ export function range<
         limit && (shiftUpper < 0 || (shiftUpper === 0 && upperRemoved));
       if (needExtraUpper) upperCount += -1;
 
-      let availableWindow = oldWindow - removedWithin;
+      let untouched = oldLimit - oldMissing - removedWithin;
       if (lowerCount > 0) {
-        const lowerOverlap = lowerCount - availableWindow;
-        if (lowerOverlap > 0) {
-          lowerCount -= lowerOverlap;
-        }
+        lowerCount -= Math.max(0, lowerCount - untouched);
+        untouched -= lowerCount;
 
         // TODO: enable optimized path (with dirty checks when set is present)
         // const lowerOvershoot = lowerCount - limit;
@@ -123,11 +110,8 @@ export function range<
       }
 
       if (upperCount < 0) {
-        availableWindow -= Math.max(0, lowerCount);
-        const upperOverlap = -upperCount - availableWindow;
-        if (upperOverlap) {
-          upperCount -= -upperOverlap;
-        }
+        upperCount -= -Math.max(0, -upperCount - untouched);
+        untouched -= -upperCount;
 
         // TODO: enable optimized path (with dirty checks when set is present)
         // const upperOvershoot = -upperCount - limit;
@@ -190,7 +174,7 @@ export function range<
 
         const pulled = add(pulledLower, pulledUpper);
 
-        const slots = pulledLenUpper + removedWithin + missing + shiftLower;
+        const slots = limit - untouched + Math.min(0, shiftLower);
 
         let skipLower =
           lenLower +
