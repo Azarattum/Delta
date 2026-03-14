@@ -191,7 +191,8 @@ export function range<
         const slots = pulledLenUpper + removedWithin + missing + shiftLower;
         const gap = Math.max(0, offset - oldQuantity);
 
-        let skipLower = lenLower + pulledLenLower + shiftLower + gap;
+        let skipLower =
+          lenLower + gap + (shiftLower <= 0 ? pulledLenLower + shiftLower : 0);
         let keepLower = Math.min(
           Math.abs(shiftLower),
           shiftLower <= 0 ? limit : oldLimit, // Remove by old limit, keep by new limit
@@ -205,7 +206,7 @@ export function range<
         const process = (data: T, meta: number, region: number) => {
           if (region < 0) {
             if (needExtraLower && !keepLower) newLower ??= data;
-            if (shiftLower <= 0 && skipLower-- > 0) return; // Skip first for the merge
+            if (skipLower-- > 0) return; // Skip first for the merge
             if (keepLower-- <= 0) return; // Keep to prevent overflow
             if (shiftLower <= 0) newLower ??= data;
             if (needExtraUpper) upper = data;
