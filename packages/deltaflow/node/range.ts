@@ -79,7 +79,6 @@ export function range<
       let upperOffset = lower ? 0 : offset;
       const lowerExclusive = shiftLower < 0 && !!lower;
       const upperExclusive = shiftUpper > 0 && !!upper;
-
       const lowerWeight = -Math.sign(shiftLower);
       const upperWeight = Math.sign(shiftUpper);
 
@@ -87,14 +86,6 @@ export function range<
       if (upperCount < 0) {
         upperCount += Math.min(oldMissing, -upperCount);
       }
-
-      const needExtraLower =
-        limit && (shiftLower > 0 || (shiftLower === 0 && lowerRemoved));
-      if (needExtraLower) lowerCount += 1;
-
-      const needExtraUpper =
-        limit && (shiftUpper < 0 || (shiftUpper === 0 && upperRemoved));
-      if (needExtraUpper) upperCount += -1;
 
       let untouched = oldLimit - oldMissing - removedWithin;
       if (lowerCount > 0) {
@@ -120,6 +111,14 @@ export function range<
         //   upperOffset += upperOvershoot;
         // }
       }
+
+      const needExtraLower =
+        limit && (shiftLower > 0 || (shiftLower === 0 && lowerRemoved));
+      const needExtraUpper =
+        limit && (shiftUpper < 0 || (shiftUpper === 0 && upperRemoved));
+
+      if (needExtraLower && untouched > 0) lowerCount++, untouched--;
+      if (needExtraUpper && untouched > 0) upperCount--, untouched--;
 
       // Prevent out of bounds pull
       if (lower && !upper && shiftUpper > 0) upperCount = 0;
@@ -151,14 +150,6 @@ export function range<
         }),
       ]).then(([pulledLower, pulledUpper]) => {
         let pulledLenLower = len(pulledLower);
-        let pulledLenUpper = len(pulledUpper);
-
-        if (needExtraUpper && pulledLenUpper > Math.abs(shiftUpper)) {
-          pulledUpper[1][0] = 0;
-        }
-        if (needExtraLower && pulledLenLower > Math.abs(shiftLower)) {
-          pulledLower[1][pulledLenLower - 1] = 0;
-        }
 
         // TODO: enable optimized path
         // if (!set) {
