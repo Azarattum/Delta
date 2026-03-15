@@ -149,7 +149,7 @@ export function range<
           weight: upperWeight,
         }),
       ]).then(([pulledLower, pulledUpper]) => {
-        let pulledLenLower = len(pulledLower);
+        const pulledLenLower = len(pulledLower);
 
         // TODO: enable optimized path
         // if (!set) {
@@ -165,40 +165,31 @@ export function range<
 
         const pulled = add(pulledLower, pulledUpper);
 
-        const slots = limit - untouched + Math.min(0, shiftLower);
+        const growLower = shiftLower <= 0 ? pulledLenLower + shiftLower : 0;
+        const effectiveGap = gap * (1 + Math.sign(offset - oldOffset));
 
-        let skipLower =
-          lenLower +
-          gap * (1 + Math.sign(offset - oldOffset)) +
-          (shiftLower <= 0 ? pulledLenLower + shiftLower : 0);
-        let keepLower =
-          shiftLower <= 0 ?
-            Math.min(Math.abs(shiftLower), limit) // Keep by new limit if growing
-          : Math.abs(shiftLower); // Need exact shifts accounting for intra-window inserts
-
-        let keepUpper = Math.abs(shiftUpper); // TODO: why not limit here?..
-        let skipUpper = keepUpper - limit; // TODO: aren't we supposed to `(shiftUpper >= 0 ? limit : oldLimit)` instead?
-        let slot = 0;
+        let skip = lenLower + effectiveGap + growLower;
+        let keep = Math.max(shiftLower, Math.min(-shiftLower, limit));
+        let slots = limit - untouched + Math.min(shiftLower, 0);
+        let grow = shiftUpper;
 
         let newLower: T | undefined;
         const process = (data: T, meta: number, region: number) => {
           if (region < 0) {
-            if (extraLower && !keepLower && skipLower <= 1) newLower ??= data; // First kept item from the lower region
-            if (extraUpper && slot < slots) upper = data;
-            if (skipLower-- > 0) return; // Skip first for the merge
-            if (keepLower-- <= 0 && shiftLower <= 0) return; // Keep to prevent overflow
-            if (keepLower < 0 && slot++ < slots) return; // For right shifts, consume slots when exhausted
+            if (extraLower && !keep && skip <= 1) newLower ??= data; // First kept item from the lower region
+            if (extraUpper && slots > 0) upper = data;
+            if (skip-- > 0 || (keep-- <= 0 && shiftLower <= 0)) return; // Ensure lower is within bounds
+            if (keep < 0 && slots-- > 0) return; // For right shifts, consume slots when exhausted
             if (shiftLower <= 0) newLower ??= data;
             if (extraUpper && shiftLower <= 0) upper = data;
           } else if (region > 0) {
-            if (shiftUpper > 0 && keepUpper-- <= 0) return; // Skip last for the merge
-            if (shiftUpper > 0 && skipUpper-- > 0) return; // Skip to prevent overflow
+            if (shiftUpper > 0 && (grow <= 0 || grow-- > limit)) return; // Ensure upper is within bounds
             if (meta >= 0) upper = data;
             if (extraLower || !lower) newLower ??= data;
-            if (shiftUpper < 0 && slot++ < slots) return void (upper = data); // Skip and occupy within slot // TODO: why not `shiftUpper <= 0`?
+            if (shiftUpper < 0 && slots-- > 0) return void (upper = data); // Skip and occupy within slot // TODO: why not `shiftUpper <= 0`?
           } else if (meta > 0) {
-            if (shiftLower > 0 && keepLower-- > 0) return;
-            if (shiftUpper < 0 && slot++ >= slots) return; // Occupy slot, skip if no slots left
+            if (shiftLower > 0 && keep-- > 0) return;
+            if (shiftUpper < 0 && slots-- <= 0) return; // Occupy slot, skip if no slots left
             if (extraLower) newLower ??= data;
             if (extraUpper) upper = data;
           }
@@ -216,7 +207,7 @@ export function range<
             insert: (data, meta) =>
               process(data, meta, +(++i > pulledLenLower) - 0.5),
             combine: (aData, aMeta, _, bMeta) => {
-              skipLower--, i++, j++;
+              skip--, i++, j++;
               return (
                 process(aData, aMeta + bMeta, +(i > pulledLenLower) - 0.5) ??
                 (j > lenLower && j <= lenUpper ? [aData, aMeta] : undefined)
