@@ -184,11 +184,12 @@ export function range<
         const process = (data: T, meta: number, region: number) => {
           if (region < 0) {
             if (extraLower && !keepLower && skipLower <= 1) newLower ??= data; // First kept item from the lower region
+            if (extraUpper && slot < slots) upper = data;
             if (skipLower-- > 0) return; // Skip first for the merge
             if (keepLower-- <= 0 && shiftLower <= 0) return; // Keep to prevent overflow
-            if (keepLower < 0 && slot++ < slots) return void (upper = data); // For right shifts, consume slots when exhausted
+            if (keepLower < 0 && slot++ < slots) return; // For right shifts, consume slots when exhausted
             if (shiftLower <= 0) newLower ??= data;
-            if (extraUpper) upper = data;
+            if (extraUpper && shiftLower <= 0) upper = data;
           } else if (region > 0) {
             if (shiftUpper > 0 && keepUpper-- <= 0) return; // Skip last for the merge
             if (shiftUpper > 0 && skipUpper-- > 0) return; // Skip to prevent overflow

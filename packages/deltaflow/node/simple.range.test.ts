@@ -308,8 +308,8 @@ describe("limits both bounds with", async () => {
     ]);
     await items.flush();
     expect(delta).toHaveBeenLastCalledWith(
-      ids(lower, lower + 0.001, upper),
-      [-1, 1, -1],
+      ids(lower, lower + 0.001, upper - 0.001, upper),
+      [-1, 1, 1, -1],
     );
   }
 
