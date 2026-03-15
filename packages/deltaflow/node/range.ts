@@ -112,13 +112,13 @@ export function range<
         // }
       }
 
-      const needExtraLower =
+      const extraLower =
         limit && (shiftLower > 0 || (shiftLower === 0 && lowerRemoved));
-      const needExtraUpper =
+      const extraUpper =
         limit && (shiftUpper < 0 || (shiftUpper === 0 && upperRemoved));
 
-      if (needExtraLower && untouched > 0) lowerCount++, untouched--;
-      if (needExtraUpper && untouched > 0) upperCount--, untouched--;
+      if (extraLower && untouched > 0) lowerCount++, untouched--;
+      if (extraUpper && untouched > 0) upperCount--, untouched--;
 
       // Prevent out of bounds pull
       if (lower && !upper && shiftUpper > 0) upperCount = 0;
@@ -183,23 +183,23 @@ export function range<
         let newLower: T | undefined;
         const process = (data: T, meta: number, region: number) => {
           if (region < 0) {
-            if (needExtraLower && !keepLower) newLower ??= data;
+            if (extraLower && !keepLower && skipLower <= 1) newLower ??= data; // First kept item from the lower region
             if (skipLower-- > 0) return; // Skip first for the merge
             if (keepLower-- <= 0 && shiftLower <= 0) return; // Keep to prevent overflow
             if (keepLower < 0 && slot++ < slots) return void (upper = data); // For right shifts, consume slots when exhausted
             if (shiftLower <= 0) newLower ??= data;
-            if (needExtraUpper) upper = data;
+            if (extraUpper) upper = data;
           } else if (region > 0) {
             if (shiftUpper > 0 && keepUpper-- <= 0) return; // Skip last for the merge
             if (shiftUpper > 0 && skipUpper-- > 0) return; // Skip to prevent overflow
             if (meta >= 0) upper = data;
+            if (extraLower || !lower) newLower ??= data;
             if (shiftUpper < 0 && slot++ < slots) return void (upper = data); // Skip and occupy within slot // TODO: why not `shiftUpper <= 0`?
-            if (needExtraLower || !lower) newLower ??= data;
           } else if (meta > 0) {
             if (shiftLower > 0 && keepLower-- > 0) return;
             if (shiftUpper < 0 && slot++ >= slots) return; // Occupy slot, skip if no slots left
-            if (needExtraLower) newLower ??= data;
-            if (needExtraUpper) upper = data;
+            if (extraLower) newLower ??= data;
+            if (extraUpper) upper = data;
           }
           missing -= Math.sign(meta); // Keep missing up-to-date
           return [data, meta] as [T, number];
