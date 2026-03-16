@@ -76,7 +76,7 @@ export function range<
       let lowerCount = shiftLower;
       let lowerOffset = 0;
       let upperCount = shiftUpper;
-      let upperOffset = lower ? 0 : offset;
+      let upperOffset = lower ? 0 : oldOffset;
       const lowerExclusive = shiftLower < 0 && !!lower;
       const upperExclusive = shiftUpper > 0 && !!upper;
       const lowerWeight = -Math.sign(shiftLower);
