@@ -112,13 +112,14 @@ export function range<
         // }
       }
 
-      const extraLower =
-        limit && (shiftLower > 0 || (shiftLower === 0 && lowerRemoved));
       const extraUpper =
         limit && (shiftUpper < 0 || (shiftUpper === 0 && upperRemoved));
+      const extraLower =
+        limit && (shiftLower > 0 || (shiftLower === 0 && lowerRemoved));
 
-      if (extraLower && untouched > 0) lowerCount++, untouched--;
-      if (extraUpper && untouched > 0) upperCount--, untouched--;
+      if (extraUpper && untouched > 0) upperCount--, (untouched += upperWeight);
+      const canPullExtra = untouched > +(extraUpper && !upperWeight);
+      if (extraLower && canPullExtra) lowerCount++, (untouched += lowerWeight);
 
       // Prevent out of bounds pull
       if (lower && !upper && shiftUpper > 0) upperCount = 0;
@@ -165,7 +166,7 @@ export function range<
 
         const pulled = add(pulledLower, pulledUpper);
 
-        const growLower = shiftLower <= 0 ? pulledLenLower + shiftLower : 0;
+        const growLower = shiftLower < 0 ? pulledLenLower + shiftLower : 0;
         const effectiveGap = gap * (1 + Math.sign(offset - oldOffset));
 
         let skip = lenLower + effectiveGap + growLower;
@@ -176,7 +177,7 @@ export function range<
         let newLower: T | undefined;
         const process = (data: T, meta: number, region: number) => {
           if (region < 0) {
-            if (extraLower && !keep && skip <= 1) newLower ??= data; // First kept item from the lower region
+            if (extraLower && !keep && skip <= 0) newLower ??= data; // First kept item from the lower region
             if (extraUpper && slots > 0) upper = data;
             if (skip-- > 0 || (keep-- <= 0 && shiftLower <= 0)) return; // Ensure lower is within bounds
             if (keep < 0 && slots-- > 0) return; // For right shifts, consume slots when exhausted
