@@ -38,7 +38,7 @@ export function range<
       shiftLower -= gap * Math.sign(shiftLower);
       shiftUpper -= gap * Math.sign(shiftUpper);
 
-      let [lowerRemoved, upperRemoved] = [false, false];
+      let [lowerRemoved, upperRemoved] = [!lower, !upper];
       let [lenLower, lenUpper] = [0, 0];
       let removed: T[] = [];
       let removedWithin = 0;
@@ -184,10 +184,11 @@ export function range<
             if (shiftLower <= 0) newLower ??= data;
             if (extraUpper && shiftLower <= 0) upper = data;
           } else if (region > 0) {
-            if (shiftUpper > 0 && (grow <= 0 || grow-- > limit)) return; // Ensure upper is within bounds
-            if (meta >= 0) upper = data;
-            if (extraLower || !lower) newLower ??= data;
-            if (shiftUpper < 0 && slots-- > 0) return void (upper = data); // Skip and occupy within slot // TODO: why not `shiftUpper <= 0`?
+            const inBounds = grow > 0 && grow-- <= limit;
+            if (extraLower && (shiftUpper <= 0 || inBounds)) newLower ??= data;
+            if (!shiftUpper || inBounds) upper = data;
+            if (shiftUpper >= 0 && !inBounds) return; // Ensure upper is within bounds
+            if (shiftUpper < 0 && slots-- > 0) return void (upper = data); // Skip and occupy within slot
           } else if (meta > 0) {
             if (shiftLower > 0 && keep-- > 0) return;
             if (shiftUpper < 0 && slots-- <= 0) return; // Occupy slot, skip if no slots left
