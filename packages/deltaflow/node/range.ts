@@ -47,7 +47,8 @@ export function range<
       if (set) {
         transform(set, (data, meta, shape) => {
           const cmpLower = lower ? compare(data, lower, shape) : -1;
-          const cmpUpper = upper ? compare(data, upper, shape) : -1;
+          const cmpUpper =
+            cmpLower >= 0 && upper ? compare(data, upper, shape) : -1;
 
           if (cmpLower < 0) shiftLower -= Math.sign(meta);
           if (cmpUpper <= 0) shiftUpper -= Math.sign(meta);
