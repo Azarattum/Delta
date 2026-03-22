@@ -177,25 +177,22 @@ export function range<
         let newLower: T | undefined;
         const process = (data: T, meta: number, region: number) => {
           if (region < 0) {
-            if (extraLower && !keep && skip <= 0) newLower ??= data; // First kept item from the lower region
-            if (extraUpper && slots > 0) upper = data;
-            if (skip-- > 0 || (keep-- <= 0 && shiftLower <= 0)) return; // Ensure lower is within bounds
-            if (keep < 0 && slots-- > 0) return; // For right shifts, consume slots when exhausted
-            if (shiftLower <= 0) newLower ??= data;
-            if (extraUpper && shiftLower <= 0) upper = data;
+            if (skip-- > 0) return;
+            if (keep > 0 ? shiftLower < 0 : extraLower) newLower ??= data;
+            if (extraUpper && (slots > 0 || keep > 0)) upper = data;
+            if (keep-- <= 0 && (shiftLower <= 0 || slots-- > 0)) return;
           } else if (region > 0) {
-            const inBounds = grow > 0 && grow-- <= limit;
-            if (extraLower && (shiftUpper <= 0 || inBounds)) newLower ??= data;
-            if (!shiftUpper || inBounds) upper = data;
-            if (shiftUpper >= 0 && !inBounds) return; // Ensure upper is within bounds
-            if (shiftUpper < 0 && slots-- > 0) return void (upper = data); // Skip and occupy within slot
+            if (shiftUpper > 0 && (grow <= 0 || grow-- > limit)) return;
+            if (extraLower) newLower ??= data;
+            if (shiftUpper >= 0 || slots > 0) upper = data;
+            if (!shiftUpper || (shiftUpper < 0 && slots-- > 0)) return;
           } else if (meta > 0) {
             if (shiftLower > 0 && keep-- > 0) return;
-            if (shiftUpper < 0 && slots-- <= 0) return; // Occupy slot, skip if no slots left
+            if (shiftUpper < 0 && slots-- <= 0) return;
             if (extraLower) newLower ??= data;
             if (extraUpper) upper = data;
           }
-          missing -= Math.sign(meta); // Keep missing up-to-date
+          missing -= Math.sign(meta);
           return [data, meta] as [T, number];
         };
 
