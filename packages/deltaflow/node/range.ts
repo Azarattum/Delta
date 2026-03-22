@@ -39,6 +39,7 @@ export function range<
       shiftUpper -= gap * Math.sign(shiftUpper);
 
       let [lowerRemoved, upperRemoved] = [!lower, !upper];
+      let [dirtyLower, dirtyUpper] = [false, false];
       let [lenLower, lenUpper] = [0, 0];
       let removed: T[] = [];
       let removedWithin = 0;
@@ -53,10 +54,12 @@ export function range<
           quantity += Math.sign(meta);
 
           if (cmpLower < 0) {
+            if (meta) dirtyLower = true;
             if (shiftLower >= 0) return;
             if (meta < 0) return void removed.push(data);
             (lenLower += 1), (lenUpper += 1);
           } else if (upper && cmpUpper > 0) {
+            if (meta) dirtyUpper = true;
             if (shiftUpper <= 0) return;
             if (meta < 0) return void removed.push(data);
           } else {
@@ -81,6 +84,7 @@ export function range<
       const upperExclusive = shiftUpper > 0 && !!upper;
       const lowerWeight = -Math.sign(shiftLower);
       const upperWeight = Math.sign(shiftUpper);
+      const [moveLower, moveUpper] = [-lowerCount - limit, upperCount - limit];
 
       // Remove up to `missing` items (optional optimization)
       if (upperCount < 0) {
@@ -91,25 +95,17 @@ export function range<
       if (lowerCount > 0) {
         lowerCount -= Math.max(0, lowerCount - untouched);
         untouched -= lowerCount;
-
-        // TODO: enable optimized path (with dirty checks when set is present)
-        // const lowerOvershoot = lowerCount - limit;
-        // if (!set && lowerOvershoot > 0) {
-        //   lowerCount -= lowerOvershoot;
-        //   lowerOffset += lowerOvershoot;
-        // }
+      } else if (!dirtyLower && moveLower > 0) {
+        lowerCount -= -moveLower;
+        lowerOffset += moveLower;
       }
 
       if (upperCount < 0) {
         upperCount -= -Math.max(0, -upperCount - untouched);
         untouched -= -upperCount;
-
-        // TODO: enable optimized path (with dirty checks when set is present)
-        // const upperOvershoot = -upperCount - limit;
-        // if (!set && upperOvershoot > 0) {
-        //   upperCount -= -upperOvershoot;
-        //   upperOffset += upperOvershoot;
-        // }
+      } else if (!dirtyUpper && moveUpper > 0) {
+        upperCount -= moveUpper;
+        upperOffset += moveUpper;
       }
 
       const extraUpper =
@@ -123,10 +119,6 @@ export function range<
 
       // Prevent out of bounds pull
       if (lower && !upper && shiftUpper > 0) upperCount = 0;
-
-      // TODO: just for dev
-      if (lowerOffset < 0) throw new Error("unreachable lower");
-      if (upperOffset < 0) throw new Error("unreachable upper");
 
       return SyncPromise.all([
         upstream.pull({
@@ -152,27 +144,13 @@ export function range<
       ]).then(([pulledLower, pulledUpper]) => {
         const pulledLenLower = len(pulledLower);
 
-        // TODO: enable optimized path
-        // if (!set) {
-        //   // if (shiftLower > 0 || lowerRemoved) lower = extraLower;
-        //   // else lower = pulledLower[0][0];
-        //   // if (hasExtraUpper || upperRemoved) upper = extraUpper;
-        //   // else upper = pulledUpper[0].at(-1);
-
-        //   // state[0] += pulledLenUpper - len(pulledLower);
-        //   // bounds = [lower, upper];
-        //   return add(pulledLower, pulledUpper);
-        // }
-
-        const pulled = add(pulledLower, pulledUpper);
-
         const growLower = shiftLower < 0 ? pulledLenLower + shiftLower : 0;
         const effectiveGap = gap * (1 + Math.sign(offset - oldOffset));
 
         let skip = lenLower + effectiveGap + growLower;
         let keep = Math.max(shiftLower, Math.min(-shiftLower, limit));
         let slots = limit - untouched + Math.min(shiftLower, 0);
-        let grow = shiftUpper;
+        let grow = upperCount;
 
         let newLower: T | undefined;
         const process = (data: T, meta: number, region: number) => {
@@ -197,8 +175,7 @@ export function range<
         };
 
         let [i, j] = [0, 0];
-        set ??= zero<T>();
-        traverse(
+        set = traverse(
           {
             shallow: true,
             update: (data, meta) =>
@@ -213,8 +190,8 @@ export function range<
               );
             },
           },
-          set,
-          pulled,
+          set ?? zero<T>(),
+          add(pulledLower, pulledUpper),
         );
 
         if (missing > 0 || limit <= 0) upper = undefined;
