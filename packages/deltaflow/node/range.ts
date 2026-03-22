@@ -1,5 +1,5 @@
 import { stream, SyncPromise, type MaybePromise, type Stream } from "../stream";
-import { add, distinct, len, transform } from "../datastructure/zset";
+import { add, distinct, len, transform, zero } from "../datastructure/zset";
 import type { ZStream, OfZStream, PullOptions } from "./stream";
 import { compare, primary } from "../datastructure/shape";
 import { traverse } from "../datastructure/metaset";
@@ -38,7 +38,7 @@ export function range<
       shiftLower -= gap * Math.sign(shiftLower);
       shiftUpper -= gap * Math.sign(shiftUpper);
 
-      let [lowerRemoved, upperRemoved] = [!lower, !upper];
+      let [removedLower, removedUpper] = [!lower, !upper];
       let [dirtyLower, dirtyUpper] = [false, false];
       let [nLower, nUpper] = [0, 0];
       let removed: T[] = [];
@@ -64,8 +64,8 @@ export function range<
             if (shiftUpper <= 0) return;
             if (meta < 0) return void removed.push(data);
           } else {
-            if (cmpLower === 0 && meta < 0) lowerRemoved = true;
-            if (cmpUpper === 0 && meta < 0) upperRemoved = true;
+            if (cmpLower === 0 && meta < 0) removedLower = true;
+            if (cmpUpper === 0 && meta < 0) removedUpper = true;
             if (meta < 0) removed.push(data), removedWithin++;
             nUpper += 1;
           }
@@ -74,74 +74,51 @@ export function range<
         });
       }
 
-      const keys = set && ([primary(set[2])] as const);
-      const filter = keys && [{ keys, items: removed, exclude: true }];
-
-      let lowerCount = shiftLower;
-      let lowerOffset = 0;
-      let upperCount = shiftUpper;
-      let upperOffset = lower ? 0 : oldOffset;
-      const lowerExclusive = shiftLower < 0 && !!lower;
-      const upperExclusive = shiftUpper > 0 && !!upper;
-      const lowerWeight = -Math.sign(shiftLower);
-      const upperWeight = Math.sign(shiftUpper);
-      const [moveLower, moveUpper] = [-lowerCount - limit, upperCount - limit];
-
-      // Remove up to `missing` items (optional optimization)
-      if (upperCount < 0) {
-        upperCount += Math.min(oldMissing, -upperCount);
-      }
+      const cursorLower = {
+        anchor: lower,
+        offset: 0,
+        count: shiftLower,
+        exclusive: shiftLower < 0 && !!lower,
+      };
+      const cursorUpper = {
+        anchor: upper,
+        offset: lower ? 0 : oldOffset,
+        count: -shiftUpper - Math.min(oldMissing, Math.max(0, -shiftUpper)),
+        exclusive: shiftUpper > 0 && !!upper,
+      };
+      const weightLower = -Math.sign(shiftLower);
+      const weightUpper = Math.sign(shiftUpper);
 
       let untouched = oldLimit - oldMissing - removedWithin;
-      if (lowerCount > 0) {
-        lowerCount -= Math.max(0, lowerCount - untouched);
-        untouched -= lowerCount;
-      } else if (!dirtyLower && moveLower > 0) {
-        lowerCount -= -moveLower;
-        lowerOffset += moveLower;
-      }
-
-      if (upperCount < 0) {
-        upperCount -= -Math.max(0, -upperCount - untouched);
-        untouched -= -upperCount;
-      } else if (!dirtyUpper && moveUpper > 0) {
-        upperCount -= moveUpper;
-        upperOffset += moveUpper;
-      }
+      normalizeCursor(cursorLower, dirtyLower);
+      normalizeCursor(cursorUpper, dirtyUpper);
+      cursorUpper.count *= -1; // Upper cursor pulls in the opposite direction
 
       const extraUpper =
-        limit && (shiftUpper < 0 || (shiftUpper === 0 && upperRemoved));
+        !!limit && (shiftUpper < 0 || (shiftUpper === 0 && removedUpper));
       const extraLower =
-        limit && (shiftLower > 0 || (shiftLower === 0 && lowerRemoved));
+        !!limit && (shiftLower > 0 || (shiftLower === 0 && removedLower));
 
-      if (extraUpper && untouched > 0) upperCount--, (untouched += upperWeight);
-      const canPullExtra = untouched > +(extraUpper && !upperWeight);
-      if (extraLower && canPullExtra) lowerCount++, (untouched += lowerWeight);
+      if (extraUpper && untouched > 0) {
+        cursorUpper.count -= 1;
+        untouched += weightUpper;
+      }
+      if (extraLower && untouched > +(extraUpper && !weightUpper)) {
+        cursorLower.count += 1;
+        untouched += weightLower;
+      }
 
       // Prevent out of bounds pull
-      if (lower && !upper && shiftUpper > 0) upperCount = 0;
+      if (lower && !upper && shiftUpper > 0) cursorUpper.count = 0;
+
+      const keys = set && ([primary(set[2])] as const);
+      const filter = keys && [{ keys, items: removed, exclude: true }];
+      const optsLower = { cursor: cursorLower, filter, weight: weightLower };
+      const optsUpper = { cursor: cursorUpper, filter, weight: weightUpper };
 
       return SyncPromise.all([
-        upstream.pull({
-          cursor: {
-            anchor: lower,
-            offset: lowerOffset,
-            count: lowerCount,
-            exclusive: lowerExclusive,
-          },
-          filter,
-          weight: lowerWeight,
-        }),
-        upstream.pull({
-          cursor: {
-            anchor: upper,
-            offset: upperOffset,
-            count: upperCount,
-            exclusive: upperExclusive,
-          },
-          filter,
-          weight: upperWeight,
-        }),
+        cursorLower.count ? upstream.pull(optsLower) : zero<T>(),
+        cursorUpper.count ? upstream.pull(optsUpper) : zero<T>(),
       ]).then(([pulledLower, pulledUpper]) => {
         const pulledLenLower = len(pulledLower);
         const effectiveGap = gap * (1 + Math.sign(offset - oldOffset));
@@ -150,7 +127,7 @@ export function range<
         let skip = nLower + effectiveGap + growLower;
         let keep = Math.max(shiftLower, Math.min(-shiftLower, limit));
         let slots = limit - untouched + Math.min(shiftLower, 0);
-        let grow = upperCount;
+        let grow = cursorUpper.count;
 
         let newLower: T | undefined;
         const process = (data: T, meta: number, region: number) => {
@@ -202,6 +179,17 @@ export function range<
 
         return base ? distinct(add(base, set)) : set;
       });
+
+      function normalizeCursor(cursor: typeof cursorLower, dirty: boolean) {
+        const move = cursor.count - limit;
+        if (cursor.count > 0) {
+          cursor.count -= Math.max(0, cursor.count - untouched);
+          untouched -= cursor.count;
+        } else if (!dirty && move > 0) {
+          cursor.count -= move;
+          cursor.offset += move;
+        }
+      }
     },
     pull(options?: PullOptions) {
       const total = { out: 0 };
