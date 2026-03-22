@@ -16,25 +16,23 @@ export function range<
   // TODO: remove `tmp` property definition
   const tmp = stream({
     push(set?: ZSet<T>, range?: Range, base?: ZSet<T>): MaybePromise<ZSet<T>> {
-      // TODO: refactor usage of these values
-      const oldMissing = missing;
-      const [oldLimit, oldOffset] = limits ?? [0, 0];
-      let [shiftLower, shiftUpper] = range ?? [0, 0];
       let [lower, upper] = bounds ?? [undefined, undefined];
+      let [shiftLower, shiftUpper] = range ?? [0, 0];
+      let [limit, offset] = limits ?? [0, 0];
+      let untouched = limit - missing;
 
-      limits = [oldLimit + shiftUpper - shiftLower, oldOffset + shiftLower];
-      missing += shiftUpper - shiftLower;
-      const [limit, offset] = limits;
+      const [extended, moved] = [shiftUpper - shiftLower, shiftLower];
+      const gap = Math.max(0, offset - quantity);
+      limits = [(limit += extended), (offset += moved)];
 
       // TODO: check if this approach covers uninitialized range
-      if (!lower && set && !oldLimit && limit) {
+      if (!lower && set && limit && limit === extended) {
         return SyncPromise.one(this.pull!()).then((pulled) =>
           this.push!(set, undefined, pulled),
         );
       }
 
       // Normalize out of bounds shifts
-      const gap = Math.max(0, oldOffset - quantity);
       shiftLower -= gap * Math.sign(shiftLower);
       shiftUpper -= gap * Math.sign(shiftUpper);
 
@@ -42,7 +40,6 @@ export function range<
       let [dirtyLower, dirtyUpper] = [false, false];
       let [nLower, nUpper] = [0, 0];
       let removed: T[] = [];
-      let removedWithin = 0;
 
       if (set) {
         transform(set, (data, meta, shape) => {
@@ -66,7 +63,7 @@ export function range<
           } else {
             if (cmpLower === 0 && meta < 0) removedLower = true;
             if (cmpUpper === 0 && meta < 0) removedUpper = true;
-            if (meta < 0) removed.push(data), removedWithin++;
+            if (meta < 0) removed.push(data), untouched--;
             nUpper += 1;
           }
 
@@ -82,14 +79,13 @@ export function range<
       };
       const cursorUpper = {
         anchor: upper,
-        offset: lower ? 0 : oldOffset,
-        count: -shiftUpper - Math.min(oldMissing, Math.max(0, -shiftUpper)),
+        offset: lower ? 0 : offset - moved,
+        count: -shiftUpper - Math.min(missing, Math.max(0, -shiftUpper)),
         exclusive: shiftUpper > 0 && !!upper,
       };
       const weightLower = -Math.sign(shiftLower);
       const weightUpper = Math.sign(shiftUpper);
 
-      let untouched = oldLimit - oldMissing - removedWithin;
       normalizeCursor(cursorLower, dirtyLower);
       normalizeCursor(cursorUpper, dirtyUpper);
       cursorUpper.count *= -1; // Upper cursor pulls in the opposite direction
@@ -121,7 +117,7 @@ export function range<
         cursorUpper.count ? upstream.pull(optsUpper) : zero<T>(),
       ]).then(([pulledLower, pulledUpper]) => {
         const pulledLenLower = len(pulledLower);
-        const effectiveGap = gap * (1 + Math.sign(offset - oldOffset));
+        const effectiveGap = gap * (1 + Math.sign(moved));
         const growLower = shiftLower < 0 ? pulledLenLower + shiftLower : 0;
 
         let skip = nLower + effectiveGap + growLower;
@@ -173,6 +169,7 @@ export function range<
           set ? add(pulledLower, pulledUpper) : pulledUpper,
         );
 
+        missing += extended;
         if (missing > 0 || limit <= 0) upper = undefined;
         if (missing >= limit) lower = undefined;
         bounds = [newLower ?? lower, upper];
