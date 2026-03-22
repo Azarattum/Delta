@@ -16,6 +16,10 @@ export function range<
   // TODO: remove `tmp` property definition
   const tmp = stream({
     push(set?: ZSet<T>, range?: Range, base?: ZSet<T>): MaybePromise<ZSet<T>> {
+      if (!bounds) {
+        return SyncPromise.one(this.pull!()).then(() => this.push!(set, range));
+      }
+
       let [lower, upper] = bounds ?? [undefined, undefined];
       let [shiftLower, shiftUpper] = range ?? [0, 0];
       let [limit, offset] = limits ?? [0, 0];
@@ -25,7 +29,6 @@ export function range<
       const gap = Math.max(0, offset - quantity);
       limits = [(limit += extended), (offset += moved)];
 
-      // TODO: check if this approach covers uninitialized range
       if (!lower && set && limit && limit === extended) {
         return SyncPromise.one(this.pull!()).then((pulled) =>
           this.push!(set, undefined, pulled),

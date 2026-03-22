@@ -267,3 +267,29 @@ it("moves window dynamically", async () => {
 
   expect(view.pull()[0]).toEqual([]);
 });
+
+it("can push without pulling", async () => {
+  const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
+
+  const db = new SQLite(":memory:");
+  const users = sqlite(db, "users", user, [
+    { id: 0, name: "Aron" },
+    { id: 10, name: "Alice" },
+    { id: 20, name: "Bob" },
+    { id: 30, name: "Clara" },
+    { id: 40, name: "Dave" },
+    { id: 50, name: "Eve" },
+  ]);
+
+  const window = limit(3, 1);
+  const view = sink(range(users, window));
+
+  window.push([3, 2]);
+  users.push([[{ id: 35, name: "Eve" }], [1], user]);
+
+  expect(view.pull()[0]).toEqual([
+    { id: 20, name: "Bob" },
+    { id: 30, name: "Clara" },
+    { id: 35, name: "Eve" },
+  ]);
+});
