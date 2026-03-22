@@ -1,5 +1,5 @@
 import { stream, SyncPromise, type MaybePromise, type Stream } from "../stream";
-import { add, distinct, len, transform, zero } from "../datastructure/zset";
+import { add, distinct, len, transform } from "../datastructure/zset";
 import type { ZStream, OfZStream, PullOptions } from "./stream";
 import { compare, primary } from "../datastructure/shape";
 import { traverse } from "../datastructure/metaset";
@@ -40,7 +40,7 @@ export function range<
 
       let [lowerRemoved, upperRemoved] = [!lower, !upper];
       let [dirtyLower, dirtyUpper] = [false, false];
-      let [lenLower, lenUpper] = [0, 0];
+      let [nLower, nUpper] = [0, 0];
       let removed: T[] = [];
       let removedWithin = 0;
 
@@ -57,7 +57,7 @@ export function range<
             if (meta) dirtyLower = true;
             if (shiftLower >= 0) return;
             if (meta < 0) return void removed.push(data);
-            (lenLower += 1), (lenUpper += 1);
+            (nLower += 1), (nUpper += 1);
           } else if (upper && cmpUpper > 0) {
             if (meta) dirtyUpper = true;
             if (shiftUpper <= 0) return;
@@ -66,7 +66,7 @@ export function range<
             if (cmpLower === 0 && meta < 0) lowerRemoved = true;
             if (cmpUpper === 0 && meta < 0) upperRemoved = true;
             if (meta < 0) removed.push(data), removedWithin++;
-            lenUpper += 1;
+            nUpper += 1;
           }
 
           return [data, meta];
@@ -143,11 +143,10 @@ export function range<
         }),
       ]).then(([pulledLower, pulledUpper]) => {
         const pulledLenLower = len(pulledLower);
-
-        const growLower = shiftLower < 0 ? pulledLenLower + shiftLower : 0;
         const effectiveGap = gap * (1 + Math.sign(offset - oldOffset));
+        const growLower = shiftLower < 0 ? pulledLenLower + shiftLower : 0;
 
-        let skip = lenLower + effectiveGap + growLower;
+        let skip = nLower + effectiveGap + growLower;
         let keep = Math.max(shiftLower, Math.min(-shiftLower, limit));
         let slots = limit - untouched + Math.min(shiftLower, 0);
         let grow = upperCount;
@@ -178,20 +177,22 @@ export function range<
         set = traverse(
           {
             shallow: true,
-            update: (data, meta) =>
-              process(data, meta, +(++j > lenLower) + +(j > lenUpper) - 1),
+            update(data, meta) {
+              if (!set) return (this.insert as any)(data, meta);
+              return process(data, meta, +(++j > nLower) + +(j > nUpper) - 1);
+            },
             insert: (data, meta) =>
               process(data, meta, +(++i > pulledLenLower) - 0.5),
             combine: (aData, aMeta, _, bMeta) => {
               skip--, i++, j++;
               return (
                 process(aData, aMeta + bMeta, +(i > pulledLenLower) - 0.5) ??
-                (j > lenLower && j <= lenUpper ? [aData, aMeta] : undefined)
+                (j > nLower && j <= nUpper ? [aData, aMeta] : undefined)
               );
             },
           },
-          set ?? zero<T>(),
-          add(pulledLower, pulledUpper),
+          set ?? pulledLower,
+          set ? add(pulledLower, pulledUpper) : pulledUpper,
         );
 
         if (missing > 0 || limit <= 0) upper = undefined;
