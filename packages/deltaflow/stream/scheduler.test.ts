@@ -1,3 +1,4 @@
+import { fullGC, heapStats } from "bun:jsc";
 import { expect, it, mock } from "bun:test";
 import { Scheduler } from "./scheduler";
 import { spyOn } from "bun:test";
@@ -99,6 +100,29 @@ it("handles multiple flushes", async () => {
   expect(task1).toHaveBeenCalledTimes(1);
   expect(task2).toHaveBeenCalledTimes(1);
   expect(order).toEqual([1, 2]);
+});
+
+it("does not retain flushed schedulers before the next microtask", () => {
+  fullGC();
+  const before = heapStats();
+
+  for (let i = 0; i < 1000; i++) {
+    const scheduler = new Scheduler(2);
+    scheduler.enqueue(() => {}, 0);
+    scheduler.flush();
+  }
+
+  fullGC();
+  const after = heapStats();
+  const functions =
+    (after.objectTypeCounts["Function"] ?? 0) -
+    (before.objectTypeCounts["Function"] ?? 0);
+  const lexicalEnvironments =
+    (after.objectTypeCounts["JSLexicalEnvironment"] ?? 0) -
+    (before.objectTypeCounts["JSLexicalEnvironment"] ?? 0);
+
+  expect(functions).toBeLessThan(100);
+  expect(lexicalEnvironments).toBeLessThan(100);
 });
 
 it("propagates errors during flush", async () => {

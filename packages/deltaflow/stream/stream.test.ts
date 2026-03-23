@@ -257,7 +257,7 @@ it("calls external flush", async () => {
   const noop = stream({})(source);
   source.push(1);
 
-  expectTypeOf(noop).toEqualTypeOf<Stream<unknown, [unknown]>>();
+  expectTypeOf(noop).toEqualTypeOf<Stream<never, [unknown]>>();
   noop.flush();
   expect(flush).toHaveBeenCalledTimes(2);
 });
@@ -437,4 +437,25 @@ it("works with custom compression", async () => {
   source.push(5);
   source.flush();
   expect(push).toHaveBeenLastCalledWith(47);
+});
+
+it("extends streams with extra API", () => {
+  let count = 0;
+  const source = stream({
+    pull: () => count,
+    extensions: {
+      get count() {
+        return count;
+      },
+    },
+  })(null);
+
+  expectTypeOf(source).toEqualTypeOf<
+    Stream<number, [number]> & { readonly count: number }
+  >();
+
+  expect(source.count).toBe(0);
+  count = 42;
+  expect(source.count).toBe(42);
+  expect(source.pull()).toBe(42);
 });

@@ -1,9 +1,9 @@
+import { shape, type Order } from "../../datastructure/shape";
+import { join, limit, order, range, sink } from "..";
 import { it, expect, afterAll } from "bun:test";
 import { rm } from "node:fs/promises";
-import { join, order, sink } from "..";
 import { sqlite } from "./sqlite";
 import SQLite from "bun:sqlite";
-import { shape } from "../../datastructure/shape";
 
 const db = new SQLite("test.db");
 
@@ -69,6 +69,7 @@ it("works with sqlite", async () => {
   ]);
 
   users.push([[{ id: 2, name: "Emily" }], [1]]);
+  await users.flush();
   expect(joined.pull()[0]).toEqual([
     {
       id: 0,
@@ -101,6 +102,78 @@ it("works with sqlite", async () => {
     { id: 0, text: "Hello", user: 0 },
     { id: 1, text: "I'm Bob", user: 0 },
   ]);
+
+  const windowedMessages = range(messagesByUser, limit(3, 1));
+  expect(windowedMessages.pull()[0]).toEqual([
+    { id: 2, text: "And I'm Alice!", user: 1 },
+    { id: 4, text: "Nice to meet you!", user: 1 },
+    { id: 0, text: "Hello", user: 0 },
+  ]);
+});
+
+it("supports cursor pagination with composite order", () => {
+  const triple = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    x: t.INT,
+    y: t.INT,
+    z: t.INT,
+  }));
+
+  const triples = sqlite(db, "triples", triple, [
+    { id: 0, x: 0, y: 10, z: 0 },
+    { id: 1, x: 0, y: 10, z: 5 },
+    { id: 2, x: 0, y: 5, z: 2 },
+    { id: 3, x: 1, y: 9, z: 1 },
+    { id: 4, x: 1, y: 9, z: 4 },
+    { id: 5, x: 1, y: 7, z: 3 },
+    { id: 6, x: 2, y: 3, z: 0 },
+  ]);
+
+  const order: Order<(typeof triple)["~type"]> = [
+    ["x", "asc"],
+    ["y", "desc"],
+    ["z", "asc"],
+  ];
+
+  const [afterAnchor] = triples.pull({
+    cursor: {
+      anchor: { x: 0, y: 10, z: 5 },
+      offset: 0,
+      count: 3,
+      exclusive: true,
+    },
+    order,
+  });
+  expect(afterAnchor.map((row) => row.id)).toEqual([2, 3, 4]);
+
+  const [skippedFromStart] = triples.pull({
+    cursor: { offset: 2, count: 2 },
+    order,
+  });
+  expect(skippedFromStart.map((row) => row.id)).toEqual([2, 3]);
+
+  const [reverseRows] = triples.pull({
+    cursor: { anchor: { x: 1, y: 9, z: 1 }, count: -2, exclusive: true },
+    order,
+  });
+  expect(reverseRows.map((row) => row.id)).toEqual([1, 2]);
+
+  const [reverseWithOffset] = triples.pull({
+    cursor: {
+      anchor: { x: 1, y: 9, z: 1 },
+      offset: 1,
+      count: -2,
+      exclusive: true,
+    },
+    order,
+  });
+  expect(reverseWithOffset.map((row) => row.id)).toEqual([0, 1]);
+
+  const [reverseFromStart] = triples.pull({
+    cursor: { offset: 1, count: -2 },
+    order,
+  });
+  expect(reverseFromStart.map((row) => row.id)).toEqual([4, 5]);
 });
 
 afterAll(async () => {

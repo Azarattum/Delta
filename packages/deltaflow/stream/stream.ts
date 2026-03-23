@@ -9,7 +9,13 @@ function stream<
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends any[] = [Awaited<TPull>],
   TOptions = unknown,
->(options: StreamOptions<TPush, TPull, TIn, TOptions>) {
+  TExtensions extends StreamExtensions = {},
+  TThis = {},
+>(
+  options: StreamOptions<TPush, TPull, TIn, TOptions, TExtensions> &
+    TThis &
+    ThisType<TThis>,
+) {
   type Upstreams = { [K in keyof TIn]: Stream<any, [TIn[K]], TOptions> | null };
 
   return <
@@ -17,16 +23,16 @@ function stream<
     TOut = InferOut<TPush, TPull, TUpstreams>,
   >(
     ...upstreams: TUpstreams
-  ): Stream<TOut, TIn, TOptions> => {
-    const push = options.push ?? ((...entity: TIn) => entity[0]);
+  ): Stream<TOut, TIn, TOptions> & TExtensions => {
+    const push = options.push?.bind(options) ?? ((...entity: TIn) => entity[0]);
     const pull =
-      options.pull ??
+      options.pull?.bind(options) ??
       ((options?) => {
         const entities = upstreams.map((x) => x?.pull(options));
         return SyncPromise.all(entities).then((x) => push(...(x as TIn)));
       });
     const compress =
-      options.compress ??
+      options.compress?.bind(options) ??
       ((queue) => {
         const length = queue.reduce((max, a) => Math.max(max, a!.length), 1);
         return Array.from({ length }, (_, i) =>
@@ -86,7 +92,7 @@ function stream<
       );
     }
 
-    return {
+    const stream: Stream<TOut, TIn, TOptions> = {
       pull: (options) => (scheduler.current.flush(), pull(options)),
       push: (...entities) => {
         entities.forEach((x, i) => x != null && (queue[i] ??= []).push(x));
@@ -103,19 +109,31 @@ function stream<
       },
       [internal]: { scheduler },
     };
+
+    if (options.extensions) {
+      const extensions = Object.getOwnPropertyDescriptors(options.extensions);
+      Object.defineProperties(stream, extensions);
+    }
+
+    return stream as Stream<TOut, TIn, TOptions> & TExtensions;
   };
 }
+
+type IsAsyncStream<TStream, TTrue = true, TFalse = false> = HasPromise<
+  TStream extends Stream<infer TOut, any> ? TOut : never,
+  TTrue,
+  TFalse
+>;
 
 type InferOut<TPush, TPull, TUpstreams extends any[]> =
   // Check if TPull is exactly T | Promise<T> for some T
   (<U>() => U extends TPull ? 1 : 2) extends (
     <U>() => U extends MaybePromise<TPull> ? 1 : 2
   ) ?
-    // Check if the push or any upstream TOut has a Promise
-    HasPromise<
-      TUpstreams[number] extends Stream<infer TOut, any> ? TOut | TPush : never,
+    IsAsyncStream<
+      TUpstreams[number],
       Promise<Awaited<TPull>>,
-      Awaited<TPull>
+      HasPromise<TPush, Promise<Awaited<TPull>>, Awaited<TPull>>
     >
   : TPull;
 
@@ -142,11 +160,16 @@ type Stream<TOut, TIn extends any[] = unknown[], TOptions = unknown> = {
   [internal]: any;
 };
 
+type StreamExtensions = Record<string, unknown> & {
+  [K in keyof Stream<unknown>]?: never;
+};
+
 type StreamOptions<
   TOut,
   TPull extends MaybePromise<TOut> = MaybePromise<TOut>,
   TIn extends any[] = [Awaited<TPull>],
   TOptions = undefined,
+  TExtensions extends StreamExtensions = {},
 > = {
   /** Describes the behavior when somebody tries to pull from the stream */
   pull?: (options?: TOptions) => TPull;
@@ -156,7 +179,17 @@ type StreamOptions<
   flush?: (entities: PartialEntities<TIn>[]) => MaybePromise<void>;
   /** Describes how to compress multiple pushes */
   compress?: (queue: EntityQueue<TIn>) => PartialEntities<TIn>[];
+  /** Extends the stream object with extra public API */
+  extensions?: TExtensions &
+    ThisType<Stream<TOut, TIn, TOptions> & TExtensions>;
 };
 
 export { stream };
-export type { Stream, StreamOptions, PartialEntities, EntityQueue };
+export type {
+  Stream,
+  EntityQueue,
+  StreamOptions,
+  IsAsyncStream,
+  PartialEntities,
+  StreamExtensions,
+};

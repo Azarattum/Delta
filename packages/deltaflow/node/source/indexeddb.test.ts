@@ -307,7 +307,7 @@ it("pulls with constraints", async () => {
 
   {
     const result = await messages.pull({
-      constraints: { id: new Set([1, 2]) },
+      filter: [{ keys: [["id"]], items: [{ id: 1 }, { id: 2 }] }],
     });
 
     expect(result[0]).toEqual([
@@ -318,7 +318,7 @@ it("pulls with constraints", async () => {
 
   {
     const result = await messages.pull({
-      constraints: { user: new Set([1, 2]) },
+      filter: [{ keys: [["user"]], items: [{ user: 1 }, { user: 2 }] }],
     });
 
     expect(result[0]).toEqual([
@@ -330,7 +330,12 @@ it("pulls with constraints", async () => {
 
   {
     const result = await messages.pull({
-      constraints: { text: new Set(["Hello", "Non-existent"]) },
+      filter: [
+        {
+          keys: [["text"], ["ref"]],
+          items: [{ ref: "Hello" }, { ref: "Non-existent" }],
+        },
+      ],
     });
 
     expect(result[0]).toEqual([{ id: 0, text: "Hello", user: 0 }]);

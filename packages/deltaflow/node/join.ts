@@ -7,8 +7,8 @@ export function join<
   const AStream extends ZStream<A>,
   const BStream extends ZStream<B>,
   const K extends string = string,
-  A = OfZStream<AStream>,
-  B = OfZStream<BStream>,
+  A extends Record<string, unknown> = OfZStream<AStream>,
+  B extends Record<string, unknown> = OfZStream<BStream>,
   S extends boolean = false,
 >(
   aUpstream: AStream,
@@ -21,18 +21,18 @@ export function join<
   type C = ReturnType<typeof multiply<A, B, K, S>>;
   return zStream({
     push(a?: ZSet<A>, b?: ZSet<B>) {
-      const bKeys = b && {
-        [aKey]: new Set(b[0].map((x) => x[bKey] as ValidKey)),
+      const bRef = b && {
+        keys: [[aKey], [bKey]] as const,
+        items: b[0],
       };
-      const aKeys = a && {
-        [bKey]: new Set(
-          a[0].filter((_, i) => a[1][i] > 0).map((x) => x[aKey] as ValidKey),
-        ),
+      const aRef = a && {
+        keys: [[bKey], [aKey]] as const,
+        items: a[0].filter((_, i) => a[1][i] > 0),
       };
 
       return SyncPromise.all([
-        bKeys?.[aKey].size && aUpstream.pull({ constraints: bKeys, weight: 0 }),
-        aKeys?.[bKey].size && bUpstream.pull({ constraints: aKeys }),
+        bRef?.items.length && aUpstream.pull({ filter: [bRef], weight: 0 }),
+        aRef?.items.length && bUpstream.pull({ filter: [aRef] }),
       ] as const).then(([aPulled, bPulled]) => {
         if (aPulled && a) add(aPulled, a);
         else if (a) aPulled = a;
@@ -53,9 +53,7 @@ export function join<
           a,
           bUpstream.pull({
             ...options,
-            constraints: {
-              [bKey]: new Set(a[0].map((x) => x[aKey] as ValidKey)),
-            },
+            filter: [{ keys: [[bKey], [aKey]], items: a[0] }],
           }),
         ]).then(([a, b]) => {
           return multiply(a, aKey, b, bKey, relationship, single);

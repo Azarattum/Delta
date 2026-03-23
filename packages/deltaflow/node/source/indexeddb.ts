@@ -1,9 +1,14 @@
-import { TYPE, type Shape } from "../../datastructure/shape";
+import {
+  TYPE,
+  primary,
+  type Order,
+  type Shape,
+} from "../../datastructure/shape";
 import type { ZSet } from "../../datastructure/zset";
-import { zStream } from "../stream";
+import { zStream, type PullOptions } from "../stream";
 
 /** TODO: this is just a prototype */
-export async function indexeddb<T extends object>(
+export async function indexeddb<T extends Record<string, unknown>>(
   db: IDBDatabase,
   table: string,
   shape: Shape<T>,
@@ -14,19 +19,21 @@ export async function indexeddb<T extends object>(
   initialData.forEach((x) => store.put(x));
   await new Promise((resolve) => (store.transaction.oncomplete = resolve));
 
-  const primaryKeys = shape.keys.filter(
-    (_, i) => shape.types[i] & TYPE.PRIMARY,
-  );
+  const pks = primary(shape);
 
   return zStream({
-    pull: async ({ constraints, ordering, weight = 1 } = {}) => {
+    pull: async ({ filter, order, weight = 1 } = {}) => {
+      // TODO: support cursor
       const store = db.transaction([table], "readonly").objectStore(table);
       let scan: T[];
 
-      if (constraints) {
-        scan = await queryWithConstraints(store, constraints);
-      } else if (ordering) {
-        scan = await queryWithOrdering(store, ordering);
+      // TODO: support cursor and composite options
+      if (filter) {
+        // TODO: support exclusion filtering
+        // TODO: support multiple filtering
+        scan = await queryWithFilter(store, filter[0]);
+      } else if (order) {
+        scan = await queryWithOrder<T>(store, order);
       } else {
         scan = await new Promise<T[]>(
           (r) => (store.getAll().onsuccess = (e: any) => r(e.target.result)),
@@ -45,7 +52,7 @@ export async function indexeddb<T extends object>(
 
           if (op === 0) store.put(item);
           else if (op > 0) store.add(item);
-          else store.delete(primaryKeys.map((key) => item[key]) as string[]);
+          else store.delete(pks.map((key) => item[key] as IDBValidKey));
         }
       }
 
@@ -56,13 +63,13 @@ export async function indexeddb<T extends object>(
 
 // TODO: this is a temporary solution for testing purposes,
 //  we should use a proper schema and source create in the future
-export function createStore<T extends Record<string, any>>(
+export function createStore<T extends Record<string, unknown>>(
   db: IDBDatabase,
   name: string,
   shape: Shape<T>,
   indexed: (keyof T)[] = [],
 ) {
-  const keyPath = shape.keys.filter((_, i) => shape.types[i] & TYPE.PRIMARY);
+  const keyPath = primary(shape);
   const store = db.createObjectStore(name, { keyPath });
   const relations = shape.keys.filter(
     (_, i) => shape.types[i] >> 16 && !(shape.types[i] & TYPE.PRIMARY),
@@ -73,78 +80,77 @@ export function createStore<T extends Record<string, any>>(
   indexes.forEach((x) => store.createIndex(x as string, [x as string]));
 }
 
-function queryWithConstraints<T>(
+function queryWithFilter<T>(
   store: IDBObjectStore,
-  constraints: Record<keyof any, Set<IDBValidKey>>,
+  filter: NonNullable<PullOptions["filter"]>[number],
 ) {
-  const indexName = Object.keys(constraints).sort().toString();
-  const byPrimaryKey = indexName === store.keyPath?.toString();
-  // TODO: only check in dev
-  if (!byPrimaryKey && !store.indexNames.contains(indexName)) {
-    throw new Error(`Attempting to query by non-existent index: ${indexName}`);
-  }
+  const [indexKeys, refKeys = indexKeys] = filter.keys;
+  const { index, unique } = getIndex(store, indexKeys.toString());
 
-  const index = byPrimaryKey ? store : store.index(indexName);
-  const unique = byPrimaryKey || (index as IDBIndex).unique;
-  const keyPath =
-    Array.isArray(index.keyPath) ? index.keyPath : [index.keyPath!];
-  const reference = keyPath.map((k) =>
-    Array.from(constraints[k]).sort(indexedDB.cmp),
-  );
-
-  const indices = keyPath.map(() => 0);
-  let key: IDBValidKey = indices.map((x, i) => reference[i][x]);
-
-  function advanceKey() {
-    for (let i = keyPath.length - 1; i >= 0; i--) {
-      if (++indices[i] < reference[i].length) {
-        for (let j = i + 1; j < keyPath.length; j++) indices[j] = 0;
-        key = indices.map((x, i) => reference[i][x]);
-        return true;
+  // TODO: this cast is probably unsafe, also handle when `refs.length === 0`
+  const refs = (filter.items as Record<string, IDBValidKey>[])
+    .map((x) => refKeys.map((k) => x[k]))
+    .sort((a, b) => {
+      for (let i = 0; i < refKeys.length; i++) {
+        const cmp = indexedDB.cmp(a[i], b[i]);
+        if (cmp !== 0) return cmp;
       }
-    }
-    return false;
-  }
+      return 0;
+    });
+
+  let i = 0;
+  const next = () => ++i < refs.length;
 
   const results: T[] = [];
   return new Promise<T[]>((resolve) => {
-    index.openCursor(IDBKeyRange.lowerBound(key)).onsuccess = (event) => {
+    index.openCursor(IDBKeyRange.lowerBound(refs[i])).onsuccess = (event) => {
       const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
       if (!cursor) return resolve(results);
 
-      let cmp = indexedDB.cmp(cursor.key, key);
-      while (cmp > 0 && advanceKey()) cmp = indexedDB.cmp(cursor.key, key);
+      let cmp = indexedDB.cmp(cursor.key, refs[i]);
+      while (cmp > 0 && next()) cmp = indexedDB.cmp(cursor.key, refs[i]);
 
       if (cmp > 0) return resolve(results);
-      if (cmp < 0) return cursor.continue(key);
+      if (cmp < 0) return cursor.continue(refs[i]);
 
       results.push(cursor.value);
-      if (unique && !advanceKey()) return resolve(results);
-      cursor.continue(unique ? key : undefined);
+      if (unique && !next()) return resolve(results);
+      cursor.continue(unique ? refs[i] : undefined);
     };
   });
 }
 
-async function queryWithOrdering<T>(
-  store: IDBObjectStore,
-  ordering: (keyof any | [keyof any, ("asc" | "desc")?])[],
-) {
-  const indexName = ordering
-    .map((x) => (Array.isArray(x) ? x[0] : x))
-    .toString();
+async function queryWithOrder<T>(store: IDBObjectStore, order: Order<T>) {
+  const indexName = order.map((x) => (Array.isArray(x) ? x[0] : x)).toString();
+  // TODO: fully support compound indexes (currently order is inferred only from the first key)
+  const direction =
+    Array.isArray(order[0]) && order[0][1] === "desc" ? "prev" : "next";
+
+  const { index } = getIndex(store, indexName);
+
+  return new Promise<T[]>((resolve) => {
+    const results: T[] = [];
+    const request = index.openCursor(undefined, direction);
+    request.onsuccess = (event: any) => {
+      const cursor = event.target.result as IDBCursorWithValue | null;
+      if (cursor) {
+        results.push(cursor.value);
+        cursor.continue();
+      } else {
+        resolve(results);
+      }
+    };
+  });
+}
+
+function getIndex(store: IDBObjectStore, name: string) {
+  const byPrimaryKey = name === store.keyPath?.toString();
   // TODO: only check in dev
-  if (!store.indexNames.contains(indexName)) {
-    throw new Error(`Attempting to order by non-existent index: ${indexName}`);
+  if (!byPrimaryKey && !store.indexNames.contains(name)) {
+    throw new Error(`Attempting to query by non-existent index: ${name}`);
   }
 
-  const index = store.index(indexName);
-  const request = index.getAll();
-  let scan = (await new Promise<T>(
-    (r) => (request.onsuccess = (e: any) => r(e.target.result)),
-  )) as T[];
-  // TODO: this is horrible, use cursor with reverse order instead!
-  if (Array.isArray(ordering[0]) && ordering[0][1] === "desc") {
-    scan = scan.reverse();
-  }
-  return scan;
+  const index = byPrimaryKey ? store : store.index(name);
+  const unique = byPrimaryKey || (index as IDBIndex).unique;
+  return { index, unique };
 }

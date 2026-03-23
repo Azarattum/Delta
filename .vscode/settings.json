@@ -1,8 +1,9 @@
 {
   "explorer.fileNesting.patterns": {
-    "*.ts": "${capture}.test.ts, ${capture}.types.ts"
+    "*.ts": "${capture}.test.ts, ${capture}.types.ts, ${capture}.*.test.ts"
   },
   "cSpell.words": [
+    "clset",
     "datastructure",
     "deltaflow",
     "deltaquery",
@@ -10,6 +11,7 @@
     "indexeddb",
     "metas",
     "metaset",
+    "overfetch",
     "zset"
   ]
 }

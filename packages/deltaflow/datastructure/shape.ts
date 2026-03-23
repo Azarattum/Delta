@@ -13,12 +13,12 @@ function shape<T extends Template>(template: T): Shape<FromTemplate<T>> {
 
 function reorder<TShape extends Shape<T> | undefined, T = any>(
   shape: TShape,
-  ...ordering: (NoInfer<keyof T> | [NoInfer<keyof T>, ("asc" | "desc")?])[]
+  ...order: Order<T>
 ): TShape {
   if (!shape) return shape;
 
   const primary = shape.types.map((x, i) => (x & TYPE.PRIMARY ? i << 1 : null));
-  const order = ordering.map((entry) => {
+  const encoded = order.map((entry) => {
     const [key, dir = "asc"] = Array.isArray(entry) ? entry : [entry];
     const index = shape.keys.indexOf(key as keyof T);
     primary[index] = null;
@@ -26,11 +26,11 @@ function reorder<TShape extends Shape<T> | undefined, T = any>(
   });
 
   // Append unused primary keys to ensure uniqueness
-  order.push(...primary.filter((x) => x !== null));
+  encoded.push(...primary.filter((x) => x !== null));
 
-  const hash = checksum(shape.types, order);
+  const hash = checksum(shape.types, encoded);
   if (hash === shape.hash) return shape;
-  return { ...shape, order, hash };
+  return { ...shape, order: encoded, hash };
 }
 
 function nest<
@@ -74,12 +74,20 @@ function children<T extends Shape>(shape: T) {
   return Object.entries(shape?.children ?? {}) as Children<T>;
 }
 
+function primary<T extends Record<string, unknown>>(shape?: Shape<T>) {
+  return shape?.keys.filter((_, i) => shape.types[i] & TYPE.PRIMARY) ?? [];
+}
+
+function nonPrimary<T extends Record<string, unknown>>(shape?: Shape<T>) {
+  return shape?.keys.filter((_, i) => !(shape.types[i] & TYPE.PRIMARY)) ?? [];
+}
+
 function compare<T>(a: T, b: T, shape?: Shape<T>) {
   for (let i = 0; i < (shape?.order.length ?? 1); i++) {
     const direction = shape && shape.order[i] & 1 ? -1 : 1;
     const key = shape?.keys[shape.order[i] >> 1];
-    const x = key ? a[key] : a;
-    const y = key ? b[key] : b;
+    const x = key ? a?.[key] : a;
+    const y = key ? b?.[key] : b;
 
     if (x === y) continue;
     if (y == null) return 1 * direction;
@@ -190,5 +198,20 @@ type Children<T extends Shape> = [
   NonNullable<T>["children"][keyof NonNullable<T>["children"]],
 ][];
 
-export { TYPE, shape, children, compare, reorder, either, nest };
-export type { Shape, Children };
+type Order<T> = (
+  | NoInfer<keyof T & string>
+  | readonly [NoInfer<keyof T & string>, ("asc" | "desc")?]
+)[];
+
+export {
+  TYPE,
+  nonPrimary,
+  children,
+  primary,
+  compare,
+  reorder,
+  either,
+  shape,
+  nest,
+};
+export type { Shape, Children, Order };

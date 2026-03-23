@@ -10,13 +10,6 @@ export function sink<TStream extends ZStream<T>, T = OfZStream<TStream>>(
   let view: ZSet<T> | undefined;
   let queue: ZSet<T>[] = [];
 
-  const preload = () =>
-    (pulling ??= SyncPromise.one(upstream.pull()).then((data) => {
-      queue.unshift(data);
-      node.push(data);
-      return node.flush();
-    }) as MaybePromise<void>);
-
   const node = zStream({
     push: (x: ZSet<T>) => {
       if (view) return distinct(add(view, x));
@@ -28,11 +21,20 @@ export function sink<TStream extends ZStream<T>, T = OfZStream<TStream>>(
         queue = [];
       }
     },
-    pull: () => {
-      if (!view) preload();
+    pull() {
+      if (!view) node.preload();
       return view ?? initial;
+    },
+    extensions: {
+      preload() {
+        return (pulling ??= SyncPromise.one(upstream.pull()).then((data) => {
+          queue.unshift(data);
+          this.push(data);
+          return this.flush();
+        }) as MaybePromise<void>);
+      },
     },
   })(upstream);
 
-  return Object.assign(node, { preload });
+  return node;
 }
