@@ -1,5 +1,5 @@
-import { join, order, sink } from "..";
 import { shape, type Order } from "../../datastructure/shape";
+import { join, limit, order, range, sink } from "..";
 import { it, expect, afterAll } from "bun:test";
 import { rm } from "node:fs/promises";
 import { sqlite } from "./sqlite";
@@ -103,13 +103,12 @@ it("works with sqlite", async () => {
     { id: 1, text: "I'm Bob", user: 0 },
   ]);
 
-  // TODO: test with range operator
-  // const windowedMessages = range(messagesByUser, limit(3, 1));
-  // expect(windowedMessages.pull()[0]).toEqual([
-  //   { id: 2, text: "And I'm Alice!", user: 1 },
-  //   { id: 4, text: "Nice to meet you!", user: 1 },
-  //   { id: 0, text: "Hello", user: 0 },
-  // ]);
+  const windowedMessages = range(messagesByUser, limit(3, 1));
+  expect(windowedMessages.pull()[0]).toEqual([
+    { id: 2, text: "And I'm Alice!", user: 1 },
+    { id: 4, text: "Nice to meet you!", user: 1 },
+    { id: 0, text: "Hello", user: 0 },
+  ]);
 });
 
 it("supports cursor pagination with composite order", () => {
