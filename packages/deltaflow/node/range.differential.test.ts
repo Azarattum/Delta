@@ -1574,6 +1574,7 @@ function run(data: number[], count: number, offset: number, steps: Step[]) {
     console.log(formatRangeTrace(data, count, offset, traces));
   }
   disconnect();
+  db.close();
 }
 
 function delta(tokens: string): [number, number][] {

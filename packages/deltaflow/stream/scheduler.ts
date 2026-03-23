@@ -2,11 +2,13 @@ import { SyncPromise, type MaybePromise } from "./promise";
 import { Shared } from "./shared";
 
 export class Scheduler {
+  static #queue = new Set<Scheduler>();
+  static #queued = false;
+
   #tasks: (() => MaybePromise<void>)[][];
   #pending: Set<Promise<void>> = new Set();
   #flushing: MaybePromise<void> | undefined;
   #level: number | undefined;
-  #scheduled = false;
 
   constructor(levels: number) {
     this.#tasks = Array.from({ length: levels }, () => []);
@@ -22,15 +24,21 @@ export class Scheduler {
     if (this.#level === level) return this.#execute(task);
     this.#tasks[level].push(task);
 
-    if (this.#scheduled) return;
-    this.#scheduled = true;
+    if (Scheduler.#queue.has(this)) return;
+    Scheduler.#queue.add(this);
+
+    if (Scheduler.#queued) return;
+    Scheduler.#queued = true;
+
     queueMicrotask(() => {
-      this.#scheduled = false;
-      this.flush();
+      Scheduler.#queue.forEach((x) => x.flush());
+      Scheduler.#queue.clear();
+      Scheduler.#queued = false;
     });
   }
 
   flush(): MaybePromise<void> {
+    Scheduler.#queue.delete(this);
     if (this.#level !== undefined) return this.#flushing;
     return (this.#flushing = this.#tasks
       .reduce((promise, tasks, level) => {
