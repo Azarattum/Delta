@@ -9,7 +9,13 @@ function stream<
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends any[] = [Awaited<TPull>],
   TOptions = unknown,
->(options: StreamOptions<TPush, TPull, TIn, TOptions>) {
+  TExtensions extends Record<string, unknown> = {},
+  TThis = {},
+>(
+  options: StreamOptions<TPush, TPull, TIn, TOptions, TExtensions> &
+    TThis &
+    ThisType<TThis>,
+) {
   type Upstreams = { [K in keyof TIn]: Stream<any, [TIn[K]], TOptions> | null };
 
   return <
@@ -17,7 +23,7 @@ function stream<
     TOut = InferOut<TPush, TPull, TUpstreams>,
   >(
     ...upstreams: TUpstreams
-  ): Stream<TOut, TIn, TOptions> => {
+  ): Stream<TOut, TIn, TOptions> & TExtensions => {
     const push = options.push?.bind(options) ?? ((...entity: TIn) => entity[0]);
     const pull =
       options.pull?.bind(options) ??
@@ -86,7 +92,7 @@ function stream<
       );
     }
 
-    return {
+    const stream: Stream<TOut, TIn, TOptions> = {
       pull: (options) => (scheduler.current.flush(), pull(options)),
       push: (...entities) => {
         entities.forEach((x, i) => x != null && (queue[i] ??= []).push(x));
@@ -103,6 +109,13 @@ function stream<
       },
       [internal]: { scheduler },
     };
+
+    if (options.extensions) {
+      const extensions = Object.getOwnPropertyDescriptors(options.extensions);
+      Object.defineProperties(stream, extensions);
+    }
+
+    return stream as Stream<TOut, TIn, TOptions> & TExtensions;
   };
 }
 
@@ -152,6 +165,7 @@ type StreamOptions<
   TPull extends MaybePromise<TOut> = MaybePromise<TOut>,
   TIn extends any[] = [Awaited<TPull>],
   TOptions = undefined,
+  TExtensions extends Record<string, unknown> = {},
 > = {
   /** Describes the behavior when somebody tries to pull from the stream */
   pull?: (options?: TOptions) => TPull;
@@ -161,6 +175,9 @@ type StreamOptions<
   flush?: (entities: PartialEntities<TIn>[]) => MaybePromise<void>;
   /** Describes how to compress multiple pushes */
   compress?: (queue: EntityQueue<TIn>) => PartialEntities<TIn>[];
+  /** Extends the stream object with extra public API */
+  extensions?: TExtensions &
+    ThisType<Stream<TOut, TIn, TOptions> & TExtensions>;
 };
 
 export { stream };

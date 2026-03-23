@@ -438,3 +438,24 @@ it("works with custom compression", async () => {
   source.flush();
   expect(push).toHaveBeenLastCalledWith(47);
 });
+
+it("extends streams with extra API", () => {
+  let count = 0;
+  const source = stream({
+    pull: () => count,
+    extensions: {
+      get count() {
+        return count;
+      },
+    },
+  })(null);
+
+  expectTypeOf(source).toEqualTypeOf<
+    Stream<number, [number]> & { readonly count: number }
+  >();
+
+  expect(source.count).toBe(0);
+  count = 42;
+  expect(source.count).toBe(42);
+  expect(source.pull()).toBe(42);
+});

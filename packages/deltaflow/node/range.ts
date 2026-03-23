@@ -13,11 +13,10 @@ export function range<
   let [missing, quantity] = [0, 0];
   let limits: Range | undefined;
 
-  // TODO: remove `tmp` property definition
-  const tmp = stream({
+  return stream({
     push(set?: ZSet<T>, range?: Range, base?: ZSet<T>): MaybePromise<ZSet<T>> {
       if (!bounds) {
-        return SyncPromise.one(this.pull!()).then(() => this.push!(set, range));
+        return SyncPromise.one(this.pull()).then(() => this.push(set, range));
       }
 
       let [lower, upper] = bounds ?? [undefined, undefined];
@@ -30,8 +29,8 @@ export function range<
       limits = [(limit += extended), (offset += moved)];
 
       if (!lower && set && limit && limit === extended) {
-        return SyncPromise.one(this.pull!()).then((pulled) =>
-          this.push!(set, undefined, pulled),
+        return SyncPromise.one(this.pull()).then((pulled) =>
+          this.push(set, undefined, pulled),
         );
       }
 
@@ -208,9 +207,12 @@ export function range<
     compress([sets, ranges]) {
       return [[sets?.reduce((acc, x) => add(acc, x, false)), ranges?.at(-1)]];
     },
+    extensions: {
+      get bounds() {
+        return bounds;
+      },
+    },
   })(upstream, range, null);
-
-  return Object.defineProperty(tmp, "bounds", { get: () => bounds });
 }
 
 export function limit(limit: number, offset = 0) {

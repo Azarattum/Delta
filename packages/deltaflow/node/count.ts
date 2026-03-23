@@ -13,7 +13,7 @@ export function count<
   return stream({
     push(set: ZSet<T>): MaybePromise<number> {
       if (total == null) {
-        return SyncPromise.one(this.pull!()).then(() => this.push!(set));
+        return SyncPromise.one(this.pull()).then(() => this.push(set));
       }
 
       return (total = set[1].reduce((acc, x) => acc + Math.sign(x), total));
