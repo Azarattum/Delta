@@ -9,7 +9,7 @@ function stream<
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends any[] = [Awaited<TPull>],
   TOptions = unknown,
-  TExtensions extends Record<string, unknown> = {},
+  TExtensions extends StreamExtensions = {},
   TThis = {},
 >(
   options: StreamOptions<TPush, TPull, TIn, TOptions, TExtensions> &
@@ -160,12 +160,16 @@ type Stream<TOut, TIn extends any[] = unknown[], TOptions = unknown> = {
   [internal]: any;
 };
 
+type StreamExtensions = Record<string, unknown> & {
+  [K in keyof Stream<unknown>]?: never;
+};
+
 type StreamOptions<
   TOut,
   TPull extends MaybePromise<TOut> = MaybePromise<TOut>,
   TIn extends any[] = [Awaited<TPull>],
   TOptions = undefined,
-  TExtensions extends Record<string, unknown> = {},
+  TExtensions extends StreamExtensions = {},
 > = {
   /** Describes the behavior when somebody tries to pull from the stream */
   pull?: (options?: TOptions) => TPull;
@@ -181,5 +185,11 @@ type StreamOptions<
 };
 
 export { stream };
-export type { Stream, StreamOptions, PartialEntities, EntityQueue };
-export type { IsAsyncStream };
+export type {
+  Stream,
+  EntityQueue,
+  StreamOptions,
+  IsAsyncStream,
+  PartialEntities,
+  StreamExtensions,
+};

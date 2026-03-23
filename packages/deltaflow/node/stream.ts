@@ -1,5 +1,6 @@
 import {
   stream,
+  type StreamExtensions,
   type PartialEntities,
   type StreamOptions,
   type MaybePromise,
@@ -13,7 +14,7 @@ const zStream = <
   TPush extends ZSet<any>,
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends ZSet<any>[] = [Awaited<TPull>],
-  TExtensions extends Record<string, unknown> = {},
+  TExtensions extends StreamExtensions = {},
   TThis = {},
 >(
   options: StreamOptions<TPush, TPull, TIn, PullOptions, TExtensions> &
@@ -37,7 +38,7 @@ const clStream = <
   TPush extends CLSet<any>,
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends CLSet<any>[] = [Awaited<TPull>],
-  TExtensions extends Record<string, unknown> = {},
+  TExtensions extends StreamExtensions = {},
   TThis = {},
 >(
   options: StreamOptions<TPush, TPull, TIn, PullOptions, TExtensions> &
