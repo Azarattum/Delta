@@ -1,15 +1,12 @@
-import { describe, expect, it } from "bun:test";
-import { shape } from "../datastructure/shape";
+import { TRACE, instrumentPull, formatRangeTrace } from "../debug/trace";
 import { add, distinct } from "../datastructure/zset";
 import type { ZSet } from "../datastructure/zset";
+import { describe, expect, it } from "bun:test";
+import type { StepTrace } from "../debug/trace";
+import { shape } from "../datastructure/shape";
 import { sqlite } from "./source/sqlite";
 import { limit, range } from "./range";
-import {
-  TRACE,
-  instrumentPull,
-  formatRangeTrace,
-  type StepTrace,
-} from "../debug/trace";
+import { fullGC } from "bun:jsc";
 import SQLite from "bun:sqlite";
 
 const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
@@ -1349,86 +1346,95 @@ describe("regressions", () => {
   });
 });
 
-it.if(!!process.env["FUZZER"])("fuzzer", () => {
-  console.warn("Running fuzzing indefinitely - set FUZZER=0 to disable!");
-  for (let outer = 0; true; outer++) {
-    let currentData = Array.from({ length: 10 }, (_, i) => i * 10);
-    let currentOffset = 2;
-    let currentLimit = 3;
+/** Run with `FUZZER=1 bun test range.differential.test.ts -t "fuzzer"` */
+it.if(!!process.env["FUZZER"])(
+  "fuzzer",
+  async () => {
+    console.warn("Running fuzzing indefinitely - set FUZZER=0 to disable!");
 
-    for (let iter = 0; iter < 1000; iter++) {
-      const newLimit = Math.max(
-        0,
-        currentLimit + Math.floor(Math.random() * 5) - 2,
-      );
-      const newOffset = Math.max(
-        0,
-        currentOffset + Math.floor(Math.random() * 5) - 2,
-      );
+    for (let outer = 0; true; outer++) {
+      const initialData = Array.from({ length: 10 }, (_, i) => i * 10);
+      using runner = createRunner(initialData, 3, 2);
 
-      const delta: [number, number][] = [];
-      const currentDataSet = new Set(currentData);
+      const data = [...runner.currentData];
+      const limit = runner.currentLimit;
+      const offset = runner.currentOffset;
+      const trace =
+        TRACE ? { data, limit, offset, traces: [] as StepTrace[] } : undefined;
 
-      for (let j = 0; j < 3; j++) {
-        if (currentData.length === 0) break;
-        const idx = Math.floor(Math.random() * currentData.length);
-        const id = currentData[idx];
-        if (!delta.some((x) => x[0] === id)) {
-          delta.push([id, -1]);
-          currentDataSet.delete(id);
+      for (let iter = 0; iter < 1000; iter++) {
+        const currentData = [...runner.currentData];
+        const currentLimit = runner.currentLimit;
+        const currentOffset = runner.currentOffset;
+
+        const randomLimit = Math.floor(Math.random() * 20) - 10;
+        const newLimit = Math.max(0, currentLimit + randomLimit);
+        const randomOffset = Math.floor(Math.random() * 20) - 10;
+        const newOffset = Math.max(0, currentOffset + randomOffset);
+
+        const currentDataSet = new Set(currentData);
+        const delta: [number, number][] = [];
+
+        for (let j = 0; j < 3; j++) {
+          if (currentData.length === 0) break;
+          const idx = Math.floor(Math.random() * currentData.length);
+          const id = currentData[idx]!;
+          if (!delta.some((x) => x[0] === id)) {
+            delta.push([id, -1]);
+            currentDataSet.delete(id);
+          }
+        }
+
+        for (let j = 0; j < 3; j++) {
+          const id = Math.floor(Math.random() * 100);
+          if (!currentDataSet.has(id) && !delta.some((x) => x[0] === id)) {
+            delta.push([id, 1]);
+            currentDataSet.add(id);
+          }
+        }
+
+        delta.sort((a, b) => a[0] - b[0]);
+        const step = { delta, limit: newLimit, offset: newOffset };
+
+        try {
+          runner.step(step, trace);
+        } catch (error) {
+          console.error(
+            "FAILING SCENARIO:",
+            JSON.stringify({ data, limit, offset, step }),
+          );
+
+          throw error;
         }
       }
 
-      for (let j = 0; j < 3; j++) {
-        const id = Math.floor(Math.random() * 100);
-        if (!currentDataSet.has(id) && !delta.some((x) => x[0] === id)) {
-          delta.push([id, 1]);
-          currentDataSet.add(id);
-        }
+      if (TRACE) {
+        console.log(formatRangeTrace(data, limit, offset, trace!.traces));
       }
 
-      delta.sort((a, b) => a[0] - b[0]);
-
-      try {
-        run(currentData, currentLimit, currentOffset, [
-          { delta, limit: newLimit, offset: newOffset },
-        ]);
-      } catch (error) {
-        console.error(
-          "FAILING SCENARIO:",
-          JSON.stringify({
-            data: currentData,
-            limit: currentLimit,
-            offset: currentOffset,
-            newLimit,
-            newOffset,
-            delta,
-          }),
-        );
-
-        throw error;
+      if (outer && outer % 100 === 0) {
+        console.log(`Fuzzing passed ${outer} runs.`);
+        fullGC();
+        await new Promise((r) => setTimeout(r));
       }
-
-      const set = new Map<number, number>();
-      for (const id of currentData) set.set(id, 1);
-      for (const [id, meta] of delta) {
-        const cur = set.get(id) ?? 0;
-        const next = cur + meta;
-        if (next <= 0) set.delete(id);
-        else set.set(id, next);
-      }
-      currentData = [...set.keys()].sort((a, b) => a - b);
-      currentLimit = newLimit;
-      currentOffset = newOffset;
     }
+  },
+  { timeout: Infinity },
+);
 
-    if (outer && outer % 100 === 0) {
-      console.log(`Fuzzing passed ${outer} runs.`);
-    }
+function run(data: number[], limit: number, offset: number, steps: Step[]) {
+  const trace =
+    TRACE ? { data, limit, offset, traces: [] as StepTrace[] } : undefined;
+
+  using runner = createRunner(data, limit, offset);
+
+  for (const step of steps) runner.step(step, trace);
+  if (TRACE) {
+    console.log(formatRangeTrace(data, limit, offset, trace!.traces));
   }
-});
+}
 
-function run(data: number[], count: number, offset: number, steps: Step[]) {
+function createRunner(data: number[], count: number, offset: number) {
   const db = new SQLite(":memory:");
   const items = sqlite(db, "items", idShape, ids(...data));
 
@@ -1449,11 +1455,26 @@ function run(data: number[], count: number, offset: number, steps: Step[]) {
   let currentLimit = count;
   let currentOffset = offset;
 
-  const traces: StepTrace[] = [];
   const deltas: ZSet<Item>[] = [];
   const disconnect = view.connect((x) => deltas.push(x));
+  let disposed = false;
 
-  for (const step of steps) {
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    disconnect();
+    db.close();
+  };
+
+  const step = (
+    step: Step,
+    trace?: {
+      data: number[];
+      limit: number;
+      offset: number;
+      traces: StepTrace[];
+    },
+  ) => {
     deltas.length = 0;
     tracer?.reset();
 
@@ -1532,14 +1553,15 @@ function run(data: number[], count: number, offset: number, steps: Step[]) {
     passed = passed && missingZeroUpdates.length === 0;
     passed = passed && extraZeroUpdates.length === 0;
 
-    if (TRACE) {
+    if (TRACE && trace) {
       const emittedDeltas: { id: number; meta: number }[] = [];
-      for (const d of deltas) {
-        for (let j = 0; j < d[0].length; j++) {
-          emittedDeltas.push({ id: d[0][j].id, meta: d[1][j] });
+      for (const delta of deltas) {
+        for (let j = 0; j < delta[0].length; j++) {
+          emittedDeltas.push({ id: delta[0][j].id, meta: delta[1][j] });
         }
       }
-      traces.push({
+
+      trace.traces.push({
         prevData: prevData!,
         prevWindow,
         dataDelta: step.delta,
@@ -1557,10 +1579,12 @@ function run(data: number[], count: number, offset: number, steps: Step[]) {
     }
 
     if (!passed) {
-      if (TRACE) {
-        console.log(formatRangeTrace(data, count, offset, traces));
+      if (TRACE && trace) {
+        console.log(
+          formatRangeTrace(trace.data, trace.limit, trace.offset, trace.traces),
+        );
       }
-      disconnect();
+      dispose();
       expect(actual).toEqual(expected);
       expect(view.bounds.lower?.id).toEqual(expectedLower);
       expect(view.bounds.upper?.id).toEqual(expectedUpper);
@@ -1568,13 +1592,21 @@ function run(data: number[], count: number, offset: number, steps: Step[]) {
       expect(extraZeroUpdates).toEqual([]);
       return;
     }
-  }
+  };
 
-  if (TRACE) {
-    console.log(formatRangeTrace(data, count, offset, traces));
-  }
-  disconnect();
-  db.close();
+  return {
+    step,
+    [Symbol.dispose]: dispose,
+    get currentData() {
+      return currentData;
+    },
+    get currentLimit() {
+      return currentLimit;
+    },
+    get currentOffset() {
+      return currentOffset;
+    },
+  };
 }
 
 function delta(tokens: string): [number, number][] {
