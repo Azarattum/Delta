@@ -22,8 +22,8 @@ export async function indexeddb<T extends Record<string, unknown>>(
   const pks = primary(shape);
 
   return zStream({
-    pull: async ({ filter, order, range, weight = 1 } = {}) => {
-      if (range) throw new Error("TODO: support range in indexeddb source");
+    pull: async ({ filter, order, weight = 1 } = {}) => {
+      // TODO: support cursor
       const store = db.transaction([table], "readonly").objectStore(table);
       let scan: T[];
 

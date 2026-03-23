@@ -79,23 +79,8 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
 
       const orderBy = `ORDER BY ${effectiveOrder.map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
 
-      const main = `${select}${cursor?.skip?.length ? ",false AS flag" : ""} FROM ${table}${cte ? ",cursor" : ""} ${where}`;
+      const main = `${select} FROM ${table}${cte ? ",cursor" : ""} ${where}`;
       let query = `${cte}\n${main} ${orderBy} ${limit}`;
-
-      if (cursor?.skip?.length) {
-        const columns = shape.keys.map((k) => {
-          const index = orderKeys.indexOf(k);
-          if (!~index) return `NULL as ${k}`;
-          return `column${index + 1} as ${k}`;
-        });
-        const values = cursor?.skip.map((x) => {
-          return `(${orderKeys.map((k) => JSON.stringify(x[k] ?? null)).join()})`;
-        });
-
-        const toSkip = `SELECT ${columns.join(", ")},true as flag FROM (VALUES ${values.join(", ")})`;
-
-        query = `${cte}\n${select} FROM (${main} UNION ALL ${toSkip} ${orderBy} ${limit}) as ${table} WHERE flag = false`;
-      }
 
       const scan = db.query(query).all();
       if (reverse) scan.reverse();

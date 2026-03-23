@@ -65,18 +65,17 @@ type PullOptions<T = Record<string, unknown>> = {
   weight?: number;
   /** Cursor for precise pagination control */
   cursor?: {
-    // TODO: docs
-    skip?: readonly T[];
+    /** Anchoring element to start pagination from */
     anchor?: T;
+    /** Whether to exclude the anchoring element itself */
     exclusive?: boolean;
+    /** Non-negative offset from the anchor. If no anchor, from start/end (depends on count direction) */
     offset?: number;
+    /** Number of elements to retrieve (positive for forward, negative for backward) */
     count?: number;
   };
   /** Mutable out-parameter for total row count (ignores cursor, respects filters) */
   total?: { out: number };
-
-  /** @deprecated */
-  range?: readonly [limit: number, offset: number];
 };
 
 type ValidKey = number | string | Date | BufferSource;

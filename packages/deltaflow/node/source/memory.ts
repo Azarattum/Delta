@@ -6,7 +6,7 @@ import {
   type Shape,
 } from "../../datastructure/shape";
 import type { CLGlobal, CLMeta, CLSet } from "../../datastructure/clset";
-import { add, sort, distinct, cut, type ZSet } from "../../datastructure/zset";
+import { add, sort, distinct, type ZSet } from "../../datastructure/zset";
 import { zStream, clStream, type OfZStream, type ZStream } from "../stream";
 import { SyncPromise } from "../../stream";
 
@@ -29,7 +29,7 @@ export function memory<T extends Record<string, unknown>>(
   });
 
   return zStream({
-    pull: ({ order, range, filter, weight = 1 } = {}) => {
+    pull: ({ order, filter, weight = 1 } = {}) => {
       const scan = structuredClone(
         filter?.length ?
           data[0].filter((x) =>
@@ -50,8 +50,7 @@ export function memory<T extends Record<string, unknown>>(
       const scanSet = [scan, scanMeta, scanShape] as ZSet<T>;
 
       if (order) sort(scanSet, (a, b) => compare(a, b, scanShape));
-      // TODO: support cursor instead of range
-      if (range) cut(scanSet, range[0], range[1]);
+      // TODO: support cursor
       return scanSet;
     },
     flush: (changes) => changes.forEach(([x]) => distinct(add(data, x))),
