@@ -209,7 +209,7 @@ export function range<
     },
     extensions: {
       get bounds() {
-        return bounds;
+        return { lower: bounds?.[0], upper: bounds?.[1] };
       },
     },
   })(upstream, range, null);
