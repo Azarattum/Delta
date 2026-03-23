@@ -87,7 +87,7 @@ function queryWithFilter<T>(
   const [indexKeys, refKeys = indexKeys] = filter.keys;
   const { index, unique } = getIndex(store, indexKeys.toString());
 
-  // TODO: this cast is probably unsafe
+  // TODO: this cast is probably unsafe, also handle when `refs.length === 0`
   const refs = (filter.items as Record<string, IDBValidKey>[])
     .map((x) => refKeys.map((k) => x[k]))
     .sort((a, b) => {
@@ -122,6 +122,7 @@ function queryWithFilter<T>(
 
 async function queryWithOrder<T>(store: IDBObjectStore, order: Order<T>) {
   const indexName = order.map((x) => (Array.isArray(x) ? x[0] : x)).toString();
+  // TODO: fully support compound indexes (currently order is inferred only from the first key)
   const direction =
     Array.isArray(order[0]) && order[0][1] === "desc" ? "prev" : "next";
 
