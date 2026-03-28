@@ -1,7 +1,8 @@
-import { primary, type Shape } from "../../datastructure/shape";
+import { isNullable, datatype, primary } from "../../datastructure/shape";
 import type { SQLQueryBindings, Database } from "bun:sqlite";
-import type { ZSet } from "../../datastructure/zset";
+import type { Shape } from "../../datastructure/shape";
 import { zStream, type PullOptions } from "../stream";
+import type { ZSet } from "../../datastructure/zset";
 
 /** TODO: this is just a prototype */
 export function sqlite<T extends Record<string, SQLQueryBindings>>(
@@ -17,9 +18,14 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
   // );
   const pks = primary(shape);
 
+  const columns = shape.keys.map((name, i) => {
+    const type = shape.types[i];
+    return `${name} ${toSQLType(type)} ${isNullable(type) ? "" : "NOT NULL"}`;
+  });
+
   // Autocreating for testing convenience (TODO: remove later)
   db.run(
-    `CREATE TABLE IF NOT EXISTS ${table} (${shape.keys}, PRIMARY KEY (${pks}))`,
+    `CREATE TABLE IF NOT EXISTS ${table} (${columns}, PRIMARY KEY (${pks}))`,
   );
   if (initialData.length) {
     db.run(
@@ -145,4 +151,11 @@ function compareBy(
   });
 
   return `(${expressions.join(" OR ")})`;
+}
+
+function toSQLType(type: number) {
+  type = datatype(type);
+  const name = ["INTEGER", "REAL", "TEXT", "NUMERIC", "INTEGER", "BLOB"][type];
+  if (!name) throw new Error(`Unsupported type: ${type}`);
+  return name;
 }

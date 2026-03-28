@@ -2,7 +2,7 @@ import { shape, range, sink, limit, sqlite } from "..";
 import { it, expect, describe, beforeEach, vi } from "bun:test";
 import SQLite from "bun:sqlite";
 
-const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+const idShape = shape((t) => ({ id: t(t.DOUBLE, t.PRIMARY) }));
 const ids = (...x: number[]) => x.map((id) => ({ id }));
 
 it("limits simple queries", async () => {

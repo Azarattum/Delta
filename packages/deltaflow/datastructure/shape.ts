@@ -111,6 +111,24 @@ function checksum(types: readonly number[], order: readonly number[]) {
   return hash;
 }
 
+function datatype(type: number) {
+  return (type & 0b111) as
+    | typeof TYPE.INT
+    | typeof TYPE.DOUBLE
+    | typeof TYPE.STRING
+    | typeof TYPE.BOOLEAN
+    | typeof TYPE.BIGINT
+    | typeof TYPE.BYTES;
+}
+
+function isPrimary(type: number) {
+  return (type & TYPE.PRIMARY) !== 0;
+}
+
+function isNullable(type: number) {
+  return (type & TYPE.NULLABLE) !== 0;
+}
+
 const RELATION = (id: number) => id << 16;
 
 const TYPE = {
@@ -206,6 +224,9 @@ type Order<T> = (
 export {
   TYPE,
   nonPrimary,
+  isNullable,
+  isPrimary,
+  datatype,
   children,
   primary,
   compare,

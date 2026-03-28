@@ -9,7 +9,7 @@ import { limit, range } from "./range";
 import { fullGC } from "bun:jsc";
 import SQLite from "bun:sqlite";
 
-const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+const idShape = shape((t) => ({ id: t(t.DOUBLE, t.PRIMARY) }));
 
 describe("single adds", () => {
   const data = [1, 2, 3, 4, 5, 6];
