@@ -1,8 +1,8 @@
 import { stream, SyncPromise, type MaybePromise, type Stream } from "../stream";
-import { add, distinct, len, transform, zero } from "../datastructure/zset";
+import { add, distinct, transform, zero } from "../datastructure/zset";
 import type { ZStream, OfZStream, PullOptions } from "./stream";
 import { compare, primary } from "../datastructure/shape";
-import { traverse } from "../datastructure/metaset";
+import { len, traverse } from "../datastructure/metaset";
 import type { ZSet } from "../datastructure/zset";
 
 export function range<

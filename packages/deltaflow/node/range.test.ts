@@ -25,7 +25,7 @@ it("limits simple queries", async () => {
     { id: 30, name: "Clara" },
   ]);
 
-  users.push([[{ id: 40, name: "Eve" }], [1], user]);
+  users.push([[{ id: 50, name: "Eve" }], [1], user]);
   await users.flush();
 
   expect(view.pull()[0]).toEqual([

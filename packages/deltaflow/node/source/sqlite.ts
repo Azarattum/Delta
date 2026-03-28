@@ -3,6 +3,7 @@ import type { SQLQueryBindings, Database } from "bun:sqlite";
 import type { Shape } from "../../datastructure/shape";
 import { zStream, type PullOptions } from "../stream";
 import type { ZSet } from "../../datastructure/zset";
+import { len } from "../../datastructure/metaset";
 
 /** TODO: this is just a prototype */
 export function sqlite<T extends Record<string, SQLQueryBindings>>(
@@ -102,7 +103,7 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
     },
     flush: (changes: [ZSet<T>][]) => {
       changes.forEach(([set]) => {
-        for (let i = 0; i < set![0].length; i++) {
+        for (let i = 0; i < len(set); i++) {
           const op = set![1][i];
           if (op < 0) {
             db.run(
@@ -111,7 +112,7 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
             );
           } else if (op > 0) {
             db.run(
-              `INSERT OR IGNORE INTO ${table} VALUES (${shape.keys.map(() => "?").join(",")})`,
+              `INSERT INTO ${table} VALUES (${shape.keys.map(() => "?").join(",")})`,
               ...(Object.values(set![0][i]) as any[]), // TODO: this is a hack for POC
             );
           } else {

@@ -119,6 +119,11 @@ function recurse<TFn extends RecurseFn>(fn: TFn): Recurse<TFn> {
   };
 }
 
+function len<T extends MetaSet>(item: T) {
+  if (item[0].length !== item[1].length) throw new Error("Corrupted MetaSet");
+  return item[0].length;
+}
+
 const pruneMeta = recurse(([meta], key, n: number) => (meta[key].length -= n));
 const insertMeta = recurse(([aMeta, bMeta], key, i: number, j: number) => {
   const nonExistent = !(j in bMeta[key]);
@@ -126,4 +131,4 @@ const insertMeta = recurse(([aMeta, bMeta], key, i: number, j: number) => {
   if (nonExistent) delete aMeta[key][i];
 });
 
-export { traverse, recurse, type MetaSet, type Visitors };
+export { traverse, recurse, len, type MetaSet, type Visitors };

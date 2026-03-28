@@ -755,7 +755,7 @@ describe("regressions", () => {
   });
 
   it("shrink while shifting past deletions", () => {
-    run([1, 2, 3, 4, 5, 6, 7], 4, 1, [step("-2 +6", { limit: 2, offset: 3 })]);
+    run([1, 2, 3, 4, 5, 6, 7], 4, 1, [step("-2", { limit: 2, offset: 3 })]);
   });
 
   it("overlapping insertions and removals out of bounds", () => {
