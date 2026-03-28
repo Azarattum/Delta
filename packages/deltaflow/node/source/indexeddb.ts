@@ -1,9 +1,5 @@
-import {
-  TYPE,
-  primary,
-  type Order,
-  type Shape,
-} from "../../datastructure/shape";
+import { isPrimary, primary } from "../../datastructure/shape";
+import type { Order, Shape } from "../../datastructure/shape";
 import type { ZSet } from "../../datastructure/zset";
 import { zStream, type PullOptions } from "../stream";
 
@@ -72,7 +68,7 @@ export function createStore<T extends Record<string, unknown>>(
   const keyPath = primary(shape);
   const store = db.createObjectStore(name, { keyPath });
   const relations = shape.keys.filter(
-    (_, i) => shape.types[i] >> 16 && !(shape.types[i] & TYPE.PRIMARY),
+    (_, i) => shape.types[i] >> 16 && !isPrimary(shape.types[i]),
   );
 
   // TODO: support compound indexes somehow...

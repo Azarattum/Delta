@@ -1,4 +1,4 @@
-function shape<T extends Template>(template: T): Shape<FromTemplate<T>> {
+function shape<T extends Template>(template: T): Shape<FromTemplate<T>, ID<T>> {
   const sample = template(defineFlags);
 
   const types = Object.values(sample) as number[];
@@ -129,6 +129,10 @@ function isNullable(type: number) {
   return (type & TYPE.NULLABLE) !== 0;
 }
 
+function isRelation(type: number) {
+  return (type & TYPE.RELATION) !== 0;
+}
+
 const RELATION = (id: number) => id << 16;
 
 const TYPE = {
@@ -150,14 +154,15 @@ const combineFlags = <T extends number[]>(...flags: T) =>
 
 const defineFlags = Object.assign(combineFlags, TYPE, { RELATION });
 
-type Shape<T = any> =
+type Shape<T = any, TId = {}> =
   T extends object ?
     Readonly<{
       "~type": T;
+      "~id": TId;
       hash: number;
       keys: readonly (keyof T)[];
       order: readonly number[];
-      types: readonly (typeof TYPE)[keyof typeof TYPE][];
+      types: readonly number[];
       children: 0 extends 1 & T ?
         Record<keyof T, { single: boolean; shape: Shape<T[keyof T]> }>
       : {
@@ -189,19 +194,23 @@ type NestedShape<
 >;
 
 type FromTemplate<T extends Template<unknown>> = {
-  [K in keyof ReturnType<T>]:
-    | ToPrimitive<ReturnType<T>[K]>
-    | (typeof TYPE.NULLABLE extends ReturnType<T>[K] ? null : never);
+  [K in keyof ReturnType<T>]: ToPrimitive<ReturnType<T>[K]>;
+} & {};
+
+type ID<T extends Template<unknown>> = {
+  [K in keyof ReturnType<T> as typeof TYPE.PRIMARY extends ReturnType<T>[K] ? K
+  : never]: ToPrimitive<ReturnType<T>[K]>;
 } & {};
 
 type ToPrimitive<T> =
-  T extends typeof TYPE.INT ? number
-  : T extends typeof TYPE.DOUBLE ? number
-  : T extends typeof TYPE.STRING ? string
-  : T extends typeof TYPE.BOOLEAN ? boolean
-  : T extends typeof TYPE.BIGINT ? BigInt
-  : T extends typeof TYPE.BYTES ? Uint8Array
-  : never;
+  | (T extends typeof TYPE.INT ? number
+    : T extends typeof TYPE.DOUBLE ? number
+    : T extends typeof TYPE.STRING ? string
+    : T extends typeof TYPE.BOOLEAN ? boolean
+    : T extends typeof TYPE.BIGINT ? BigInt
+    : T extends typeof TYPE.BYTES ? Uint8Array
+    : never)
+  | (typeof TYPE.NULLABLE extends T ? null : never);
 
 type ExtractConstNumbers<T extends any[]> = {
   [K in keyof T]: T[K] extends number ?
@@ -222,9 +231,9 @@ type Order<T> = (
 )[];
 
 export {
-  TYPE,
   nonPrimary,
   isNullable,
+  isRelation,
   isPrimary,
   datatype,
   children,

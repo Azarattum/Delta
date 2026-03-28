@@ -9,7 +9,7 @@ export function order<TStream extends ZStream<T>, T = OfZStream<TStream>>(
   return zStream({
     push: (x: ZSet<T>) => {
       const shape = reorder(x[2], ...order);
-      if (shape !== x[2]) {
+      if (shape?.hash !== x[2]?.hash) {
         sort(x, (a, b) => compare(a, b, shape));
         x[2] = shape;
       }

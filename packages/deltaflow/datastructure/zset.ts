@@ -1,4 +1,4 @@
-import { children, compare, nest, TYPE, type Shape } from "./shape";
+import { children, compare, isRelation, nest, type Shape } from "./shape";
 import { recurse, traverse, type MetaSet } from "./metaset";
 
 type ZSet<T> = MetaSet<T, number>;
@@ -15,7 +15,7 @@ function add<T>(a: ZSet<T>, b: ZSet<T>, collapseFKs = true) {
             const cmp = compare(aData, bData, shape);
             if (cmp !== 0 || !shape) return cmp;
             return -shape.types.some((x, i) => {
-              if (!(x & TYPE.RELATION)) return false;
+              if (!isRelation(x)) return false;
               const key = shape.keys[i];
               return aData[key] !== bData[key];
             });
