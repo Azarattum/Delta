@@ -1,6 +1,6 @@
 import type { MetaSet } from "./metaset.types";
 import { traverse } from "./metaset";
-import { TYPE } from "./shape";
+import { isPrimary } from "./shape";
 
 type CLMeta = [version: number, causality: number, ...clocks: number[]];
 type CLGlobal = { version: number; peer: number };
@@ -12,9 +12,7 @@ function merge<T>(a: CLSet<T>, b: CLSet<T>, global: CLGlobal) {
   return traverse(
     {
       combine(aData, aMeta, bData, bMeta, shape) {
-        const keys = shape?.keys.filter(
-          (_, i) => !(shape.types[i] & TYPE.PRIMARY),
-        );
+        const keys = shape?.keys.filter((_, i) => !isPrimary(shape.types[i]));
         // Max causal length
         const reinserted = bMeta[1] > aMeta[1];
         if (reinserted) aMeta[1] = bMeta[1];
