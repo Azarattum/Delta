@@ -6,7 +6,7 @@ export function sink<TStream extends ZStream<T>, T = OfZStream<TStream>>(
   upstream: TStream,
   initial = zero<T>(),
 ) {
-  let pulling: MaybePromise<void> | undefined;
+  let loading: MaybePromise<void> | undefined;
   let view: ZSet<T> | undefined;
   let queue: ZSet<T>[] = [];
 
@@ -27,7 +27,9 @@ export function sink<TStream extends ZStream<T>, T = OfZStream<TStream>>(
     },
     extensions: {
       preload() {
-        return (pulling ??= SyncPromise.one(upstream.pull()).then((data) => {
+        if (loading) return loading;
+        node.connect();
+        return (loading = SyncPromise.one(upstream.pull()).then((data) => {
           queue.unshift(data);
           this.push(data);
           return this.flush();

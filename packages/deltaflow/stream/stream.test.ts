@@ -13,6 +13,84 @@ it("streams lazily", () => {
   expect(spyPull).toHaveBeenCalledTimes(1);
 });
 
+it("initializes on first downstream and disposes on last downstream", () => {
+  const dispose1 = mock();
+  const dispose2 = mock();
+  let count = 0;
+
+  const source = stream({
+    init: () => (++count === 1 ? dispose1 : dispose2),
+    push: (x: number) => x,
+  })(null);
+
+  const disconnect1 = source.connect(mock());
+  const disconnect2 = source.connect(mock());
+
+  expect(count).toBe(1);
+  expect(dispose1).not.toHaveBeenCalled();
+
+  disconnect1();
+  expect(dispose1).not.toHaveBeenCalled();
+
+  disconnect2();
+  expect(dispose1).toHaveBeenCalledTimes(1);
+
+  const disconnect3 = source.connect(mock());
+  expect(count).toBe(2);
+
+  disconnect3();
+  expect(dispose2).toHaveBeenCalledTimes(1);
+});
+
+it("initializes before first subscribe pull", () => {
+  let count = 0;
+  const dispose = mock();
+  const source = stream({
+    init: () => {
+      count = 42;
+      return dispose;
+    },
+    pull: () => count,
+  })(null);
+
+  const spy = mock();
+  const disconnect = source.subscribe(spy);
+
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(spy).toHaveBeenLastCalledWith(42);
+
+  disconnect();
+  expect(dispose).toHaveBeenCalledTimes(1);
+});
+
+it("disposes init with using", () => {
+  const dispose = mock();
+
+  {
+    using source = stream({
+      init: () => dispose,
+      push: (x: number) => x,
+    })(null);
+    source.connect(mock());
+  }
+
+  expect(dispose).toHaveBeenCalledTimes(1);
+});
+
+it("disconnects upstreams with using", () => {
+  const source = stream({ push: (x: number) => x })(null);
+  const spy = mock();
+
+  {
+    using view = stream({ push: (x: number) => x })(source);
+    view.connect(spy);
+  }
+
+  source.push(42);
+  source.flush();
+  expect(spy).not.toHaveBeenCalled();
+});
+
 it("handles async pulls", () => {
   const asyncSource = stream({
     push: (x: number) => x!,
@@ -98,6 +176,7 @@ it("batches changes to a microtask", async () => {
     push: (x: number) => (count += x),
     pull: () => count,
   })(source);
+  sink.connect();
 
   source.push(1);
   source.push(2);
@@ -125,6 +204,7 @@ it("merges batched changes", async () => {
   {
     const spy = mock((_1?: number, _2?: number) => 0 as const);
     const joined = stream({ push: spy })(source1, source2);
+    joined.connect();
 
     expectTypeOf(joined.flush).returns.toEqualTypeOf<MaybePromise<void>>();
     expectTypeOf(joined.pull).returns.toEqualTypeOf<0>();
@@ -151,6 +231,7 @@ it("merges batched changes", async () => {
   {
     const spy = mock(async (_1?: number, _2?: number) => 0 as const);
     const joined = stream({ push: spy })(source1, source2);
+    joined.connect();
 
     expectTypeOf(joined.flush).returns.toEqualTypeOf<MaybePromise<void>>();
     expectTypeOf(joined.pull).returns.toEqualTypeOf<Promise<0>>();
@@ -188,6 +269,7 @@ it("handles async pushes", async () => {
     push: (x: number) => (count += x),
     pull: () => count,
   })(source);
+  view.connect();
 
   expectTypeOf(view).toEqualTypeOf<Stream<number, [number]>>();
 
@@ -214,6 +296,7 @@ it("handles async pushes", async () => {
     push: (a?: number, b?: number) => Promise.resolve().then(() => spy(a, b)),
     pull: () => count,
   })(source1, source2);
+  joined.connect();
 
   expectTypeOf(joined.pull).returns.toEqualTypeOf<number>();
   expect(joined.pull()).toBe(0);
@@ -255,6 +338,7 @@ it("calls external flush", async () => {
   expect(Promise.race([result, Promise.resolve(1)])).resolves.toBe(undefined);
 
   const noop = stream({})(source);
+  noop.connect();
   source.push(1);
 
   expectTypeOf(noop).toEqualTypeOf<Stream<never, [unknown]>>();
@@ -313,6 +397,7 @@ it("calls flush after all downstream pushes", async () => {
 
   const source = stream({ flush })(null);
   const sink = stream({ push, flush: () => {} })(source);
+  sink.connect();
 
   source.push(42);
   expect(flush).not.toHaveBeenCalled();
@@ -352,7 +437,7 @@ it("handles pulling with downstream flushes", () => {
   expect(source.pull()).toBe(3);
 
   // Add a downstream
-  stream({})(source);
+  stream({})(source).connect();
 
   source.push(3);
   expect(source.pull()).toBe(6);
@@ -407,6 +492,7 @@ it("flushes async with async downstreams", async () => {
   expect(source.flush()).toBe(undefined);
 
   const view = stream({ flush: spy })(source);
+  view.connect();
   expectTypeOf(view.flush).returns.toEqualTypeOf<MaybePromise<void>>();
 
   expect(source.flush()).toBe(undefined);

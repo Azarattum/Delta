@@ -40,7 +40,8 @@ function stream<
         ) as PartialEntities<TIn>[];
       });
 
-    const downstreams: Set<(entity: Awaited<TOut>) => void> = new Set();
+    const downstreams: Set<((entity: Awaited<TOut>) => void) | undefined> =
+      new Set();
     const queue = [] as unknown as EntityQueue<TIn>;
 
     let scheduled = false;
@@ -49,16 +50,31 @@ function stream<
       2,
     );
 
-    upstreams.forEach((upstream, i) => {
-      upstream?.connect((entity: TIn[number]) => {
-        (queue[i] ??= []).push(entity);
-        schedule();
+    let disposers: (void | (() => void))[] = [];
+    function init() {
+      disposers = upstreams.map((upstream, i) => {
+        return upstream?.connect((entity: TIn[number]) => {
+          (queue[i] ??= []).push(entity);
+          schedule();
+        });
       });
-    });
 
-    function connect(fn: (entity: Awaited<TOut>) => void) {
+      if (options.init) disposers.push(options.init());
+    }
+
+    function dispose() {
+      disposers.forEach((dispose) => dispose?.());
+      disposers = [];
+    }
+
+    function connect(fn?: (entity: Awaited<TOut>) => void) {
+      if (!downstreams.size) init();
       downstreams.add(fn);
-      return () => downstreams.delete(fn);
+
+      return () => {
+        downstreams.delete(fn);
+        if (!downstreams.size) dispose();
+      };
     }
 
     function schedule() {
@@ -83,7 +99,7 @@ function stream<
         queue.map((entities) =>
           SyncPromise.one(push(...entities)).then((x) =>
             downstreams.forEach((fn) => {
-              SyncPromise.try(() => fn(x)).catch((error) =>
+              SyncPromise.try(() => fn?.(x)).catch((error) =>
                 console.error("Unhandled error in downstream handler", error),
               );
             }),
@@ -101,12 +117,14 @@ function stream<
       flush: () => scheduler.current.flush(),
       connect,
       subscribe: (fn) => {
+        const dispose = connect(fn);
         SyncPromise.one(pull()).then(fn);
-        return connect(fn);
+        return dispose;
       },
       get isDirty() {
         return !!(scheduled || upstreams.some((x) => x?.isDirty));
       },
+      [Symbol.dispose]: dispose,
       [internal]: { scheduler },
     };
 
@@ -146,8 +164,8 @@ type EntityQueue<T extends any[]> =
 type Stream<TOut, TIn extends any[] = unknown[], TOptions = unknown> = {
   /** Subscribes to changes and immediately pulls the current state */
   subscribe(fn: (entity: Awaited<TOut>) => void): () => void;
-  /** Subscribes to future changes without side-effects */
-  connect(fn: (entity: Awaited<TOut>) => void): () => void;
+  /** Subscribes to changes. The first connection initializes the graph (even without a handler fn) */
+  connect(fn?: (entity: Awaited<TOut>) => void): () => void;
   /** Pushes to the stream */
   push(...entities: PartialEntities<TIn>): void;
   /** Pulls from the stream */
@@ -157,6 +175,7 @@ type Stream<TOut, TIn extends any[] = unknown[], TOptions = unknown> = {
   /** Checks if the stream has pending changes */
   get isDirty(): boolean;
 
+  [Symbol.dispose](): void;
   [internal]: any;
 };
 
@@ -179,6 +198,8 @@ type StreamOptions<
   flush?: (entities: PartialEntities<TIn>[]) => MaybePromise<void>;
   /** Describes how to compress multiple pushes */
   compress?: (queue: EntityQueue<TIn>) => PartialEntities<TIn>[];
+  /** Describes initialization that is called on the first subscriber and disposed on no subscribers */
+  init?: () => void | (() => void);
   /** Extends the stream object with extra public API */
   extensions?: TExtensions &
     ThisType<Stream<TOut, TIn, TOptions> & TExtensions>;
