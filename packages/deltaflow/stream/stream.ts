@@ -116,9 +116,9 @@ function stream<
       },
       flush: () => scheduler.current.flush(),
       connect,
-      subscribe: (fn) => {
+      subscribe: (fn, options) => {
         const dispose = connect(fn);
-        SyncPromise.one(pull()).then(fn);
+        SyncPromise.one(pull(options)).then(fn);
         return dispose;
       },
       get isDirty() {
@@ -161,15 +161,18 @@ type PartialEntities<T extends any[]> =
 type EntityQueue<T extends any[]> =
   T extends [any] ? [Awaited<T[0]>[]] : { [K in keyof T]?: Awaited<T[K]>[] };
 
-type Stream<TOut, TIn extends any[] = unknown[], TOptions = unknown> = {
+type Stream<TOut, TIn extends any[] = unknown[], TPullOptions = unknown> = {
   /** Subscribes to changes and immediately pulls the current state */
-  subscribe(fn: (entity: Awaited<TOut>) => void): () => void;
+  subscribe(
+    fn: (entity: Awaited<TOut>) => void,
+    options?: TPullOptions,
+  ): () => void;
   /** Subscribes to changes. The first connection initializes the graph (even without a handler fn) */
   connect(fn?: (entity: Awaited<TOut>) => void): () => void;
   /** Pushes to the stream */
   push(...entities: PartialEntities<TIn>): void;
   /** Pulls from the stream */
-  pull(options?: TOptions): TOut;
+  pull(options?: TPullOptions): TOut;
   /** Immediately flushes all the pending stream pushes */
   flush(): MaybePromise<void>;
   /** Checks if the stream has pending changes */
