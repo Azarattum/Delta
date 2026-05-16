@@ -1,5 +1,5 @@
+import { it, expect, describe, beforeEach, mock } from "bun:test";
 import { shape, range, sink, limit, sqlite } from "..";
-import { it, expect, describe, beforeEach, vi } from "bun:test";
 import SQLite from "bun:sqlite";
 
 const idShape = shape((t) => ({ id: t(t.DOUBLE, t.PRIMARY) }));
@@ -301,7 +301,7 @@ describe("limits lower bound with", async () => {
   let items: ReturnType<typeof sqlite<{ id: number }>>;
   let view: ReturnType<typeof range<typeof items, { id: number }>>;
   let delta: ReturnType<
-    typeof vi.fn<(data: { id: number }[], meta: number[]) => void>
+    typeof mock<(data: { id: number }[], meta: number[]) => void>
   >;
 
   beforeEach(() => {
@@ -310,7 +310,7 @@ describe("limits lower bound with", async () => {
     view = range(items, limit(10, 2));
     expect(view.pull()[0]).toEqual(ids(3, 4, 5, 6));
 
-    delta = vi.fn();
+    delta = mock();
     view.connect((x) => delta(x[0], x[1]));
   });
 
@@ -427,7 +427,7 @@ describe("limits upper bound with", async () => {
   let items: ReturnType<typeof sqlite<{ id: number }>>;
   let view: ReturnType<typeof range<typeof items, { id: number }>>;
   let delta: ReturnType<
-    typeof vi.fn<(data: { id: number }[], meta: number[]) => void>
+    typeof mock<(data: { id: number }[], meta: number[]) => void>
   >;
 
   beforeEach(() => {
@@ -436,7 +436,7 @@ describe("limits upper bound with", async () => {
     view = range(items, limit(4, 0));
     expect(view.pull()[0]).toEqual(ids(1, 2, 3, 4));
 
-    delta = vi.fn();
+    delta = mock();
     view.connect((x) => delta(x[0], x[1]));
   });
 
@@ -547,7 +547,7 @@ describe("limits both bounds with", async () => {
   let items: ReturnType<typeof sqlite<{ id: number }>>;
   let view: ReturnType<typeof range<typeof items, { id: number }>>;
   let delta: ReturnType<
-    typeof vi.fn<(data: { id: number }[], meta: number[]) => void>
+    typeof mock<(data: { id: number }[], meta: number[]) => void>
   >;
 
   beforeEach(() => {
@@ -556,7 +556,7 @@ describe("limits both bounds with", async () => {
     view = range(items, limit(2, 2));
     expect(view.pull()[0]).toEqual(ids(3, 4));
 
-    delta = vi.fn();
+    delta = mock();
     view.connect((x) => delta(x[0], x[1]));
   });
 
