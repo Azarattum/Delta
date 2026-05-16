@@ -30,15 +30,22 @@ type TraverseEntries<T> =
   : T extends object ? T | { [K in keyof T]: TraverseEntries<T[K]> }[keyof T]
   : never;
 
-type TraverseShape<T> =
-  | T
-  | (T extends (
-      { children: Record<keyof any, { shape: infer TShape extends Shape }> }
-    ) ?
-      0 extends 1 & NonNullable<TShape>["~type"] ?
-        TShape
-      : TraverseShape<TShape>
-    : never);
+type ChildShape<T> =
+  T extends { children: infer TChildren } ?
+    [keyof TChildren] extends [never] ? never
+    : TChildren[keyof TChildren] extends { shape: infer TShape extends Shape } ?
+      TShape
+    : never
+  : never;
+
+type TraverseChildShape<TShape extends Shape> =
+  TShape extends Shape ?
+    0 extends 1 & NonNullable<TShape>["~type"] ?
+      TShape
+    : TraverseShape<TShape>
+  : never;
+
+type TraverseShape<T> = T | TraverseChildShape<ChildShape<T>>;
 
 type ArrayKeys<T> =
   T extends Record<keyof any, any> ?

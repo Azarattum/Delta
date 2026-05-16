@@ -74,11 +74,11 @@ function children<T extends Shape>(shape: T) {
   return Object.entries(shape?.children ?? {}) as Children<T>;
 }
 
-function primary<T extends Record<string, unknown>>(shape?: Shape<T>) {
+function primary<K extends keyof any>(shape?: ShapeLike<K>): K[] {
   return shape?.keys.filter((_, i) => shape.types[i] & TYPE.PRIMARY) ?? [];
 }
 
-function nonPrimary<T extends Record<string, unknown>>(shape?: Shape<T>) {
+function nonPrimary<K extends keyof any>(shape?: ShapeLike<K>): K[] {
   return shape?.keys.filter((_, i) => !(shape.types[i] & TYPE.PRIMARY)) ?? [];
 }
 
@@ -174,6 +174,11 @@ type Shape<T = any, TId = {}> =
         };
     }>
   : undefined;
+
+type ShapeLike<K extends keyof any> = Readonly<{
+  keys: readonly K[];
+  types: readonly number[];
+}>;
 
 type Template<T = unknown> = (
   t: typeof combineFlags & typeof TYPE & { RELATION: typeof RELATION },
