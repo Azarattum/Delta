@@ -8,5 +8,4 @@ export * from "./range";
 export * from "./fork";
 export * from "./join";
 export * from "./map";
-export * from "./replicate";
 export * from "./sink";
