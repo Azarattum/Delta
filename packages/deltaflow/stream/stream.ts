@@ -89,7 +89,7 @@ function stream<
             const snapshot = structuredClone(compressed);
             scheduler.current.enqueue(() => options.flush!(snapshot), 1);
           }
-          return process(compressed).then(() => undefined);
+          return process(compressed).then(() => {});
         }, 0);
       }
     }
@@ -156,10 +156,10 @@ type InferOut<TPush, TPull, TUpstreams extends any[]> =
   : TPull;
 
 type PartialEntities<T extends any[]> =
-  T extends [any] ? [Awaited<T[0]>] : { [K in keyof T]?: Awaited<T[K]> };
+  T extends [infer U] ? [U] : { [K in keyof T]?: T[K] };
 
 type EntityQueue<T extends any[]> =
-  T extends [any] ? [Awaited<T[0]>[]] : { [K in keyof T]?: Awaited<T[K]>[] };
+  T extends [infer U] ? [U[]] : { [K in keyof T]?: T[K][] };
 
 type Stream<TOut, TIn extends any[] = unknown[], TPullOptions = unknown> = {
   /** Subscribes to changes and immediately pulls the current state */
