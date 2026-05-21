@@ -1,15 +1,9 @@
-import {
-  children,
-  compare,
-  nonPrimary,
-  reorder,
-  type Shape,
-} from "../../datastructure/shape";
-import type { CLGlobal, CLMeta, CLSet } from "../../datastructure/clset";
 import { add, sort, distinct, type ZSet } from "../../datastructure/zset";
-import { zStream, clStream, type OfZStream, type ZStream } from "../stream";
-import { SyncPromise } from "../../stream";
+import { children, compare, reorder } from "../../datastructure/shape";
+import type { Shape } from "../../datastructure/shape";
+import { zStream } from "../stream";
 
+// TODO: memory is extremely incomplete compared to SQLite source!
 export function memory<T extends Record<string, unknown>>(
   shape: Shape<T>,
   initialData: T[] = [],
@@ -42,7 +36,7 @@ export function memory<T extends Record<string, unknown>>(
               return !!contains !== !!exclude;
             }),
           )
-        : data[0],
+          : data[0],
       );
 
       const scanShape = order ? reorder(shape, ...order) : shape;
@@ -54,32 +48,5 @@ export function memory<T extends Record<string, unknown>>(
       return scanSet;
     },
     flush: (changes) => changes.forEach(([x]) => distinct(add(data, x))),
-  })(null);
-}
-
-export function memoryReplication<
-  TStream extends ZStream<T>,
-  T extends Record<string, unknown> = OfZStream<TStream>,
->(dataStream: TStream, global: CLGlobal, initialData: [number, CLMeta][] = []) {
-  // TODO: use generic key, not a number
-  const stored = new Map<number, CLMeta>(initialData);
-
-  return clStream({
-    pull(options) {
-      return SyncPromise.one(dataStream.pull(options)).then((zset) => {
-        const [data, _, shape] = zset;
-
-        const emptyCols = nonPrimary(shape).flatMap(() => [0, global.peer]);
-
-        // TODO: do not use the ID, but actual key!
-        const meta = data.map(
-          (x) =>
-            // TODO: I'm not sure if fallback here is a good idea...
-            stored.get((x as any).id) ?? [global.version, 0, ...emptyCols],
-        );
-
-        return [data, meta, shape] as unknown as CLSet<T>;
-      });
-    },
   })(null);
 }

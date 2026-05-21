@@ -323,7 +323,7 @@ it("calls external flush", async () => {
     flush,
   })(null);
 
-  expectTypeOf(source).toEqualTypeOf<Stream<never, [number]>>();
+  expectTypeOf(source).toEqualTypeOf<Stream<never, [number]>>(); // TODO: why is this never, though?..
   expectTypeOf(source.flush).returns.toEqualTypeOf<MaybePromise<void>>();
   source.push(0);
 
