@@ -5,6 +5,39 @@ import { isPrimary } from "./shape";
 type CLMeta = [version: number, causality: number, ...clocks: number[]];
 type CLGlobal = { version: number; peer: number };
 type CLSet<T> = MetaSet<T, CLMeta>;
+type NextVersion = (mergeVersion?: number) => number;
+
+// Lower 16 bits are reserved for peer indices, so the clock starts at 2^16
+const CLOCK = 65536;
+
+function bump(meta: CLMeta, nextVersion: NextVersion) {
+  meta[0] = nextVersion(meta[0]);
+  return meta;
+}
+
+function tombstone(meta: CLMeta) {
+  if (meta[1] % 2 === 1) meta[1]++, reset(meta);
+  return meta;
+}
+
+function revive(meta: CLMeta) {
+  if (meta[1] % 2 === 0) meta[1]++, reset(meta);
+  return meta;
+}
+
+function tick(meta: CLMeta, index: number) {
+  meta[2 + index] += CLOCK - peer(meta[2 + index]);
+  return meta;
+}
+
+function reset(meta: CLMeta) {
+  for (let i = 2; i < meta.length; i++) meta[i] = 0;
+  return meta;
+}
+
+function peer(clock: number) {
+  return clock % CLOCK;
+}
 
 function merge<T>(a: CLSet<T>, b: CLSet<T>, global: CLGlobal) {
   const nextVersion = global.version + 1;
@@ -64,5 +97,5 @@ function copy<T>(item: CLSet<T>) {
   );
 }
 
-export { merge, copy };
-export type { CLSet, CLMeta, CLGlobal };
+export { revive, tombstone, tick, bump, peer, copy, merge };
+export type { CLSet, CLMeta, CLGlobal, NextVersion };
