@@ -1,4 +1,5 @@
 import { shape, type Order } from "../../datastructure/shape";
+import { create, update } from "../../datastructure/zset";
 import { join, limit, order, range, sink } from "..";
 import { it, expect, afterAll } from "bun:test";
 import { rm } from "node:fs/promises";
@@ -48,7 +49,11 @@ it("works with sqlite", async () => {
     },
   ]);
 
-  messages.push([[{ id: 4, text: "Nice to meet you!", user: 1 }], [1]]);
+  messages.push([
+    [{ id: 4, text: "Nice to meet you!", user: 1 }],
+    [create(message)],
+    message,
+  ]);
   expect(joined.pull()[0]).toEqual([
     {
       id: 0,
@@ -68,7 +73,7 @@ it("works with sqlite", async () => {
     },
   ]);
 
-  users.push([[{ id: 2, name: "Emily" }], [1]]);
+  users.push([[{ id: 2, name: "Emily" }], [create(user)], user]);
   await users.flush();
   expect(joined.pull()[0]).toEqual([
     {
@@ -174,6 +179,40 @@ it("supports cursor pagination with composite order", () => {
     order,
   });
   expect(reverseFromStart.map((row) => row.id)).toEqual([4, 5]);
+});
+
+it("updates only changed sqlite columns", async () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    name: t.STRING,
+    email: t.STRING,
+  }));
+
+  const users = sqlite(db, "field_mask_users", user, [
+    { id: 0, name: "Ada", email: "a@example.com" },
+    { id: 1, name: "Grace", email: "g@example.com" },
+  ]);
+  db.run(`
+    CREATE TRIGGER field_mask_email_guard
+    BEFORE UPDATE OF email ON field_mask_users
+    BEGIN
+      SELECT RAISE(ABORT, 'email touched');
+    END
+  `);
+
+  users.push([
+    [{ id: 1, name: "Grace Hopper", email: "ignored@example.com" }],
+    [update(user, "name")],
+    user,
+  ]);
+  await users.flush();
+
+  expect(
+    db.query("SELECT id, name, email FROM field_mask_users ORDER BY id").all(),
+  ).toEqual([
+    { id: 0, name: "Ada", email: "a@example.com" },
+    { id: 1, name: "Grace Hopper", email: "g@example.com" },
+  ]);
 });
 
 afterAll(async () => {

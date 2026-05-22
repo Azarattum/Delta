@@ -62,8 +62,8 @@ type PullOptions<T = Record<string, unknown>> = {
   }[];
   /** Order to pull in */
   order?: Order<T>;
-  /** Default weight to initialize data with */
-  weight?: number;
+  /** Logical row cardinality to initialize data with */
+  cardinality?: number;
   /** Cursor for precise pagination control */
   cursor?: {
     /** Anchoring element to start pagination from */

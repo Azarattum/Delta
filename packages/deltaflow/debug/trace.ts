@@ -19,7 +19,7 @@ export function instrumentPull<T extends { id: number }>(source: {
       offset: cursor?.offset,
       count: cursor?.count,
       exclusive: cursor?.exclusive,
-      weight: opts?.weight,
+      cardinality: opts?.cardinality,
       returned: result[0].map((item: T, idx: number) => ({
         id: item.id,
         meta: result[1][idx],
@@ -171,8 +171,8 @@ export function formatRangeTrace(
     if (pull.offset) parts.push(`offset: ${pull.offset}`);
     if (pull.count !== undefined) parts.push(`count: ${pull.count}`);
     if (pull.exclusive) parts.push(`exclusive: true`);
-    if (pull.weight !== undefined && pull.weight !== 1) {
-      parts.push(`weight: ${pull.weight}`);
+    if (pull.cardinality !== undefined && pull.cardinality !== 1) {
+      parts.push(`cardinality: ${pull.cardinality}`);
     }
     return dim(parts.join(", "));
   }
@@ -272,7 +272,7 @@ interface PullTrace {
   offset: number | undefined;
   count: number | undefined;
   exclusive: boolean | undefined;
-  weight: number | undefined;
+  cardinality: number | undefined;
   returned: { id: number; meta: number }[];
 }
 

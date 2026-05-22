@@ -1,4 +1,5 @@
-import { join, memory, nest, shape, sink } from "..";
+import { create, remove, update } from "../datastructure/zset";
+import { join, memory, sink, nest, shape } from "..";
 import { expect, mock, it } from "bun:test";
 
 it("joins streams", () => {
@@ -44,14 +45,18 @@ it("joins streams", () => {
       },
     ]);
     expect({ ...(meta as any) }).toEqual({
-      0: 1,
-      1: 1,
-      messages: [[1, 1], [1]],
+      0: create(userWithMessages),
+      1: create(userWithMessages),
+      messages: [[create(message), create(message)], [create(message)]],
     });
     expect(shape).toEqual(userWithMessages);
   }
 
-  messages.push([[{ id: 4, text: "Nice to meet you!", user: 1 }], [1]]);
+  messages.push([
+    [{ id: 4, text: "Nice to meet you!", user: 1 }],
+    [create(message)],
+    message,
+  ]);
   {
     const [data, meta, shape] = joined.pull();
     expect(data).toEqual([
@@ -73,17 +78,17 @@ it("joins streams", () => {
       },
     ]);
     expect({ ...(meta as any) }).toEqual({
-      0: 1,
-      1: 1,
+      0: create(userWithMessages),
+      1: create(userWithMessages),
       messages: [
-        [1, 1],
-        [1, 1],
+        [create(message), create(message)],
+        [create(message), create(message)],
       ],
     });
     expect(shape).toEqual(userWithMessages);
   }
 
-  users.push([[{ id: 2, name: "Emily" }], [1]]);
+  users.push([[{ id: 2, name: "Emily" }], [create(user)], user]);
   {
     const [data, meta, shape] = joined.pull();
     expect(data).toEqual([
@@ -110,10 +115,14 @@ it("joins streams", () => {
       },
     ]);
     expect({ ...(meta as any) }).toEqual({
-      0: 1,
-      1: 1,
-      2: 1,
-      messages: [[1, 1], [1, 1], [1]],
+      0: create(userWithMessages),
+      1: create(userWithMessages),
+      2: create(userWithMessages),
+      messages: [
+        [create(message), create(message)],
+        [create(message), create(message)],
+        [create(message)],
+      ],
     });
     expect(shape).toEqual(userWithMessages);
   }
@@ -123,7 +132,8 @@ it("joins streams", () => {
       { id: 1, text: "I'm Bob", user: 0 }, // Delete message
       { id: 3, text: "I am here!", user: 2 }, // Edit message
     ],
-    [-1, 0],
+    [remove(message), update(message, "text")],
+    message,
   ]);
   {
     const [data, meta, shape] = joined.pull();
@@ -148,10 +158,14 @@ it("joins streams", () => {
       },
     ]);
     expect({ ...(meta as any) }).toEqual({
-      0: 1,
-      1: 1,
-      2: 1,
-      messages: [[1], [1, 1], [1]],
+      0: create(userWithMessages),
+      1: create(userWithMessages),
+      2: create(userWithMessages),
+      messages: [
+        [create(message)],
+        [create(message), create(message)],
+        [create(message)],
+      ],
     });
     expect(shape).toEqual(userWithMessages);
   }
@@ -162,7 +176,8 @@ it("joins streams", () => {
       { id: 4, text: "Nice to meet you!", user: 2 },
     ],
     // Updating relationship keys or primary keys is not allowed! (using remove/add instead)
-    [-1, 1],
+    [remove(message), create(message)],
+    message,
   ]);
   {
     const [data, meta, shape] = joined.pull();
@@ -187,10 +202,14 @@ it("joins streams", () => {
       },
     ]);
     expect({ ...(meta as any) }).toEqual({
-      0: 1,
-      1: 1,
-      2: 1,
-      messages: [[1], [1], [1, 1]],
+      0: create(userWithMessages),
+      1: create(userWithMessages),
+      2: create(userWithMessages),
+      messages: [
+        [create(message)],
+        [create(message)],
+        [create(message), create(message)],
+      ],
     });
     expect(shape).toEqual(userWithMessages);
   }
@@ -217,51 +236,59 @@ it("joins changes correctly", () => {
   expect(spy).toHaveBeenLastCalledWith([[{ id: 2 }], [0]]);
 
   // Only left
-  joined.push([[{ id: 1 }], [1], parent], undefined);
+  joined.push([[{ id: 1 }], [create(parent)], parent], undefined);
   joined.flush();
-  expect(spy).toHaveBeenLastCalledWith([[{ id: 1, item: [] }], [1], both]);
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 1, item: [] }],
+    [create(both)],
+    both,
+  ]);
 
   // Only right
-  joined.push(undefined, [[{ id: 1, ref: 1 }], [1]]);
+  joined.push(undefined, [[{ id: 1, ref: 1 }], [create(child)], child]);
   joined.flush();
-  expect(spy).toHaveBeenLastCalledWith([[], [], parent]);
+  expect(spy).toHaveBeenLastCalledWith([[], [], both]);
 
   // Left with source join
-  joined.push([[{ id: 2 }], [1], parent], undefined);
+  joined.push([[{ id: 2 }], [create(parent)], parent], undefined);
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 2, item: [{ id: 0, ref: 2 }] }],
-    [1],
+    [create(both)],
     both,
   ]);
 
   // Right with source join
-  joined.push(undefined, [[{ id: 1, ref: 0 }], [1], child]);
+  joined.push(undefined, [[{ id: 1, ref: 0 }], [create(child)], child]);
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 0, item: [{ id: 1, ref: 0 }] }],
-    [0],
+    [update(both, "item")],
     both,
   ]);
 
   // Join between deltas
-  joined.push([[{ id: 3 }], [1], parent], [[{ id: 1, ref: 3 }], [1], child]);
+  joined.push(
+    [[{ id: 3 }], [create(parent)], parent],
+    [[{ id: 1, ref: 3 }], [create(child)], child],
+  );
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 3, item: [{ id: 1, ref: 3 }] }],
-    [1],
+    [create(both)],
     both,
   ]);
 
   // Cross-join between deltas and source
   joined.push(
-    [[{ id: 2 }], [1], parent],
+    [[{ id: 2 }], [create(parent)], parent],
     [
       [
         { id: 3, ref: 2 },
         { id: 4, ref: 0 },
       ],
-      [1, 1],
+      [create(child), create(child)],
+      child,
     ],
   );
   joined.flush();
@@ -276,7 +303,7 @@ it("joins changes correctly", () => {
         ],
       },
     ],
-    [0, 1],
+    [update(both, "item"), create(both)],
     both,
   ]);
 
@@ -288,23 +315,23 @@ it("joins changes correctly", () => {
         { id: 3, ref: 2 },
         { id: 4, ref: 0 },
       ],
-      [1, 1],
+      [create(child), create(child)],
       child,
     ],
   );
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 0, item: [{ id: 4, ref: 0 }] }],
-    [0],
+    [update(both, "item")],
     both,
   ]);
 
   // Empty right join
-  joined.push([[{ id: 2 }], [1], parent], [[], [], child]);
+  joined.push([[{ id: 2 }], [create(parent)], parent], [[], [], child]);
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 2, item: [{ id: 0, ref: 2 }] }],
-    [1],
+    [create(both)],
     both,
   ]);
 
@@ -334,6 +361,7 @@ it("joins with foreign key updates", () => {
   ]);
 
   const joined = join(users, "profile", profiles, "id", "profile", true);
+  const userWithProfile = nest(user, "profile", profile, true);
   expect(joined.pull()[0]).toEqual([
     { id: 0, profile: { id: 0, bio: "Zero" } },
     { id: 1, profile: { id: 1, bio: "One" } },
@@ -342,34 +370,34 @@ it("joins with foreign key updates", () => {
   const spy = mock();
   joined.connect(spy);
 
-  users.push([[{ id: 1, profile: 1 }], [-1], user]);
-  users.push([[{ id: 1, profile: 2 }], [1], user]);
+  users.push([[{ id: 1, profile: 1 }], [remove(user)], user]);
+  users.push([[{ id: 1, profile: 2 }], [create(user)], user]);
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [
       { id: 1, profile: 1 },
       { id: 1, profile: { id: 2, bio: "Two" } },
     ],
-    [-1, 1],
-    nest(user, "profile", profile, true),
+    [remove(userWithProfile), create(userWithProfile)],
+    userWithProfile,
   ]);
 
-  profiles.push([[{ id: 2, bio: "3" }], [1], profile]);
-  profiles.push([[{ id: 2, bio: "2" }], [0], profile]);
+  profiles.push([[{ id: 2, bio: "3" }], [create(profile)], profile]);
+  profiles.push([[{ id: 2, bio: "2" }], [update(profile, "bio")], profile]);
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 1, profile: { id: 2, bio: "2" } }],
     [0],
-    nest(user, "profile", profile, true),
+    userWithProfile,
   ]);
 
-  users.push([[{ id: 2, profile: 3 }], [1], user]);
-  profiles.push([[{ id: 3, bio: "Three" }], [1], profile]);
+  users.push([[{ id: 2, profile: 3 }], [create(user)], user]);
+  profiles.push([[{ id: 3, bio: "Three" }], [create(profile)], profile]);
   joined.flush();
   expect(spy).toHaveBeenLastCalledWith([
     [{ id: 2, profile: { id: 3, bio: "Three" } }],
-    [1],
-    nest(user, "profile", profile, true),
+    [create(userWithProfile)],
+    userWithProfile,
   ]);
 
   expect(joined.pull()[0]).toEqual([
@@ -405,10 +433,10 @@ it("propagates middle-level foreign key updates", () => {
     { id: 1, b: { id: 1, cs: [{ id: 10, b: 1, x: "x" }] } },
   ]);
 
-  c.push([[{ id: 10, b: 1, x: "x" }], [-1], C]);
-  c.push([[{ id: 10, b: 2, x: "x" }], [1], C]);
-  a.push([[{ id: 1, b: 1 }], [-1], A]);
-  a.push([[{ id: 1, b: 2 }], [1], A]);
+  c.push([[{ id: 10, b: 1, x: "x" }], [remove(C)], C]);
+  c.push([[{ id: 10, b: 2, x: "x" }], [create(C)], C]);
+  a.push([[{ id: 1, b: 1 }], [remove(A)], A]);
+  a.push([[{ id: 1, b: 2 }], [create(A)], A]);
 
   const [data, meta] = full.pull();
   expect(data).toEqual([
@@ -423,12 +451,12 @@ it("propagates middle-level foreign key updates", () => {
       },
     },
   ]);
-  expect(meta).toEqual([1]);
-  expect(meta["b"]).toEqual([1]);
-  expect(meta["b"].cs).toEqual([[1, 1]]);
+  expect(meta).toEqual([create(nest(A, "b", nest(B, "cs", C), true))]);
+  expect(meta["b"]).toEqual([create(nest(B, "cs", C))]);
+  expect(meta["b"].cs).toEqual([[create(C), create(C)]]);
 
-  c.push([[{ id: 10, b: 2, x: "x" }], [-1], C]);
-  c.push([[{ id: 10, b: 1, x: "x" }], [1], C]);
+  c.push([[{ id: 10, b: 2, x: "x" }], [remove(C)], C]);
+  c.push([[{ id: 10, b: 1, x: "x" }], [create(C)], C]);
   expect(full.pull()[0]).toEqual([
     { id: 1, b: { id: 2, cs: [{ id: 11, b: 2, x: "y" }] } },
   ]);
@@ -454,7 +482,7 @@ it("sorts streams for join", () => {
       { id: 0, name: "Alice" },
       { id: 1, name: "Bob" },
     ],
-    [1, 1],
+    [create(user), create(user)],
     user,
   ]);
 
@@ -463,7 +491,7 @@ it("sorts streams for join", () => {
       { id: 0, text: "I'm Bob", user: 1 },
       { id: 1, text: "I'm Alice", user: 0 },
     ],
-    [1, 2],
+    [create(message), create(message, 2)],
     message,
   ]);
 
@@ -484,9 +512,9 @@ it("sorts streams for join", () => {
     ]);
 
     expect({ ...meta }).toEqual({
-      0: 1,
-      1: 1,
-      messages: [[2], [1]],
+      0: create(nest(user, "messages", message)),
+      1: create(nest(user, "messages", message)),
+      messages: [[create(message, 2)], [create(message)]],
     });
 
     expect(shape).toEqual(nest(user, "messages", message));
@@ -497,7 +525,7 @@ it("sorts streams for join", () => {
       { id: 3, name: "Dave" },
       { id: 2, name: "Clare" },
     ],
-    [1, 1],
+    [create(user), create(user)],
     user,
   ]);
 
@@ -506,7 +534,7 @@ it("sorts streams for join", () => {
       { id: 2, text: "I'm Clare", user: 2 },
       { id: 3, text: "I'm Dave", user: 3 },
     ],
-    [1, 2],
+    [create(message), create(message, 2)],
     message,
   ]);
 
@@ -524,15 +552,15 @@ it("sorts streams for join", () => {
     ]);
 
     expect({ ...meta }).toEqual({
-      0: 1,
-      1: 1,
-      messages: [[2], [1]],
+      0: create(nest(user, "messages", message)),
+      1: create(nest(user, "messages", message)),
+      messages: [[create(message, 2)], [create(message)]],
     });
 
     expect(shape).toEqual(nest(user, "messages", message));
   }
 
-  users.push([[{ id: 4, name: "Edward" }], [1], user]);
+  users.push([[{ id: 4, name: "Edward" }], [create(user)], user]);
 
   messages.push([
     [
@@ -540,7 +568,7 @@ it("sorts streams for join", () => {
       { id: 5, text: "Alice still here", user: 0 },
       { id: 6, text: "The Edward", user: 4 },
     ],
-    [1, 1, 1],
+    [create(message), create(message), create(message)],
     message,
   ]);
 
@@ -565,9 +593,9 @@ it("sorts streams for join", () => {
     ]);
 
     expect({ ...meta }).toEqual({
-      0: 0,
-      1: 1,
-      messages: [[1], [1, 1]],
+      0: update(nest(user, "messages", message), "messages"),
+      1: create(nest(user, "messages", message)),
+      messages: [[create(message)], [create(message), create(message)]],
     });
 
     expect(shape).toEqual(nest(user, "messages", message));
@@ -594,7 +622,7 @@ it("joins with sync flush", async () => {
       { id: 0, name: "Alice" },
       { id: 1, name: "Bob" },
     ],
-    [1, 1],
+    [create(user), create(user)],
     user,
   ]);
 
@@ -603,7 +631,7 @@ it("joins with sync flush", async () => {
       { id: 0, text: "I'm Bob", user: 1 },
       { id: 1, text: "I'm Alice", user: 0 },
     ],
-    [1, 2],
+    [create(message), create(message, 2)],
     message,
   ]);
 
@@ -622,9 +650,9 @@ it("joins with sync flush", async () => {
       { id: 1, name: "Bob", messages: [{ id: 0, text: "I'm Bob", user: 1 }] },
     ]);
     expect({ ...(meta as any) }).toEqual({
-      0: 1,
-      1: 1,
-      messages: [[2], [1]],
+      0: create(nest(user, "messages", message)),
+      1: create(nest(user, "messages", message)),
+      messages: [[create(message, 2)], [create(message)]],
     });
   }
   {
@@ -633,7 +661,7 @@ it("joins with sync flush", async () => {
         { id: 0, name: "Alice" },
         { id: 1, name: "Bob" },
       ],
-      [1, 1],
+      [create(user), create(user)],
       user,
     ]);
   }
@@ -691,14 +719,22 @@ it("handles deeply nested joins", () => {
   );
   full.connect(fullFn);
 
-  users.push([[{ id: 1, name: "Alice" }], [1], user]);
-  users.push([[{ id: 0, name: "Bob" }], [1], user]);
+  users.push([[{ id: 1, name: "Alice" }], [create(user)], user]);
+  users.push([[{ id: 0, name: "Bob" }], [create(user)], user]);
 
-  comments.push([[{ id: 0, text: "First!", user: 1 }], [1], comment]);
-  comments.push([[{ id: 1, text: "Great post!", user: 0 }], [1], comment]);
+  comments.push([
+    [{ id: 0, text: "First!", user: 1 }],
+    [create(comment)],
+    comment,
+  ]);
+  comments.push([
+    [{ id: 1, text: "Great post!", user: 0 }],
+    [create(comment)],
+    comment,
+  ]);
 
-  likes.push([[{ id: 0, count: 2, comment: 0 }], [1, 1], like]);
-  likes.push([[{ id: 1, count: 1, comment: 1 }], [1, 1], like]);
+  likes.push([[{ id: 0, count: 2, comment: 0 }], [create(like)], like]);
+  likes.push([[{ id: 1, count: 1, comment: 1 }], [create(like)], like]);
 
   messages.push([
     [
@@ -707,7 +743,7 @@ it("handles deeply nested joins", () => {
       { id: 2, text: "And I'm Alice!", user: 1 },
       { id: 3, text: "I'll be here!", user: 2 },
     ],
-    [1, 1, 1, 1],
+    [create(message), create(message), create(message), create(message)],
     message,
   ]);
 
@@ -735,8 +771,11 @@ it("handles deeply nested joins", () => {
       likes: { id: 1, count: 1, comment: 1 },
     },
   ]);
-  expect(calls[0][1]).toEqual([1, 1]);
-  expect(calls[0][1].likes).toEqual([1, 1]);
+  expect(calls[0][1]).toEqual([
+    create(nest(comment, "likes", like, true)),
+    create(nest(comment, "likes", like, true)),
+  ]);
+  expect(calls[0][1].likes).toEqual([create(like), create(like)]);
 
   expect(calls[1][0]).toEqual([
     {
@@ -753,8 +792,14 @@ it("handles deeply nested joins", () => {
       messages: [{ id: 2, text: "And I'm Alice!", user: 1 }],
     },
   ]);
-  expect(calls[1][1]).toEqual([1, 1]);
-  expect(calls[1][1].messages).toEqual([[1, 1], [1]]);
+  expect(calls[1][1]).toEqual([
+    create(nest(user, "messages", message)),
+    create(nest(user, "messages", message)),
+  ]);
+  expect(calls[1][1].messages).toEqual([
+    [create(message), create(message)],
+    [create(message)],
+  ]);
 
   expect(calls[2][0]).toEqual([
     {
@@ -787,11 +832,32 @@ it("handles deeply nested joins", () => {
       ],
     },
   ]);
-  expect(calls[2][1]).toEqual([1, 1]);
-  expect(calls[2][1].messages).toEqual([[1, 1], [1]]);
-  expect(calls[2][1].comments).toEqual([[1], [1]]);
-  expect(calls[2][1].comments[0].likes).toEqual([1]);
-  expect(calls[2][1].comments[1].likes).toEqual([1]);
+  expect(calls[2][1]).toEqual([
+    create(
+      nest(
+        nest(user, "messages", message),
+        "comments",
+        nest(comment, "likes", like, true),
+      ),
+    ),
+    create(
+      nest(
+        nest(user, "messages", message),
+        "comments",
+        nest(comment, "likes", like, true),
+      ),
+    ),
+  ]);
+  expect(calls[2][1].messages).toEqual([
+    [create(message), create(message)],
+    [create(message)],
+  ]);
+  expect(calls[2][1].comments).toEqual([
+    [create(nest(comment, "likes", like, true))],
+    [create(nest(comment, "likes", like, true))],
+  ]);
+  expect(calls[2][1].comments[0].likes).toEqual([create(like)]);
+  expect(calls[2][1].comments[1].likes).toEqual([create(like)]);
 });
 
 it("updates nested chains", () => {
@@ -817,13 +883,17 @@ it("updates nested chains", () => {
     { id: 1, name: "Alice", messages: [{ id: 1, user: 1, text: "Hi" }] },
   ]);
 
-  users.push([[{ id: 0, name: "BOB" }], [0], user]);
+  users.push([[{ id: 0, name: "BOB" }], [update(user, "name")], user]);
   expect(joined.pull()[0]).toEqual([
     { id: 0, name: "BOB", messages: [{ id: 0, user: 0, text: "Hello" }] },
     { id: 1, name: "Alice", messages: [{ id: 1, user: 1, text: "Hi" }] },
   ]);
 
-  messages.push([[{ id: 2, user: 0, text: "there" }], [1], message]);
+  messages.push([
+    [{ id: 2, user: 0, text: "there" }],
+    [create(message)],
+    message,
+  ]);
   expect(joined.pull()[0]).toEqual([
     {
       id: 0,
@@ -836,7 +906,11 @@ it("updates nested chains", () => {
     { id: 1, name: "Alice", messages: [{ id: 1, user: 1, text: "Hi" }] },
   ]);
 
-  messages.push([[{ id: 2, user: 0, text: "there!" }], [0], message]);
+  messages.push([
+    [{ id: 2, user: 0, text: "there!" }],
+    [update(message, "text")],
+    message,
+  ]);
   expect(joined.pull()[0]).toEqual([
     {
       id: 0,
@@ -878,8 +952,8 @@ it("handles join key parent updates", () => {
     },
   ]);
 
-  users.push([[{ id: 0, name: "Bob", msg: 0 }], [-1], user]);
-  users.push([[{ id: 0, name: "Bob", msg: 1 }], [1], user]);
+  users.push([[{ id: 0, name: "Bob", msg: 0 }], [remove(user)], user]);
+  users.push([[{ id: 0, name: "Bob", msg: 1 }], [create(user)], user]);
   expect(joined.pull()[0]).toEqual([
     { id: 0, name: "Bob", msg: 1, messages: [{ id: 1, user: 1, text: "Hi" }] },
   ]);
@@ -913,8 +987,16 @@ it("handles join key child updates", () => {
     },
   ]);
 
-  messages.push([[{ id: 0, user: 0, text: "Hello" }], [-1], message]);
-  messages.push([[{ id: 0, user: 1, text: "Hello" }], [1], message]);
+  messages.push([
+    [{ id: 0, user: 0, text: "Hello" }],
+    [remove(message)],
+    message,
+  ]);
+  messages.push([
+    [{ id: 0, user: 1, text: "Hello" }],
+    [create(message)],
+    message,
+  ]);
   expect(joined.pull()[0]).toEqual([
     { id: 0, name: "Bob", msg: 0, messages: [] },
   ]);
@@ -944,10 +1026,18 @@ it("handles multiple simultaneous join key updates", () => {
   const joined = sink(join(users, "msg", messages, "user", "messages"));
   joined.pull();
 
-  messages.push([[{ id: 0, user: 0, text: "Hello" }], [-1], message]);
-  messages.push([[{ id: 0, user: 2, text: "Hello" }], [1], message]);
-  messages.push([[{ id: 1, user: 1, text: "Hi" }], [-1], message]);
-  messages.push([[{ id: 1, user: 0, text: "Hi" }], [1], message]);
+  messages.push([
+    [{ id: 0, user: 0, text: "Hello" }],
+    [remove(message)],
+    message,
+  ]);
+  messages.push([
+    [{ id: 0, user: 2, text: "Hello" }],
+    [create(message)],
+    message,
+  ]);
+  messages.push([[{ id: 1, user: 1, text: "Hi" }], [remove(message)], message]);
+  messages.push([[{ id: 1, user: 0, text: "Hi" }], [create(message)], message]);
 
   expect(joined.pull()[0]).toEqual([
     {
@@ -983,10 +1073,10 @@ it("handles chained join key updates correctly", () => {
   joined.pull();
 
   // Update user's msg 0 -> 1 -> 2 in sequence
-  users.push([[{ id: 0, name: "Alice", msg: 0 }], [-1], user]);
-  users.push([[{ id: 0, name: "Alice", msg: 1 }], [1], user]);
-  users.push([[{ id: 0, name: "Alice", msg: 1 }], [-1], user]);
-  users.push([[{ id: 0, name: "Alice", msg: 2 }], [1], user]);
+  users.push([[{ id: 0, name: "Alice", msg: 0 }], [remove(user)], user]);
+  users.push([[{ id: 0, name: "Alice", msg: 1 }], [create(user)], user]);
+  users.push([[{ id: 0, name: "Alice", msg: 1 }], [remove(user)], user]);
+  users.push([[{ id: 0, name: "Alice", msg: 2 }], [create(user)], user]);
 
   const result = joined.pull()[0];
   expect(result).toEqual([
@@ -1019,8 +1109,8 @@ it("handles empty join with key updates", () => {
     { id: 0, name: "Alice", msg: 99, messages: [] },
   ]);
 
-  users.push([[{ id: 0, name: "Alice", msg: 99 }], [-1], user]);
-  users.push([[{ id: 0, name: "Alice", msg: 0 }], [1], user]);
+  users.push([[{ id: 0, name: "Alice", msg: 99 }], [remove(user)], user]);
+  users.push([[{ id: 0, name: "Alice", msg: 0 }], [create(user)], user]);
 
   expect(joined.pull()[0]).toEqual([
     {

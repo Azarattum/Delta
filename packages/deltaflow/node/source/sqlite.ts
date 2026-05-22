@@ -1,4 +1,10 @@
-import { isNullable, datatype, primary } from "../../datastructure/shape";
+import {
+  isNullable,
+  nonPrimary,
+  datatype,
+  primary,
+} from "../../datastructure/shape";
+import { cardinality, changed, create, remove } from "../../datastructure/zset";
 import type { SQLQueryBindings, Database } from "bun:sqlite";
 import type { Shape } from "../../datastructure/shape";
 import { zStream, type PullOptions } from "../stream";
@@ -18,6 +24,7 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
   //   console.log("SQL:", args[0]), orig.call(sqlite, ...args)
   // );
   const pks = primary(shape);
+  const fields = nonPrimary(shape);
 
   const columns = shape.keys.map((name, i) => {
     const type = shape.types[i];
@@ -37,7 +44,7 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
 
   // TODO: use proper bindings to avoid SQL injection
   return zStream({
-    pull: ({ filter, order, cursor, weight = 1, total } = {}) => {
+    pull: ({ filter, order, cursor, total, cardinality: n = 1 } = {}) => {
       order ??= pks;
       const orderKeys = order.map((x) => (Array.isArray(x) ? x[0] : x));
 
@@ -99,27 +106,37 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
           .get()!["count" as keyof {}] as number;
       }
 
-      return [scan, Array(scan.length).fill(weight), shape] as ZSet<T>;
+      const meta =
+        n > 0 ? create(shape, n)
+        : n < 0 ? remove(shape, -n)
+        : 0;
+      return [scan, Array(scan.length).fill(meta), shape] as ZSet<T>;
     },
     flush: (changes: [ZSet<T>][]) => {
       changes.forEach(([set]) => {
+        const [data, meta, thisShape = shape] = set;
+        // TODO: batch these queries for better performance
         for (let i = 0; i < len(set); i++) {
-          const op = set![1][i];
-          if (op < 0) {
+          const count = cardinality(meta[i], thisShape);
+          if (count < 0) {
             db.run(
-              `DELETE FROM ${table} WHERE id = ?`,
-              (set![0][i] as any).id, // TODO: this is a hack for POC
+              `DELETE FROM ${table} WHERE ${pks.map((key) => `${key} = ?`).join(" AND ")}`,
+              pks.map((key) => data[i][key]) as SQLQueryBindings[],
             );
-          } else if (op > 0) {
+          } else if (count > 0) {
             db.run(
               `INSERT INTO ${table} VALUES (${shape.keys.map(() => "?").join(",")})`,
-              ...(Object.values(set![0][i]) as any[]), // TODO: this is a hack for POC
+              Object.values(data[i]) as SQLQueryBindings[],
             );
-          } else {
+          } else if (meta[i]) {
+            const changes = changed(meta[i], thisShape);
+            if (!changes.length) continue;
             db.run(
-              `UPDATE ${table} SET ${shape.keys.map((x) => `${x.toString()} = ?`).join(",")} WHERE id = ?`,
-              ...(Object.values(set![0][i]) as any[]), // TODO: this is a hack for POC
-              (set![0][i] as any).id, // TODO: this is a hack for POC
+              `UPDATE ${table} SET ${changes.map((i) => `${fields[i]} = ?`).join(",")} WHERE ${pks.map((key) => `${key} = ?`).join(" AND ")}`,
+              [
+                ...changes.map((i) => data[i][fields[i]]),
+                ...pks.map((key) => data[i][key]),
+              ] as SQLQueryBindings[],
             );
           }
         }

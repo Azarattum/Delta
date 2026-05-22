@@ -1,6 +1,6 @@
 import type { ZStream, OfZStream, PullOptions } from "./stream";
+import { cardinality, type ZSet } from "../datastructure/zset";
 import type { IsAsyncStream, MaybePromise } from "../stream";
-import type { ZSet } from "../datastructure/zset";
 import { stream, SyncPromise } from "../stream";
 
 export function count<
@@ -16,7 +16,9 @@ export function count<
         return SyncPromise.one(this.pull()).then(() => this.push(set));
       }
 
-      return (total = set[1].reduce((acc, x) => acc + Math.sign(x), total));
+      return (total = set[1].reduce((acc, x) => {
+        return acc + Math.sign(cardinality(x, set[2]));
+      }, total));
     },
     pull(options?: PullOptions) {
       if (total != null) return total as TReturn;

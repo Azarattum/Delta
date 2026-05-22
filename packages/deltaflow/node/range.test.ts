@@ -1,9 +1,11 @@
 import { it, expect, describe, beforeEach, mock } from "bun:test";
 import { shape, range, sink, limit, sqlite } from "..";
+import { create, remove, update } from "../datastructure/zset";
 import SQLite from "bun:sqlite";
 
 const idShape = shape((t) => ({ id: t(t.DOUBLE, t.PRIMARY) }));
 const ids = (...x: number[]) => x.map((id) => ({ id }));
+const [add, del, upd] = [create(idShape), remove(idShape), update(idShape)];
 
 it("limits simple queries", async () => {
   const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
@@ -25,7 +27,7 @@ it("limits simple queries", async () => {
     { id: 30, name: "Clara" },
   ]);
 
-  users.push([[{ id: 50, name: "Eve" }], [1], user]);
+  users.push([[{ id: 50, name: "Eve" }], [create(user)], user]);
   await users.flush();
 
   expect(view.pull()[0]).toEqual([
@@ -40,7 +42,7 @@ it("limits simple queries", async () => {
       { id: 25, name: "Agatha" },
       { id: 35, name: "Dave" },
     ],
-    [1, 1, 1],
+    [create(user), create(user), create(user)],
     user,
   ]);
   await users.flush();
@@ -74,7 +76,7 @@ it("respects limit bounds", async () => {
       { id: 27, name: "Gina" },
       { id: 28, name: "Hannah" },
     ],
-    [1, 1, 1],
+    [create(user), create(user), create(user)],
     user,
   ]);
   await users.flush();
@@ -85,7 +87,7 @@ it("respects limit bounds", async () => {
     { id: 25, name: "Agatha" },
   ]);
 
-  users.push([[{ id: 28, name: "Hannah" }], [-1], user]);
+  users.push([[{ id: 28, name: "Hannah" }], [remove(user)], user]);
   await users.flush();
 
   expect(view.pull()[0]).toEqual([
@@ -166,7 +168,7 @@ it("can push without pulling", async () => {
   const view = sink(range(users, window));
 
   window.push([3, 2]);
-  users.push([[{ id: 35, name: "Eve" }], [1], user]);
+  users.push([[{ id: 35, name: "Eve" }], [create(user)], user]);
 
   expect(view.pull()[0]).toEqual([
     { id: 20, name: "Bob" },
@@ -291,7 +293,11 @@ describe.each([
       ].slice(0, i),
     );
 
-    users.push(structuredClone([data, meta, user]));
+    users.push([
+      structuredClone(data),
+      meta.map((x) => (x > 0 ? create(user) : remove(user))),
+      user,
+    ]);
     await users.flush();
     expect(view.pull()[0]).toEqual(expected.slice(0, i));
   });
@@ -315,110 +321,114 @@ describe("limits lower bound with", async () => {
   });
 
   it("adds (no interleaf)", async () => {
-    await items.push([ids(1.5), [1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2), [1]);
+    await items.push([ids(1.5), [add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2), [add]);
     expect(view.bounds.lower?.id).toBe(2);
   });
 
   it("adds (interleaf)", async () => {
-    await items.push([ids(2.5), [1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2.5), [1]);
+    await items.push([ids(2.5), [add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2.5), [add]);
     expect(view.bounds.lower?.id).toBe(2.5);
   });
 
   it("adds (mixed interleaf)", async () => {
-    await items.push([ids(1.5, 2.5), [1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2, 2.5), [1, 1]);
+    await items.push([ids(1.5, 2.5), [add, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2, 2.5), [add, add]);
     expect(view.bounds.lower?.id).toBe(2);
   });
 
   it("removes (no interleaf)", async () => {
-    await items.push([ids(1), [-1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3), [-1]);
+    await items.push([ids(1), [del], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3), [del]);
     expect(view.bounds.lower?.id).toBe(4);
   });
 
   it("removes (interleaf)", async () => {
-    await items.push([ids(3), [-1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3), [-1]);
+    await items.push([ids(3), [del], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3), [del]);
     expect(view.bounds.lower?.id).toBe(4);
   });
 
   it("removes (mixed interleaf)", async () => {
-    await items.push([ids(2, 3), [-1, -1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3, 4), [-1, -1]);
+    await items.push([ids(2, 3), [del, del], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3, 4), [del, del]);
     expect(view.bounds.lower?.id).toBe(5);
   });
 
   it("adds=removes (no interleaf)", async () => {
-    await items.push([ids(1, 1.5), [-1, 1], idShape]);
+    await items.push([ids(1, 1.5), [del, add], idShape]);
     expect(delta).toHaveBeenLastCalledWith(ids(), []);
     expect(view.bounds.lower?.id).toBe(3);
   });
 
   it("adds=removes (interleaf)", async () => {
-    await items.push([ids(2, 2.5, 3.5), [-1, 1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3.5), [1]);
+    await items.push([ids(2, 2.5, 3.5), [del, add, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3.5), [add]);
     expect(view.bounds.lower?.id).toBe(3);
   });
 
   it("adds>removes (no interleaf)", async () => {
-    await items.push([ids(1, 1.5, 2), [-1, 1, -1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3), [-1]);
+    await items.push([ids(1, 1.5, 2), [del, add, del], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3), [del]);
     expect(view.bounds.lower?.id).toBe(4);
   });
 
   it("adds>removes (interleaf)", async () => {
-    await items.push([ids(1, 2, 2.5, 3.5, 5.5), [-1, -1, 1, 1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3, 3.5, 5.5), [-1, 1, 1]);
+    await items.push([
+      ids(1, 2, 2.5, 3.5, 5.5),
+      [del, del, add, add, add],
+      idShape,
+    ]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3, 3.5, 5.5), [del, add, add]);
     expect(view.bounds.lower?.id).toBe(3.5);
   });
 
   it("adds<removes (no interleaf)", async () => {
-    await items.push([ids(0.5, 1, 1.5), [1, -1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2), [1]);
+    await items.push([ids(0.5, 1, 1.5), [add, del, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2), [add]);
     expect(view.bounds.lower?.id).toBe(2);
   });
 
   it("adds<removes (interleaf)", async () => {
-    await items.push([ids(0.5, 1, 2.5), [1, -1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2.5), [1]);
+    await items.push([ids(0.5, 1, 2.5), [add, del, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2.5), [add]);
     expect(view.bounds.lower?.id).toBe(2.5);
   });
 
   it("adds<removes (interleaf 2)", async () => {
-    await items.push([ids(0.5, 1, 1.5, 2.5), [1, -1, 1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2, 2.5), [1, 1]);
+    await items.push([ids(0.5, 1, 1.5, 2.5), [add, del, add, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2, 2.5), [add, add]);
     expect(view.bounds.lower?.id).toBe(2);
   });
 
   it("adds<removes (interleaf 3)", async () => {
-    await items.push([ids(0.25, 0.5, 2), [1, 1, -1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(1), [1]);
+    await items.push([ids(0.25, 0.5, 2), [add, add, del], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(1), [add]);
     expect(view.bounds.lower?.id).toBe(1);
   });
 
   it("updates at anchor", async () => {
-    await items.push([ids(3), [0], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3), [0]);
+    await items.push([ids(3), [upd], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3), [upd]);
     expect(view.bounds.lower?.id).toBe(3);
   });
 
   it("removes then updates at anchor", async () => {
-    await items.push([ids(1.5, 3), [1, 0], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2, 3), [1, 0]);
+    await items.push([ids(1.5, 3), [add, upd], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2, 3), [add, upd]);
     expect(view.bounds.lower?.id).toBe(2);
   });
 
   it("adds then updates at anchor", async () => {
-    await items.push([ids(2, 3), [-1, 0], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3), [-1]);
+    await items.push([ids(2, 3), [del, upd], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3), [del]);
     expect(view.bounds.lower?.id).toBe(4);
   });
 
   it("skips within", async () => {
-    await items.push([ids(1, 2, 3.5, 5.5), [-1, -1, 1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3, 5.5), [-1, 1]);
+    await items.push([ids(1, 2, 3.5, 5.5), [del, del, add, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3, 5.5), [del, add]);
     expect(view.bounds.lower?.id).toBe(4);
   });
 });
@@ -441,104 +451,123 @@ describe("limits upper bound with", async () => {
   });
 
   it("adds (out of range)", async () => {
-    await items.push([ids(4.5), [1], idShape]);
+    await items.push([ids(4.5), [add], idShape]);
     expect(delta).toHaveBeenLastCalledWith(ids(), []);
     expect(view.bounds.upper?.id).toBe(4);
   });
 
   it("adds (no interleaf)", async () => {
-    await items.push([ids(1.5), [1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 4), [1, -1]);
+    await items.push([ids(1.5), [add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 4), [add, del]);
     expect(view.bounds.upper?.id).toBe(3);
   });
 
   it("adds (interleaf)", async () => {
-    await items.push([ids(3.5), [1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3.5, 4), [1, -1]);
+    await items.push([ids(3.5), [add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3.5, 4), [add, del]);
     expect(view.bounds.upper?.id).toBe(3.5);
   });
 
   it("adds (mixed interleaf)", async () => {
-    await items.push([ids(3.5, 4.5), [1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3.5, 4), [1, -1]);
+    await items.push([ids(3.5, 4.5), [add, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3.5, 4), [add, del]);
     expect(view.bounds.upper?.id).toBe(3.5);
   });
 
   it("removes (no interleaf)", async () => {
-    await items.push([ids(5), [-1], idShape]);
+    await items.push([ids(5), [del], idShape]);
     expect(delta).toHaveBeenLastCalledWith(ids(), []);
     expect(view.bounds.upper?.id).toBe(4);
   });
 
   it("removes (interleaf)", async () => {
-    await items.push([ids(4), [-1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(4, 5), [-1, 1]);
+    await items.push([ids(4), [del], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(4, 5), [del, add]);
     expect(view.bounds.upper?.id).toBe(5);
   });
 
   it("removes (mixed interleaf)", async () => {
-    await items.push([ids(4, 5), [-1, -1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(4, 6), [-1, 1]);
+    await items.push([ids(4, 5), [del, del], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(4, 6), [del, add]);
     expect(view.bounds.upper?.id).toBe(6);
   });
 
   it("adds=removes (no interleaf)", async () => {
-    await items.push([ids(1.5, 2), [1, -1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 2), [1, -1]);
+    await items.push([ids(1.5, 2), [add, del], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 2), [add, del]);
     expect(view.bounds.upper?.id).toBe(4);
   });
 
   it("adds=removes (interleaf)", async () => {
-    await items.push([ids(4, 4.5), [-1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(4, 4.5), [-1, 1]);
+    await items.push([ids(4, 4.5), [del, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(4, 4.5), [del, add]);
     expect(view.bounds.upper?.id).toBe(4.5);
   });
 
   it("adds=removes (mixed interleaf)", async () => {
-    await items.push([ids(4, 5.5), [-1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(4, 5), [-1, 1]);
+    await items.push([ids(4, 5.5), [del, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(4, 5), [del, add]);
     expect(view.bounds.upper?.id).toBe(5);
   });
 
   it("adds>removes (no interleaf)", async () => {
-    await items.push([ids(1.5, 2.5, 3), [1, 1, -1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 2.5, 3, 4), [1, 1, -1, -1]);
+    await items.push([ids(1.5, 2.5, 3), [add, add, del], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 2.5, 3, 4), [
+      add,
+      add,
+      del,
+      del,
+    ]);
     expect(view.bounds.upper?.id).toBe(2.5);
   });
 
   it("adds<removes (no interleaf)", async () => {
-    await items.push([ids(1.5, 2, 3), [1, -1, -1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 2, 3, 5), [1, -1, -1, 1]);
+    await items.push([ids(1.5, 2, 3), [add, del, del], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 2, 3, 5), [
+      add,
+      del,
+      del,
+      add,
+    ]);
     expect(view.bounds.upper?.id).toBe(5);
   });
 
   it("updates at anchor", async () => {
-    await items.push([ids(4), [0], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(4), [0]);
+    await items.push([ids(4), [upd], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(4), [upd]);
     expect(view.bounds.upper?.id).toBe(4);
   });
 
   it("removes then updates at anchor", async () => {
-    await items.push([ids(3, 4), [-1, 0], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3, 4, 5), [-1, 0, 1]);
+    await items.push([ids(3, 4), [del, upd], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3, 4, 5), [del, upd, add]);
     expect(view.bounds.upper?.id).toBe(5);
   });
 
   it("adds then updates at anchor", async () => {
-    await items.push([ids(3.5, 4), [1, 0], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3.5, 4), [1, -1]);
+    await items.push([ids(3.5, 4), [add, upd], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3.5, 4), [add, del]);
     expect(view.bounds.upper?.id).toBe(3.5);
   });
 
   it("adds extra", async () => {
-    await items.push([ids(3, 4, 5.5, 7, 8, 9), [-1, -1, 1, 1, 1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3, 4, 5, 5.5), [-1, -1, 1, 1]);
+    await items.push([
+      ids(3, 4, 5.5, 7, 8, 9),
+      [del, del, add, add, add, add],
+      idShape,
+    ]);
+    expect(delta).toHaveBeenLastCalledWith(ids(3, 4, 5, 5.5), [
+      del,
+      del,
+      add,
+      add,
+    ]);
     expect(view.bounds.upper?.id).toBe(5.5);
   });
 
   it("skips within", async () => {
-    await items.push([ids(1.5, 3.5), [1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 4), [1, -1]);
+    await items.push([ids(1.5, 3.5), [add, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(1.5, 4), [add, del]);
     expect(view.bounds.upper?.id).toBe(3);
   });
 });
@@ -561,22 +590,27 @@ describe("limits both bounds with", async () => {
   });
 
   it("multiple adds below - multiple enter, multiple leave", async () => {
-    await items.push([ids(1.5, 2.5), [1, 1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2, 2.5, 3, 4), [1, 1, -1, -1]);
+    await items.push([ids(1.5, 2.5), [add, add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2, 2.5, 3, 4), [
+      add,
+      add,
+      del,
+      del,
+    ]);
     expect(view.bounds.lower?.id).toBe(2);
     expect(view.bounds.upper?.id).toBe(2.5);
   });
 
   it("add below - item enters from below, item leaves from upper", async () => {
-    await items.push([ids(1.5), [1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2, 4), [1, -1]);
+    await items.push([ids(1.5), [add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2, 4), [add, del]);
     expect(view.bounds.lower?.id).toBe(2);
     expect(view.bounds.upper?.id).toBe(3);
   });
 
   it("add just below lower - enters directly, upper pushed out", async () => {
-    await items.push([ids(2.5), [1], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2.5, 4), [1, -1]);
+    await items.push([ids(2.5), [add], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(ids(2.5, 4), [add, del]);
     expect(view.bounds.lower?.id).toBe(2.5);
     expect(view.bounds.upper?.id).toBe(3);
   });

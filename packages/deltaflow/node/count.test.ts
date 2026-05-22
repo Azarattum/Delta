@@ -1,5 +1,5 @@
+import { create, remove, type ZSet } from "../datastructure/zset";
 import { it, expect, expectTypeOf } from "bun:test";
-import type { ZSet } from "../datastructure/zset";
 import { shape } from "../datastructure/shape";
 import { sqlite } from "./source/sqlite";
 import { stream } from "../stream";
@@ -7,6 +7,7 @@ import SQLite from "bun:sqlite";
 import { count } from "./count";
 
 const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+const [add, del] = [create(idShape), remove(idShape)];
 
 it("pulls total count from upstream", async () => {
   const db = new SQLite(":memory:");
@@ -33,12 +34,12 @@ it("tracks count incrementally on push", () => {
   total.subscribe((n) => updates.push(n));
 
   // Add items
-  items.push([[{ id: 3 }, { id: 4 }], [1, 1], idShape]);
+  items.push([[{ id: 3 }, { id: 4 }], [add, add], idShape]);
   items.flush();
   expect(updates).toEqual([2, 4]);
 
   // Remove an item
-  items.push([[{ id: 1 }], [-1]]);
+  items.push([[{ id: 1 }], [del]]);
   items.flush();
   expect(updates).toEqual([2, 4, 3]);
 });
@@ -52,7 +53,7 @@ it("handles mixed adds and removes in a single delta", () => {
   total.subscribe((n) => updates.push(n));
 
   // +4, +5, -1 => net +1
-  items.push([[{ id: 1 }, { id: 4 }, { id: 5 }], [-1, 1, 1], idShape]);
+  items.push([[{ id: 1 }, { id: 4 }, { id: 5 }], [del, add, add], idShape]);
   items.flush();
   expect(updates).toEqual([3, 4]);
 });
@@ -66,7 +67,7 @@ it("tracks count without prior pull (lazy init)", () => {
   total.connect((n) => updates.push(n));
 
   // Push without ever pulling — should auto-init
-  items.push([[{ id: 3 }], [1], idShape]);
+  items.push([[{ id: 3 }], [add], idShape]);
   items.flush();
   expect(updates).toEqual([3]);
 
@@ -82,11 +83,11 @@ it("reaches zero and goes back up", () => {
   const updates: number[] = [];
   total.subscribe((n) => updates.push(n));
 
-  items.push([[{ id: 1 }], [-1]]);
+  items.push([[{ id: 1 }], [del]]);
   items.flush();
   expect(updates).toEqual([1, 0]);
 
-  items.push([[{ id: 2 }, { id: 3 }], [1, 1], idShape]);
+  items.push([[{ id: 2 }, { id: 3 }], [add, add], idShape]);
   items.flush();
   expect(updates).toEqual([1, 0, 2]);
 });

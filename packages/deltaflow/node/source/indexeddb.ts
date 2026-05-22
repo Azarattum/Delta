@@ -1,7 +1,8 @@
+import { cardinality, create, remove } from "../../datastructure/zset";
 import { isPrimary, primary } from "../../datastructure/shape";
 import type { Order, Shape } from "../../datastructure/shape";
-import type { ZSet } from "../../datastructure/zset";
 import { zStream, type PullOptions } from "../stream";
+import type { ZSet } from "../../datastructure/zset";
 
 /** TODO: this is just a prototype */
 export async function indexeddb<T extends Record<string, unknown>>(
@@ -18,7 +19,7 @@ export async function indexeddb<T extends Record<string, unknown>>(
   const pks = primary(shape);
 
   return zStream({
-    pull: async ({ filter, order, weight = 1 } = {}) => {
+    pull: async ({ filter, order, cardinality: n = 1 } = {}) => {
       // TODO: support cursor
       const store = db.transaction([table], "readonly").objectStore(table);
       let scan: T[];
@@ -36,7 +37,11 @@ export async function indexeddb<T extends Record<string, unknown>>(
         );
       }
 
-      return [scan, Array(scan.length).fill(weight), shape] as ZSet<T>;
+      const meta =
+        n > 0 ? create(shape, n)
+        : n < 0 ? remove(shape, -n)
+        : 0;
+      return [scan, Array(scan.length).fill(meta), shape] as ZSet<T>;
     },
     flush: async (changes: [ZSet<T>][]) => {
       if (changes.length === 0) return;
@@ -44,10 +49,12 @@ export async function indexeddb<T extends Record<string, unknown>>(
       for (const [change] of changes) {
         for (let i = 0; i < change[0].length; i++) {
           const item = change[0][i];
-          const op = change[1][i];
+          const meta = change[1][i];
+          if (!meta) continue;
 
-          if (op === 0) store.put(item);
-          else if (op > 0) store.add(item);
+          const count = cardinality(meta, change[2] ?? shape);
+          if (count === 0) store.put(item);
+          else if (count > 0) store.add(item);
           else store.delete(pks.map((key) => item[key] as IDBValidKey));
         }
       }

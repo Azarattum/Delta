@@ -7,8 +7,11 @@ function shape<T extends Template>(template: T): Shape<FromTemplate<T>, ID<T>> {
     .map((x, i) => (x & TYPE.PRIMARY ? i << 1 : null))
     .filter((x) => x !== null);
   const hash = checksum(types, order);
+  const fields = nonPrimary({ keys, types }).length;
+  if (fields > 50) throw new Error(`Too many non-primary fields: ${fields}`);
+  const mask = 2 ** fields - 1;
 
-  return { keys, types, order, hash, children: {} } as any;
+  return { keys, types, order, hash, mask, children: {} } as any;
 }
 
 function reorder<TShape extends Shape<T> | undefined, T = any>(
@@ -55,10 +58,9 @@ function nest<
     throw new Error(`Relation ${relation} already exists on:\n${shapeString}`);
   }
 
-  return {
-    ...(shape as any),
-    children: { ...shape.children, [relation]: { single, shape: child } },
-  };
+  // TODO: handle when child replaces a field (recompute keys, types, hash, mask etc.)
+  const children = { ...shape.children, [relation]: { single, shape: child } };
+  return { ...(shape as any), children };
 }
 
 function either<T>(aShape?: Shape<T>, bShape?: Shape<T>) {
@@ -160,6 +162,7 @@ type Shape<T = any, TId = {}> =
       "~type": T;
       "~id": TId;
       hash: number;
+      mask: number;
       keys: readonly (keyof T)[];
       order: readonly number[];
       types: readonly number[];

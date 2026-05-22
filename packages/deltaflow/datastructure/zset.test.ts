@@ -1,6 +1,20 @@
-import { add, copy, cut, distinct, multiply, zero, type ZSet } from "./zset";
-import { nest, shape } from "./shape";
+import {
+  cardinality,
+  distinct,
+  multiply,
+  changed,
+  combine,
+  create,
+  remove,
+  update,
+  copy,
+  zero,
+  add,
+  cut,
+} from "./zset";
+import { nest, shape, type Shape } from "./shape";
 import { expect, it } from "bun:test";
+import type { ZSet } from "./zset";
 
 it("performs one-to-one multiplication", () => {
   const a = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
@@ -11,7 +25,7 @@ it("performs one-to-one multiplication", () => {
       { id: 1, name: "John" },
       { id: 2, name: "Jane" },
     ],
-    [1, 1],
+    [create(a), create(a)],
     a,
   ];
 
@@ -20,7 +34,7 @@ it("performs one-to-one multiplication", () => {
       { id: 1, age: 25 },
       { id: 2, age: 30 },
     ],
-    [1, 1],
+    [create(b), create(b)],
     b,
   ];
 
@@ -29,7 +43,11 @@ it("performs one-to-one multiplication", () => {
     { id: 1, name: "John", details: [{ id: 1, age: 25 }] },
     { id: 2, name: "Jane", details: [{ id: 2, age: 30 }] },
   ]);
-  expect({ ...zsetC[1] }).toEqual({ 0: 1, 1: 1, details: [[1], [1]] } as any);
+  expect({ ...zsetC[1] }).toEqual({
+    0: create(nest(a, "details", b)),
+    1: create(nest(a, "details", b)),
+    details: [[create(b)], [create(b)]],
+  } as any);
   expect(zsetC[2]).toEqual(nest(a, "details", b));
 
   const zsetD = multiply(zsetA, "id", zsetB, "id", "details", true);
@@ -37,7 +55,11 @@ it("performs one-to-one multiplication", () => {
     { id: 1, name: "John", details: { id: 1, age: 25 } },
     { id: 2, name: "Jane", details: { id: 2, age: 30 } },
   ]);
-  expect({ ...zsetD[1] }).toEqual({ 0: 1, 1: 1, details: [1, 1] } as any);
+  expect({ ...zsetD[1] }).toEqual({
+    0: create(nest(a, "details", b, true)),
+    1: create(nest(a, "details", b, true)),
+    details: [create(b), create(b)],
+  } as any);
   expect(zsetD[2]).toEqual(nest(a, "details", b, true));
 });
 
@@ -51,7 +73,7 @@ it("performs grouped multiplication", () => {
       { id: 1, name: "John" },
       { id: 2, name: "Jane" },
     ],
-    [1, 1],
+    [create(a), create(a)],
     a,
   ];
 
@@ -61,7 +83,7 @@ it("performs grouped multiplication", () => {
       { id: 1, age: 30 },
       { id: 2, age: 35 },
     ],
-    [1, 1],
+    [create(b), create(b), create(b)],
     b,
   ];
 
@@ -77,7 +99,9 @@ it("performs grouped multiplication", () => {
       },
       { id: 2, name: "Jane", details: [{ id: 2, age: 35 }] },
     ],
-    Object.assign([1, 1], { details: [[1], [1]] }),
+    Object.assign([create(both), create(both)], {
+      details: [[create(b), create(b)], [create(b)]],
+    }),
     both,
   ]);
 });
@@ -96,11 +120,15 @@ it("performs distributed multiplication", () => {
       { id: 1, name: "John", detailsID: 1 },
       { id: 2, name: "Jane", detailsID: 1 },
     ],
-    [1, 1],
+    [create(a), create(a)],
     a,
   ];
 
-  const zsetB: ZSet<(typeof b)["~type"]> = [[{ id: 1, age: 25 }], [1, 1], b];
+  const zsetB: ZSet<(typeof b)["~type"]> = [
+    [{ id: 1, age: 25 }],
+    [create(b)],
+    b,
+  ];
 
   const zsetC = multiply(zsetA, "detailsID", zsetB, "id", "details");
   expect(zsetC).toEqual([
@@ -108,11 +136,13 @@ it("performs distributed multiplication", () => {
       { id: 1, name: "John", detailsID: 1, details: [{ id: 1, age: 25 }] },
       { id: 2, name: "Jane", detailsID: 1, details: [{ id: 1, age: 25 }] },
     ],
-    Object.assign([1, 1], { details: [[1], [1]] }),
+    Object.assign([create(both), create(both)], {
+      details: [[create(b)], [create(b)]],
+    }),
     both,
   ]);
   expect(zsetC[0][0].details).toBe(zsetC[0][1].details);
-  expect(zsetC[1].details).toEqual([[1], [1]]);
+  expect(zsetC[1].details).toEqual([[create(b)], [create(b)]]);
   expect(zsetC[1].details[0]).toBe(zsetC[1].details[1]);
 });
 
@@ -126,7 +156,7 @@ it("performs out of order multiplication", () => {
       { id: 1, name: "John" },
       { id: 2, name: "Jane" },
     ],
-    [1, 1],
+    [create(a), create(a)],
     a,
   ];
 
@@ -135,7 +165,7 @@ it("performs out of order multiplication", () => {
       { id: 2, age: 30 },
       { id: 1, age: 25 },
     ],
-    [1, 1],
+    [create(b), create(b)],
     b,
   ];
 
@@ -144,7 +174,9 @@ it("performs out of order multiplication", () => {
       { id: 1, name: "John", details: [{ id: 1, age: 25 }] },
       { id: 2, name: "Jane", details: [{ id: 2, age: 30 }] },
     ],
-    Object.assign([1, 1], { details: [[1], [1]] }),
+    Object.assign([create(both), create(both)], {
+      details: [[create(b)], [create(b)]],
+    }),
     both,
   ]);
 });
@@ -166,23 +198,25 @@ it("zeroes & copies multiple items correctly", () => {
       { id: 1, details: [{ age: 25 }] },
       { id: 2, details: [{ age: 30 }] },
     ],
-    Object.assign([1, 1], { details: [[2], [1]] }),
+    Object.assign([create(both), create(both)], {
+      details: [[create(b, 2)], [create(b)]],
+    }),
     both,
   ];
 
   const zsetB = copy(zsetA);
   zero(zsetA);
 
-  expect(zsetA[1]).toEqual([0, 0] as any);
-  expect(zsetA[1].details).toEqual([[0], [0]]);
-  expect(zsetB[1]).toEqual([1, 1] as any);
-  expect(zsetB[1].details).toEqual([[2], [1]]);
+  expect(zsetA[1]).toEqual([update(both), update(both)] as any);
+  expect(zsetA[1].details).toEqual([[update(b)], [update(b)]]);
+  expect(zsetB[1]).toEqual([create(both), create(both)] as any);
+  expect(zsetB[1].details).toEqual([[create(b, 2)], [create(b)]]);
 
   const zsetC = copy(zsetB);
   distinct(zsetC);
 
-  expect(zsetC[1]).toEqual([1, 1] as any);
-  expect(zsetC[1].details).toEqual([[1], [1]]);
+  expect(zsetC[1]).toEqual([create(both), create(both)] as any);
+  expect(zsetC[1].details).toEqual([[create(b)], [create(b)]]);
 });
 
 it("zeroes & copies single items correctly", () => {
@@ -195,23 +229,25 @@ it("zeroes & copies single items correctly", () => {
       { id: 1, details: { age: 25 } },
       { id: 2, details: { age: 30 } },
     ],
-    Object.assign([1, 0], { details: [2, 1] }),
+    Object.assign([create(both), update(both)], {
+      details: [create(b, 2), create(b)],
+    }),
     both,
   ];
 
   const zsetB = copy(zsetA);
   zero(zsetA);
 
-  expect(zsetA[1]).toEqual([0, 0] as any);
-  expect(zsetA[1].details).toEqual([0, 0]);
-  expect(zsetB[1]).toEqual([1, 0] as any);
-  expect(zsetB[1].details).toEqual([2, 1]);
+  expect(zsetA[1]).toEqual([update(both), update(both)] as any);
+  expect(zsetA[1].details).toEqual([update(b), update(b)]);
+  expect(zsetB[1]).toEqual([create(both), update(both)] as any);
+  expect(zsetB[1].details).toEqual([create(b, 2), create(b)]);
 
   const zsetC = copy(zsetB);
   distinct(zsetC);
 
-  expect(zsetC[1]).toEqual([1] as any);
-  expect(zsetC[1].details).toEqual([1]);
+  expect(zsetC[1]).toEqual([create(both)] as any);
+  expect(zsetC[1].details).toEqual([create(b)]);
 });
 
 it("adds with one-to-one relationships", () => {
@@ -221,25 +257,31 @@ it("adds with one-to-one relationships", () => {
 
   const zsetA: ZSet<{ id: number; details?: { age: number } }> = [
     [{ id: 1, details: { age: 25 } }],
-    Object.assign([1], { details: [1] }),
+    Object.assign([create(both)], { details: [create(b)] }),
     both,
   ];
 
   const zsetB: ZSet<{ id: number; details?: { age: number } }> = [
     [{ id: 1, details: { age: 42 } }],
-    Object.assign([1], { details: [0] }),
+    Object.assign([create(both)], { details: [create(b)] }),
     both,
   ];
 
   add(zsetA, zsetB);
 
   expect(zsetA[0]).toEqual([{ id: 1, details: { age: 42 } }]);
-  expect({ ...zsetA[1] }).toEqual({ 0: 2, details: [1] } as any);
+  expect({ ...zsetA[1] }).toEqual({
+    0: create(both, 2),
+    details: [create(b, 2)],
+  } as any);
 
   add(zsetB, zsetA);
 
   expect(zsetB[0]).toEqual([{ id: 1, details: { age: 42 } }]);
-  expect({ ...zsetB[1] }).toEqual({ 0: 3, details: [1] } as any);
+  expect({ ...zsetB[1] }).toEqual({
+    0: create(both, 3),
+    details: [create(b, 3)],
+  } as any);
 });
 
 it("applies distinct on deep items", () => {
@@ -252,17 +294,19 @@ it("applies distinct on deep items", () => {
       { id: 1, details: { age: 25, details: { age: 17 } } },
       { id: 2, details: { age: 30, details: { age: 42 } } },
     ],
-    Object.assign([2, 0], {
-      details: Object.assign([2, 2], { details: [2, 2] }),
+    Object.assign([create(both, 2), update(both)], {
+      details: Object.assign([create(b, 2), create(b, 2)], {
+        details: [create(b, 2), create(b, 2)],
+      }),
     }),
     both,
   ];
 
   distinct(zsetA);
 
-  expect(zsetA[1]).toEqual([1] as any);
-  expect(zsetA[1].details).toEqual([1] as any);
-  expect(zsetA[1].details.details).toEqual([1] as any);
+  expect(zsetA[1]).toEqual([create(both)] as any);
+  expect(zsetA[1].details).toEqual([create(b)] as any);
+  expect(zsetA[1].details.details).toEqual([create(b)] as any);
 });
 
 it("multiplies through deep nesting with single match", () => {
@@ -273,17 +317,17 @@ it("multiplies through deep nesting with single match", () => {
 
   const zsetA: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 2, rel: 1 }],
-    [3],
+    [create(relShape, 2)],
     relShape,
   ];
   const zsetB: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 1, rel: 0 }],
-    [2],
+    [create(relShape)],
     relShape,
   ];
   const zsetC: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 0, rel: null }],
-    [1],
+    [update(relShape)],
     relShape,
   ];
 
@@ -298,9 +342,9 @@ it("multiplies through deep nesting with single match", () => {
         deep: [{ id: 1, rel: 0, deep: [{ id: 0, rel: null }] }],
       },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1].deep).toEqual([[2]] as any);
-    expect(result[1].deep[0].deep).toEqual([[1]] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1].deep).toEqual([[create(relShape)]] as any);
+    expect(result[1].deep[0].deep).toEqual([[update(relShape)]] as any);
   }
   {
     const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep", true);
@@ -309,9 +353,9 @@ it("multiplies through deep nesting with single match", () => {
     expect(result[0]).toEqual([
       { id: 2, rel: 1, deep: [{ id: 1, rel: 0, deep: { id: 0, rel: null } }] },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1].deep).toEqual([[2]] as any);
-    expect(result[1].deep[0]["deep"]).toEqual([1] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1].deep).toEqual([[create(relShape)]] as any);
+    expect(result[1].deep[0]["deep"]).toEqual([update(relShape)] as any);
   }
   {
     const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep");
@@ -320,9 +364,9 @@ it("multiplies through deep nesting with single match", () => {
     expect(result[0]).toEqual([
       { id: 2, rel: 1, deep: { id: 1, rel: 0, deep: [{ id: 0, rel: null }] } },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1]["deep"]).toEqual([2] as any);
-    expect(result[1]["deep"]["deep"]).toEqual([[1]] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1]["deep"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([[update(relShape)]] as any);
   }
   {
     const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep", true);
@@ -331,9 +375,9 @@ it("multiplies through deep nesting with single match", () => {
     expect(result[0]).toEqual([
       { id: 2, rel: 1, deep: { id: 1, rel: 0, deep: { id: 0, rel: null } } },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1]["deep"]).toEqual([2] as any);
-    expect(result[1]["deep"]["deep"]).toEqual([1] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1]["deep"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([update(relShape)] as any);
   }
 });
 
@@ -345,17 +389,17 @@ it("multiplies through deep nesting with no matches", () => {
 
   const zsetA: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 2, rel: 1 }],
-    [3],
+    [create(relShape, 2)],
     relShape,
   ];
   const zsetB: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 1, rel: 0 }],
-    [2],
+    [create(relShape)],
     relShape,
   ];
   const zsetC: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 0, rel: null }],
-    [1],
+    [update(relShape)],
     relShape,
   ];
 
@@ -364,7 +408,7 @@ it("multiplies through deep nesting with no matches", () => {
     const result = multiply(copy(zsetA), "id", tmp, "id", "deep");
 
     expect(result[0]).toEqual([{ id: 2, rel: 1, deep: [] }]);
-    expect(result[1]).toEqual([3] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
     expect(result[1].deep).toEqual([[]] as any);
     expect(result[1].deep[0].deep).toEqual([] as any);
   }
@@ -373,7 +417,7 @@ it("multiplies through deep nesting with no matches", () => {
     const result = multiply(copy(zsetA), "id", tmp, "id", "deep");
 
     expect(result[0]).toEqual([{ id: 2, rel: 1, deep: [] }]);
-    expect(result[1]).toEqual([3] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
     expect(result[1].deep).toEqual([[]] as any);
     expect(result[1].deep[0]["deep"]).toEqual([] as any);
   }
@@ -382,7 +426,7 @@ it("multiplies through deep nesting with no matches", () => {
     const result = multiply(copy(zsetA), "id", tmp, "id", "deep", true);
 
     expect(result[0]).toEqual([{ id: 2, rel: 1, deep: undefined }]);
-    expect(result[1]).toEqual([3] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
     expect(result[1]["deep"]).toEqual([] as any);
     expect(result[1]["deep"]["deep"]).toEqual([] as any);
   }
@@ -391,7 +435,7 @@ it("multiplies through deep nesting with no matches", () => {
     const result = multiply(copy(zsetA), "id", tmp, "id", "deep", true);
 
     expect(result[0]).toEqual([{ id: 2, rel: 1, deep: undefined }]);
-    expect(result[1]).toEqual([3] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
     expect(result[1]["deep"]).toEqual([] as any);
     expect(result[1]["deep"]["deep"]).toEqual([] as any);
   }
@@ -405,17 +449,17 @@ it("multiplies through double deep nesting", () => {
 
   const zsetA: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 2, rel: 1 }],
-    [3],
+    [create(relShape, 2)],
     relShape,
   ];
   const zsetB: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 1, rel: 0 }],
-    [2],
+    [create(relShape)],
     relShape,
   ];
   const zsetC: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 0, rel: null }],
-    [1],
+    [update(relShape)],
     relShape,
   ];
   {
@@ -434,10 +478,12 @@ it("multiplies through double deep nesting", () => {
         },
       },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1]["deep"]).toEqual([2] as any);
-    expect(result[1]["deep"]["deep"]).toEqual([2] as any);
-    expect(result[1]["deep"]["deep"]["deep"]).toEqual([1] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1]["deep"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep"]["deep"]["deep"]).toEqual([
+      update(relShape),
+    ] as any);
   }
   {
     const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3", true);
@@ -457,10 +503,12 @@ it("multiplies through double deep nesting", () => {
         ],
       },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1]["deep1"]).toEqual([[2]] as any);
-    expect(result[1]["deep1"][0]["deep2"]).toEqual([2] as any);
-    expect(result[1]["deep1"][0]["deep2"]["deep3"]).toEqual([1] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1]["deep1"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep1"][0]["deep2"]["deep3"]).toEqual([
+      update(relShape),
+    ] as any);
   }
   {
     const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3", true);
@@ -480,10 +528,12 @@ it("multiplies through double deep nesting", () => {
         ],
       },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1]["deep1"]).toEqual([[2]] as any);
-    expect(result[1]["deep1"][0]["deep2"]).toEqual([[2]] as any);
-    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([1] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1]["deep1"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([
+      update(relShape),
+    ] as any);
   }
   {
     const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3");
@@ -503,10 +553,12 @@ it("multiplies through double deep nesting", () => {
         ],
       },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1]["deep1"]).toEqual([[2]] as any);
-    expect(result[1]["deep1"][0]["deep2"]).toEqual([[2]] as any);
-    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([[1]] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1]["deep1"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([
+      [update(relShape)],
+    ] as any);
   }
   {
     const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep");
@@ -524,10 +576,12 @@ it("multiplies through double deep nesting", () => {
         },
       },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1]["deep"]).toEqual([2] as any);
-    expect(result[1]["deep"]["deep"]).toEqual([2] as any);
-    expect(result[1]["deep"]["deep"]["deep"]).toEqual([[1]] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1]["deep"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep"]["deep"]["deep"]).toEqual([
+      [update(relShape)],
+    ] as any);
   }
   {
     const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep");
@@ -545,10 +599,12 @@ it("multiplies through double deep nesting", () => {
         },
       },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1]["deep"]).toEqual([2] as any);
-    expect(result[1]["deep"]["deep"]).toEqual([[2]] as any);
-    expect(result[1]["deep"]["deep"][0]["deep"]).toEqual([[1]] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1]["deep"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep"]["deep"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep"]["deep"][0]["deep"]).toEqual([
+      [update(relShape)],
+    ] as any);
   }
   {
     const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep");
@@ -568,10 +624,12 @@ it("multiplies through double deep nesting", () => {
         ],
       },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1]["deep"]).toEqual([[2]] as any);
-    expect(result[1]["deep"][0]["deep"]).toEqual([2] as any);
-    expect(result[1]["deep"][0]["deep"]["deep"]).toEqual([[1]] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1]["deep"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep"][0]["deep"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep"][0]["deep"]["deep"]).toEqual([
+      [update(relShape)],
+    ] as any);
   }
   {
     const tmp = multiply(copy(zsetB), "rel", zsetC, "id", "deep3", true);
@@ -589,10 +647,12 @@ it("multiplies through double deep nesting", () => {
         },
       },
     ]);
-    expect(result[1]).toEqual([3] as any);
-    expect(result[1]["deep1"]).toEqual([2] as any);
-    expect(result[1]["deep1"]["deep2"]).toEqual([[2]] as any);
-    expect(result[1]["deep1"]["deep2"][0]["deep3"]).toEqual([1] as any);
+    expect(result[1]).toEqual([create(relShape, 2)] as any);
+    expect(result[1]["deep1"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep1"]["deep2"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep1"]["deep2"][0]["deep3"]).toEqual([
+      update(relShape),
+    ] as any);
   }
 });
 
@@ -607,17 +667,17 @@ it("multiplies through double deep nesting & multiple matches", () => {
       { id: 2, rel: 1 },
       { id: 3, rel: 1 },
     ],
-    [3, 4],
+    [create(relShape, 2), create(relShape, 3)],
     relShape,
   ];
   const zsetB: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 1, rel: 0 }],
-    [2],
+    [create(relShape)],
     relShape,
   ];
   const zsetC: ZSet<(typeof relShape)["~type"]> = [
     [{ id: 0, rel: null }],
-    [1],
+    [update(relShape)],
     relShape,
   ];
   {
@@ -649,12 +709,22 @@ it("multiplies through double deep nesting & multiple matches", () => {
         ],
       },
     ]);
-    expect(result[1]).toEqual([3, 4] as any);
-    expect(result[1]["deep1"]).toEqual([[2], [2]] as any);
-    expect(result[1]["deep1"][0]["deep2"]).toEqual([2] as any);
-    expect(result[1]["deep1"][1]["deep2"]).toEqual([2] as any);
-    expect(result[1]["deep1"][0]["deep2"]["deep3"]).toEqual([1] as any);
-    expect(result[1]["deep1"][1]["deep2"]["deep3"]).toEqual([1] as any);
+    expect(result[1]).toEqual([
+      create(relShape, 2),
+      create(relShape, 3),
+    ] as any);
+    expect(result[1]["deep1"]).toEqual([
+      [create(relShape)],
+      [create(relShape)],
+    ] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep1"][1]["deep2"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep1"][0]["deep2"]["deep3"]).toEqual([
+      update(relShape),
+    ] as any);
+    expect(result[1]["deep1"][1]["deep2"]["deep3"]).toEqual([
+      update(relShape),
+    ] as any);
 
     expect(result[0][0].deep1).toBe(result[0][1].deep1);
     expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
@@ -688,12 +758,22 @@ it("multiplies through double deep nesting & multiple matches", () => {
         ],
       },
     ]);
-    expect(result[1]).toEqual([3, 4] as any);
-    expect(result[1]["deep1"]).toEqual([[2], [2]] as any);
-    expect(result[1]["deep1"][0]["deep2"]).toEqual([[2]] as any);
-    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([1] as any);
-    expect(result[1]["deep1"][1]["deep2"]).toEqual([[2]] as any);
-    expect(result[1]["deep1"][1]["deep2"][0]["deep3"]).toEqual([1] as any);
+    expect(result[1]).toEqual([
+      create(relShape, 2),
+      create(relShape, 3),
+    ] as any);
+    expect(result[1]["deep1"]).toEqual([
+      [create(relShape)],
+      [create(relShape)],
+    ] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([
+      update(relShape),
+    ] as any);
+    expect(result[1]["deep1"][1]["deep2"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep1"][1]["deep2"][0]["deep3"]).toEqual([
+      update(relShape),
+    ] as any);
 
     expect(result[0][0].deep1).toBe(result[0][1].deep1);
     expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
@@ -727,12 +807,22 @@ it("multiplies through double deep nesting & multiple matches", () => {
         ],
       },
     ]);
-    expect(result[1]).toEqual([3, 4] as any);
-    expect(result[1]["deep1"]).toEqual([[2], [2]] as any);
-    expect(result[1]["deep1"][0]["deep2"]).toEqual([[2]] as any);
-    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([[1]] as any);
-    expect(result[1]["deep1"][1]["deep2"]).toEqual([[2]] as any);
-    expect(result[1]["deep1"][1]["deep2"][0]["deep3"]).toEqual([[1]] as any);
+    expect(result[1]).toEqual([
+      create(relShape, 2),
+      create(relShape, 3),
+    ] as any);
+    expect(result[1]["deep1"]).toEqual([
+      [create(relShape)],
+      [create(relShape)],
+    ] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep1"][0]["deep2"][0]["deep3"]).toEqual([
+      [update(relShape)],
+    ] as any);
+    expect(result[1]["deep1"][1]["deep2"]).toEqual([[create(relShape)]] as any);
+    expect(result[1]["deep1"][1]["deep2"][0]["deep3"]).toEqual([
+      [update(relShape)],
+    ] as any);
 
     expect(result[0][0].deep1).toBe(result[0][1].deep1);
     expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
@@ -766,12 +856,22 @@ it("multiplies through double deep nesting & multiple matches", () => {
         ],
       },
     ]);
-    expect(result[1]).toEqual([3, 4] as any);
-    expect(result[1]["deep1"]).toEqual([[2], [2]] as any);
-    expect(result[1]["deep1"][0]["deep2"]).toEqual([2] as any);
-    expect(result[1]["deep1"][0]["deep2"]["deep3"]).toEqual([[1]] as any);
-    expect(result[1]["deep1"][1]["deep2"]).toEqual([2] as any);
-    expect(result[1]["deep1"][1]["deep2"]["deep3"]).toEqual([[1]] as any);
+    expect(result[1]).toEqual([
+      create(relShape, 2),
+      create(relShape, 3),
+    ] as any);
+    expect(result[1]["deep1"]).toEqual([
+      [create(relShape)],
+      [create(relShape)],
+    ] as any);
+    expect(result[1]["deep1"][0]["deep2"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep1"][0]["deep2"]["deep3"]).toEqual([
+      [update(relShape)],
+    ] as any);
+    expect(result[1]["deep1"][1]["deep2"]).toEqual([create(relShape)] as any);
+    expect(result[1]["deep1"][1]["deep2"]["deep3"]).toEqual([
+      [update(relShape)],
+    ] as any);
 
     expect(result[0][0].deep1).toBe(result[0][1].deep1);
     expect(result[1]["deep1"][0]).toBe(result[1]["deep1"][1]);
@@ -789,9 +889,9 @@ it("cuts sets correctly", () => {
       { id: 4, single: { id: 4 }, multi: [{ id: 4 }] },
       { id: 5, single: { id: 5 }, multi: [{ id: 5 }] },
     ],
-    Object.assign([1, 1, 1, 1, 1], {
-      multi: [[1], [1], [1], [1], [1]],
-      single: [1, 1, 1, 1, 1],
+    Object.assign(Array(5).fill(create(nested)), {
+      multi: Array(5).fill([create(idShape)]),
+      single: Array(5).fill(create(idShape)),
     }),
     nested,
   ];
@@ -803,18 +903,30 @@ it("cuts sets correctly", () => {
       { id: 1, single: { id: 1 }, multi: [{ id: 1 }] },
       { id: 2, single: { id: 2 }, multi: [{ id: 2 }] },
     ]);
-    expect(zsetA[1] as any).toEqual([1, 1]);
-    expect(zsetA[1].multi).toEqual([[1], [1]]);
-    expect(zsetA[1].single).toEqual([1, 1]);
+    expect(zsetA[1] as any).toEqual([create(nested), create(nested)]);
+    expect(zsetA[1].multi).toEqual([[create(idShape)], [create(idShape)]]);
+    expect(zsetA[1].single).toEqual([create(idShape), create(idShape)]);
 
     expect(zsetB[0]).toEqual([
       { id: 3, single: { id: 3 }, multi: [{ id: 3 }] },
       { id: 4, single: { id: 4 }, multi: [{ id: 4 }] },
       { id: 5, single: { id: 5 }, multi: [{ id: 5 }] },
     ]);
-    expect(zsetB[1] as any).toEqual([1, 1, 1]);
-    expect(zsetB[1].single).toEqual([1, 1, 1]);
-    expect(zsetB[1].multi).toEqual([[1], [1], [1]]);
+    expect(zsetB[1] as any).toEqual([
+      create(nested),
+      create(nested),
+      create(nested),
+    ]);
+    expect(zsetB[1].single).toEqual([
+      create(idShape),
+      create(idShape),
+      create(idShape),
+    ]);
+    expect(zsetB[1].multi).toEqual([
+      [create(idShape)],
+      [create(idShape)],
+      [create(idShape)],
+    ]);
   }
 
   {
@@ -824,24 +936,133 @@ it("cuts sets correctly", () => {
       { id: 1, single: { id: 1 }, multi: [{ id: 1 }] },
       { id: 2, single: { id: 2 }, multi: [{ id: 2 }] },
     ]);
-    expect(zsetA[1] as any).toEqual([1, 1]);
-    expect(zsetA[1].single).toEqual([1, 1]);
-    expect(zsetA[1].multi).toEqual([[1], [1]]);
+    expect(zsetA[1] as any).toEqual([create(nested), create(nested)]);
+    expect(zsetA[1].single).toEqual([create(idShape), create(idShape)]);
+    expect(zsetA[1].multi).toEqual([[create(idShape)], [create(idShape)]]);
 
     expect(zsetB[0]).toEqual([
       { id: 3, single: { id: 3 }, multi: [{ id: 3 }] },
       { id: 4, single: { id: 4 }, multi: [{ id: 4 }] },
     ]);
-    expect(zsetB[1] as any).toEqual([1, 1]);
-    expect(zsetB[1].single).toEqual([1, 1]);
-    expect(zsetB[1].multi).toEqual([[1], [1]]);
+    expect(zsetB[1] as any).toEqual([create(nested), create(nested)]);
+    expect(zsetB[1].single).toEqual([create(idShape), create(idShape)]);
+    expect(zsetB[1].multi).toEqual([[create(idShape)], [create(idShape)]]);
 
     expect(zsetC[0]).toEqual([
       { id: 5, single: { id: 5 }, multi: [{ id: 5 }] },
     ]);
-    expect(zsetC[1] as any).toEqual([1]);
-    expect(zsetC[1].single).toEqual([1]);
-    expect(zsetC[1].multi).toEqual([[1]]);
+    expect(zsetC[1] as any).toEqual([create(nested)]);
+    expect(zsetC[1].single).toEqual([create(idShape)]);
+    expect(zsetC[1].multi).toEqual([[create(idShape)]]);
     expect(zsetA).toBe(zset);
   }
+});
+
+it("encodes primitive zset with legacy cardinality semantics", () => {
+  const numbers: ZSet<number> = [[1], [1]];
+  add(numbers, [[1], [-1]]);
+
+  expect(numbers).toEqual([[1], [0]]);
+  expect(cardinality(2)).toBe(2);
+  expect(changed(-2)).toEqual([]);
+});
+
+it("encodes shaped create, remove, and update masks", () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    name: t.STRING,
+    age: t.INT,
+    email: t.STRING,
+  }));
+
+  expect(user.mask).toBe(7);
+  expect(create(user)).toBe(0b1000);
+  expect(create(user, 2)).toBe(0b1001);
+  expect(remove(user)).toBe(-0b1000);
+  expect(remove(user, 2)).toBe(-0b1001);
+  expect(update(user)).toBe(0b111);
+  expect(update(user, "name")).toBe(0b001);
+  expect(update(user, "email")).toBe(0b100);
+
+  expect(cardinality(create(user, 2), user)).toBe(2);
+  expect(cardinality(update(user, "age"), user)).toBe(0);
+  expect(changed(create(user), user)).toEqual([0, 1, 2]);
+  expect(changed(update(user, "name", "email"), user)).toEqual([0, 2]);
+  expect(changed(update(user, "email"), user, "email")).toBe(true);
+  expect(changed(update(user, "email"), user, "age")).toBe(false);
+  expect(changed(create(user), user, "name")).toBe(true);
+});
+
+it("compresses shaped zsets with ordered row-delta algebra", () => {
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    name: t.STRING,
+    age: t.INT,
+    email: t.STRING,
+  }));
+  const row = { id: 1, name: "Ada", age: 37, email: "a@example.com" };
+
+  const merge = (a: number, b: number) =>
+    add([[row], [a], user], [[row], [b], user])[1][0];
+
+  expect(merge(update(user, "name"), update(user, "age"))).toBe(0b011);
+  expect(merge(update(user), update(user, "name"))).toBe(update(user));
+  expect(merge(create(user), remove(user))).toBe(0);
+  expect(merge(update(user, "name"), remove(user))).toBe(remove(user));
+  expect(merge(create(user), update(user, "age"))).toBe(create(user));
+  expect(merge(create(user), create(user))).toBe(create(user, 2));
+});
+
+it("supports 50 shaped fields without bitwise truncation", () => {
+  const wide = {
+    keys: ["id", ...Array.from({ length: 50 }, (_, i) => `f${i}`)],
+    types: [16, ...Array(50).fill(0)],
+    order: [0],
+    hash: 0,
+    mask: 2 ** 50 - 1,
+    children: {},
+  } as unknown as Shape<{ f48: unknown; f49: unknown }>;
+
+  expect(update(wide, "f49")).toBe(2 ** 49);
+  expect(create(wide)).toBe(2 ** 50);
+  expect(cardinality(create(wide), wide)).toBe(1);
+  expect(changed(update(wide, "f49"), wide)).toEqual([49]);
+  expect(changed(update(wide, "f49"), wide, "f49")).toBe(true);
+  expect(changed(update(wide, "f49"), wide, "f48")).toBe(false);
+});
+
+it("combines shaped change masks above 32 bits", () => {
+  const wide = {
+    keys: ["id", ...Array.from({ length: 50 }, (_, i) => `f${i}`)],
+    types: [16, ...Array(50).fill(0)],
+    order: [0],
+    hash: 0,
+    mask: 2 ** 50 - 1,
+    children: {},
+  } as unknown as Shape<{ f0: unknown; f33: unknown; f49: unknown }>;
+
+  const low = update(wide, "f0");
+  const high = update(wide, "f49");
+  const high2 = update(wide, "f33");
+
+  expect(combine(low, high, wide)).toBe(low + high);
+  expect(combine(high, high2, wide)).toBe(high + high2);
+
+  const row = { id: 1, f0: 1, f33: 33, f49: 49 } as (typeof wide)["~type"];
+  const merged = add([[row], [high], wide], [[row], [high2], wide]);
+  expect(merged[1][0]).toBe(high + high2);
+  expect(changed(merged[1][0], wide)).toEqual([33, 49]);
+});
+
+it("accepts 50 non-primary fields and rejects 51", () => {
+  const defineWide = (fields: number) =>
+    shape((t) => ({
+      id: t(t.INT, t.PRIMARY),
+      ...Object.fromEntries(
+        Array.from({ length: fields }, (_, i) => [`f${i}`, t.INT]),
+      ),
+    }));
+
+  expect(() => defineWide(50)).not.toThrow();
+  expect(() => defineWide(51)).toThrow("Too many non-primary fields: 51");
 });

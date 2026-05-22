@@ -1,5 +1,5 @@
 import { zStream, type OfZStream, type ValidKey, type ZStream } from "./stream";
-import { add, multiply, zero } from "../datastructure/zset";
+import { add, cardinality, multiply, zero } from "../datastructure/zset";
 import type { ZSet } from "../datastructure/zset";
 import { SyncPromise } from "../stream";
 
@@ -27,11 +27,12 @@ export function join<
       };
       const aRef = a && {
         keys: [[bKey], [aKey]] as const,
-        items: a[0].filter((_, i) => a[1][i] > 0),
+        items: a[0].filter((_, i) => cardinality(a[1][i], a[2]) > 0),
       };
 
       return SyncPromise.all([
-        bRef?.items.length && aUpstream.pull({ filter: [bRef], weight: 0 }),
+        bRef?.items.length &&
+          aUpstream.pull({ filter: [bRef], cardinality: 0 }),
         aRef?.items.length && bUpstream.pull({ filter: [aRef] }),
       ] as const).then(([aPulled, bPulled]) => {
         if (aPulled && a) add(aPulled, a);

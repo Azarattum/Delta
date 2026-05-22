@@ -1,6 +1,7 @@
-import { add, sort, distinct, type ZSet } from "../../datastructure/zset";
+import { add, sort, distinct, create, remove } from "../../datastructure/zset";
 import { children, compare, reorder } from "../../datastructure/shape";
 import type { Shape } from "../../datastructure/shape";
+import type { ZSet } from "../../datastructure/zset";
 import { zStream } from "../stream";
 
 // TODO: memory is extremely incomplete compared to SQLite source!
@@ -11,19 +12,22 @@ export function memory<T extends Record<string, unknown>>(
 ) {
   const data = [
     initialData.sort((a, b) => compare(a, b, shape)),
-    Array(initialData.length).fill(1),
+    Array(initialData.length).fill(create(shape)),
     shape,
   ] as ZSet<T>;
 
   children(shape).forEach(([key]) => {
     (data[1] as Record<string, unknown>)[key] ??= [];
     data[0].forEach(
-      (x, i) => (data[1][key][i] = Array((x[key] as unknown[]).length).fill(1)),
+      (x, i) =>
+        (data[1][key][i] = Array((x[key] as unknown[]).length).fill(
+          create((shape.children as any)[key].shape),
+        )),
     );
   });
 
   return zStream({
-    pull: ({ order, filter, weight = 1 } = {}) => {
+    pull: ({ order, filter, cardinality: n = 1 } = {}) => {
       const scan = structuredClone(
         filter?.length ?
           data[0].filter((x) =>
@@ -36,11 +40,15 @@ export function memory<T extends Record<string, unknown>>(
               return !!contains !== !!exclude;
             }),
           )
-          : data[0],
+        : data[0],
       );
 
       const scanShape = order ? reorder(shape, ...order) : shape;
-      const scanMeta = Array(scan.length).fill(weight);
+      const meta =
+        n > 0 ? create(scanShape, n)
+        : n < 0 ? remove(scanShape, -n)
+        : 0;
+      const scanMeta = Array(scan.length).fill(meta);
       const scanSet = [scan, scanMeta, scanShape] as ZSet<T>;
 
       if (order) sort(scanSet, (a, b) => compare(a, b, scanShape));
