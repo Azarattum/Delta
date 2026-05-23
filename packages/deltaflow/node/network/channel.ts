@@ -1,7 +1,10 @@
 import { stream, SyncPromise, type Stream } from "../../stream";
 
 export function channel(channel: Channel) {
-  const tx = <TData, TOpt>(upstream: Stream<TData, unknown[], TOpt>) => {
+  const tx = <TStream extends Stream<any>>(upstream: TStream) => {
+    type TData = TStream extends Stream<infer T, any[], any> ? T : never;
+    type TOpt = TStream extends Stream<any, any[], infer T> ? T : never;
+
     const node = stream({
       push(_: TData) {},
       init() {

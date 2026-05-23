@@ -16,7 +16,9 @@ function stream<
     TThis &
     ThisType<TThis>,
 ) {
-  type Upstreams = { [K in keyof TIn]: Stream<any, [TIn[K]], TOptions> | null };
+  type Upstreams = {
+    [K in keyof TIn]: Stream<MaybePromise<TIn[K]>, any[], TOptions> | null;
+  };
 
   return <
     TUpstreams extends Upstreams,
