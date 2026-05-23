@@ -77,7 +77,14 @@ function add<T>(a: ZSet<T>, b: ZSet<T>, collapseFKs = true) {
   return traverse(
     {
       combine: (aData, aMeta, bData, bMeta, shape) => {
-        return [bMeta > 0 ? bData : aData, combine(aMeta, bMeta, shape)];
+        if (bMeta > 0) {
+          if (aData && typeof aData === "object" && bMeta < create(shape)) {
+            Object.assign(aData, bData);
+          } else {
+            aData = bData;
+          }
+        }
+        return [aData, combine(aMeta, bMeta, shape)];
       },
       compare:
         collapseFKs ? compare : (
