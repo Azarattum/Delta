@@ -70,12 +70,12 @@ function stream<
     }
 
     function connect(fn?: (entity: Awaited<TOut>) => void) {
-      if (!downstreams.size) init();
+      if (!downstreams.size && !options.flush) init();
       downstreams.add(fn);
 
       return () => {
         downstreams.delete(fn);
-        if (!downstreams.size) dispose();
+        if (!downstreams.size && !options.flush) dispose();
       };
     }
 
@@ -133,6 +133,7 @@ function stream<
       Object.defineProperties(stream, extensions);
     }
 
+    if (options.flush) init(); // Auto-init streams with side-effects
     return stream as Stream<TOut, TIn, TOptions> & TExtensions;
   };
 }

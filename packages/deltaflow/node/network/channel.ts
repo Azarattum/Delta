@@ -5,7 +5,7 @@ export function channel(channel: Channel) {
     type TData = TStream extends Stream<infer T, any[], any> ? T : never;
     type TOpt = TStream extends Stream<any, any[], infer T> ? T : never;
 
-    const node = stream({
+    return stream({
       push: (x: TData) => x,
       init() {
         const handle = (event: MessageEvent<Message<TData, TOpt>>) => {
@@ -25,9 +25,6 @@ export function channel(channel: Channel) {
         );
       },
     })(upstream);
-
-    node.connect(); // Subscribe to upstream graph
-    return node;
   };
 
   const rx = <TData, TOpt>() => {

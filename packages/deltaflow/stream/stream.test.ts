@@ -415,7 +415,6 @@ it("calls flush after all downstream pushes", async () => {
 
   const source = stream({ flush })(null);
   const sink = stream({ push, flush: () => {} })(source);
-  sink.connect();
 
   source.push(42);
   expect(flush).not.toHaveBeenCalled();
@@ -510,7 +509,6 @@ it("flushes async with async downstreams", async () => {
   expect(source.flush()).toBe(undefined);
 
   const view = stream({ flush: spy })(source);
-  view.connect();
   expectTypeOf(view.flush).returns.toEqualTypeOf<MaybePromise<void>>();
 
   expect(source.flush()).toBe(undefined);
