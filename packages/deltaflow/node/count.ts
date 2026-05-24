@@ -1,4 +1,4 @@
-import type { ZStream, OfZStream, PullOptions } from "./stream";
+import type { ZStream, OfZStream, ZPullOptions } from "./stream";
 import { cardinality, type ZSet } from "../datastructure/zset";
 import type { IsAsyncStream, MaybePromise } from "../stream";
 import { stream, SyncPromise } from "../stream";
@@ -20,7 +20,7 @@ export function count<
         return acc + Math.sign(cardinality(x, set[2]));
       }, total));
     },
-    pull(options?: PullOptions) {
+    pull(options?: ZPullOptions) {
       if (total != null) return total as TReturn;
       const box = { out: 0 };
       return SyncPromise.one(upstream.pull({ ...options, total: box })).then(

@@ -1,7 +1,7 @@
 import { cardinality, create, remove } from "../../datastructure/zset";
 import { isPrimary, primary } from "../../datastructure/shape";
 import type { Order, Shape } from "../../datastructure/shape";
-import { zStream, type PullOptions } from "../stream";
+import { zStream, type ZPullOptions } from "../stream";
 import type { ZSet } from "../../datastructure/zset";
 
 /** TODO: this is just a prototype */
@@ -85,7 +85,7 @@ export function createStore<T extends Record<string, unknown>>(
 
 function queryWithFilter<T>(
   store: IDBObjectStore,
-  filter: NonNullable<PullOptions["filter"]>[number],
+  filter: NonNullable<ZPullOptions["filter"]>[number],
 ) {
   const [indexKeys, refKeys = indexKeys] = filter.keys;
   const { index, unique } = getIndex(store, indexKeys.toString());

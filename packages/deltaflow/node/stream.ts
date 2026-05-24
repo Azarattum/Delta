@@ -17,7 +17,7 @@ const zStream = <
   TExtensions extends StreamExtensions = {},
   TThis = {},
 >(
-  options: StreamOptions<TPush, TPull, TIn, PullOptions, TExtensions> &
+  options: StreamOptions<TPush, TPull, TIn, ZPullOptions, TExtensions> &
     TThis &
     ThisType<TThis>,
 ) =>
@@ -30,7 +30,7 @@ const zStream = <
     ...options,
   });
 
-type ZStream<T = any> = Stream<MaybePromise<ZSet<T>>, unknown[], PullOptions>;
+type ZStream<T = any> = Stream<MaybePromise<ZSet<T>>, unknown[], ZPullOptions>;
 type OfZStream<T extends Stream<any>> = T extends ZStream<infer U> ? U : never;
 
 // TODO: CL specific stream implementation (compress CLSets)
@@ -41,16 +41,20 @@ const clStream = <
   TExtensions extends StreamExtensions = {},
   TThis = {},
 >(
-  options: StreamOptions<TPush, TPull, TIn, PullOptions, TExtensions> &
+  options: StreamOptions<TPush, TPull, TIn, CLPullOptions, TExtensions> &
     TThis &
     ThisType<TThis>,
 ) => stream(options);
 
-type CLStream<T = any> = Stream<MaybePromise<CLSet<T>>, unknown[], PullOptions>;
+type CLStream<T = any> = Stream<
+  MaybePromise<CLSet<T>>,
+  unknown[],
+  CLPullOptions
+>;
 type OfCLStream<T extends Stream<any>> =
   T extends CLStream<infer U> ? U : never;
 
-type PullOptions<T = Record<string, unknown>> = {
+type ZPullOptions<T = Record<string, unknown>> = {
   /** Apply filtering based on the provided subset */
   filter?: {
     /** Keys to filter by (optionally reference keys if not the same) */
@@ -79,7 +83,17 @@ type PullOptions<T = Record<string, unknown>> = {
   total?: { out: number };
 };
 
+type CLPullOptions = { version: number };
+
 type ValidKey = number | string | Date | BufferSource;
 
 export { zStream, clStream };
-export type { ZStream, OfZStream, CLStream, OfCLStream, PullOptions, ValidKey };
+export type {
+  ZStream,
+  CLStream,
+  ValidKey,
+  OfZStream,
+  OfCLStream,
+  ZPullOptions,
+  CLPullOptions,
+};

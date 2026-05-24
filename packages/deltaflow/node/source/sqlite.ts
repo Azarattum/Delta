@@ -7,7 +7,7 @@ import {
 import { cardinality, changed, create, remove } from "../../datastructure/zset";
 import type { SQLQueryBindings, Database } from "bun:sqlite";
 import type { Shape } from "../../datastructure/shape";
-import { zStream, type PullOptions } from "../stream";
+import { zStream, type ZPullOptions } from "../stream";
 import type { ZSet } from "../../datastructure/zset";
 import { len } from "../../datastructure/metaset";
 
@@ -129,7 +129,7 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
 }
 
 function compareBy(
-  order: NonNullable<PullOptions["order"]>,
+  order: NonNullable<ZPullOptions["order"]>,
   table: string,
   reference: string | Record<string, unknown>,
   inclusive = false,

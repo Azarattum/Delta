@@ -7,7 +7,7 @@ import {
   add,
 } from "../datastructure/zset";
 import { stream, SyncPromise, type MaybePromise, type Stream } from "../stream";
-import type { ZStream, OfZStream, PullOptions } from "./stream";
+import type { ZStream, OfZStream, ZPullOptions } from "./stream";
 import { compare, primary } from "../datastructure/shape";
 import { len, traverse } from "../datastructure/metaset";
 import type { ZSet } from "../datastructure/zset";
@@ -201,7 +201,7 @@ export function range<
         }
       }
     },
-    pull(options?: PullOptions) {
+    pull(options?: ZPullOptions) {
       const total = { out: 0 };
       return SyncPromise.one(limits ?? range.pull()).then(([count, offset]) =>
         SyncPromise.one(
