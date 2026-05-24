@@ -89,7 +89,7 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
       const where = conditions.length > 0 ? `WHERE ${conditions}` : "";
       const limit =
         cursor?.count != null ? `LIMIT ${Math.abs(cursor.count)}` : "";
-      const select = `SELECT ${shape.keys.map((k) => `${table}.${k}`).join(", ")}`;
+      const select = `SELECT ${table}.*`;
 
       const orderBy = `ORDER BY ${effectiveOrder.map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
 
@@ -112,8 +112,8 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
         : 0;
       return [scan, Array(scan.length).fill(meta), shape] as ZSet<T>;
     },
-    flush: (changes: [ZSet<T>][]) => {
-      changes.forEach(([set]) => {
+    flush: (changes: ZSet<T>[]) => {
+      changes.forEach((set) => {
         const [data, meta, thisShape = shape] = set;
         // TODO: batch these queries for better performance
         for (let i = 0; i < len(set); i++) {

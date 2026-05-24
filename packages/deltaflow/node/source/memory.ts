@@ -55,6 +55,6 @@ export function memory<T extends Record<string, unknown>>(
       // TODO: support cursor
       return scanSet;
     },
-    flush: (changes) => changes.forEach(([x]) => distinct(add(data, x))),
+    flush: (changes) => changes.forEach((x) => distinct(add(data, x))),
   })(null);
 }

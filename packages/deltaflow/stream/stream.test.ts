@@ -330,7 +330,7 @@ it("calls external flush", async () => {
   expect(flush).not.toHaveBeenCalled();
   const result = source.flush();
   expect(result).toBeInstanceOf(Promise);
-  expect(flush).toHaveBeenLastCalledWith([[0]]);
+  expect(flush).toHaveBeenLastCalledWith([0]);
   expect(flush).toHaveBeenCalledTimes(1);
 
   expect(Promise.race([result, Promise.resolve(1)])).resolves.toBe(1);
@@ -428,7 +428,7 @@ it("calls flush after all downstream pushes", async () => {
 it("handles pulling with downstream flushes", () => {
   let count = 0;
   const source = stream({
-    flush: (x) => x.forEach(([y]) => (count += y)),
+    flush: (x) => x.forEach((y) => (count += y)),
     pull: () => count,
   })(null);
 
@@ -501,7 +501,7 @@ it("flushes async with async downstreams", async () => {
   await source.flush();
 
   expect(spy).toHaveBeenCalledTimes(1);
-  expect(spy).toHaveBeenLastCalledWith([[42]]);
+  expect(spy).toHaveBeenLastCalledWith([42]);
 
   expect(view.flush()).toBe(undefined);
   source.push(42);

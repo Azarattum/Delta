@@ -86,28 +86,26 @@ function stream<
           const compressed = compress(queue);
           scheduled = false;
           queue.length = 0;
-
-          if (options.flush) {
-            const snapshot = structuredClone(compressed);
-            scheduler.current.enqueue(() => options.flush!(snapshot), 1);
-          }
-          return process(compressed).then(() => {});
+          return process(compressed);
         }, 0);
       }
     }
 
     function process(queue: TIn[number][][]) {
-      return SyncPromise.all(
-        queue.map((entities) =>
-          SyncPromise.one(push(...entities)).then((x) =>
-            downstreams.forEach((fn) => {
-              SyncPromise.try(() => fn?.(x)).catch((error) =>
-                console.error("Unhandled error in downstream handler", error),
-              );
-            }),
+      return SyncPromise.all(queue.map((x) => push(...x))).then((processed) => {
+        if (options.flush) {
+          const snapshot = structuredClone(processed);
+          scheduler.current.enqueue(() => options.flush!(snapshot), 1);
+        }
+
+        processed.forEach((x) =>
+          downstreams.forEach((fn) =>
+            SyncPromise.try(() => fn?.(x)).catch((error) =>
+              console.error("Unhandled error in downstream handler", error),
+            ),
           ),
-        ),
-      );
+        );
+      });
     }
 
     const stream: Stream<TOut, TIn, TOptions> = {
@@ -200,7 +198,7 @@ type StreamOptions<
   /** Describes the behavior when somebody pushes to the stream */
   push?: (...entities: PartialEntities<TIn>) => TOut;
   /** Describes any additional flush behavior */
-  flush?: (entities: PartialEntities<TIn>[]) => MaybePromise<void>;
+  flush?: (entities: Awaited<TPull>[]) => MaybePromise<void>;
   /** Describes how to compress multiple pushes */
   compress?: (queue: EntityQueue<TIn>) => PartialEntities<TIn>[];
   /** Describes initialization that is called on the first subscriber and disposed on no subscribers */

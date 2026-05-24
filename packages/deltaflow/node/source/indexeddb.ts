@@ -43,10 +43,10 @@ export async function indexeddb<T extends Record<string, unknown>>(
         : 0;
       return [scan, Array(scan.length).fill(meta), shape] as ZSet<T>;
     },
-    flush: async (changes: [ZSet<T>][]) => {
+    flush: async (changes: ZSet<T>[]) => {
       if (changes.length === 0) return;
       const store = db.transaction(table, "readwrite").objectStore(table);
-      for (const [change] of changes) {
+      for (const change of changes) {
         for (let i = 0; i < change[0].length; i++) {
           const item = change[0][i];
           const meta = change[1][i];

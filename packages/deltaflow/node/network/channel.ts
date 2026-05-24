@@ -6,7 +6,7 @@ export function channel(channel: Channel) {
     type TOpt = TStream extends Stream<any, any[], infer T> ? T : never;
 
     const node = stream({
-      push(_: TData) {},
+      push: (x: TData) => x,
       init() {
         const handle = (event: MessageEvent<Message<TData, TOpt>>) => {
           if (event.data.type === "pull") {
@@ -18,7 +18,7 @@ export function channel(channel: Channel) {
         channel.addEventListener("message", handle);
         return () => channel.removeEventListener("message", handle);
       },
-      flush(messages: [TData][]) {
+      flush(messages) {
         const id = crypto.randomUUID();
         return SyncPromise.all(messages.flat()).then((data) =>
           channel.postMessage({ id, type: "push", data }),
