@@ -166,6 +166,24 @@ it("handles async pulls", () => {
   }
 });
 
+it("allows explicit pulls to use different downstream options", () => {
+  type UpstreamPull = { cursor: number };
+  type DownstreamPull = { version: number };
+
+  const upstream = stream({
+    push: (x: number) => x,
+    pull: (_options?: UpstreamPull) => 1,
+  })(null);
+
+  const withExplicitPull = stream({
+    push: (x: number) => x,
+    pull: (_options?: DownstreamPull) => upstream.pull({ cursor: 1 }),
+  })(upstream);
+
+  expect(withExplicitPull.pull({ version: 1 })).toBe(1);
+  expectTypeOf(withExplicitPull.pull).returns.toEqualTypeOf<number>();
+});
+
 it("batches changes to a microtask", async () => {
   const source = stream({
     push: (x: number) => x!,

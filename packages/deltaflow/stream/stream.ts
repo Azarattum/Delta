@@ -8,7 +8,7 @@ function stream<
   TPush,
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends any[] = [Awaited<TPull>],
-  TOptions = unknown,
+  TOptions = undefined,
   TExtensions extends StreamExtensions = {},
   TThis = {},
 >(
@@ -17,7 +17,7 @@ function stream<
     ThisType<TThis>,
 ) {
   type Upstreams = {
-    [K in keyof TIn]: Stream<MaybePromise<TIn[K]>, any[], TOptions> | null;
+    [K in keyof TIn]: Stream<MaybePromise<TIn[K]>, any[], any> | null;
   };
 
   return <
@@ -161,7 +161,7 @@ type PartialEntities<T extends any[]> =
 type EntityQueue<T extends any[]> =
   T extends [infer U] ? [U[]] : { [K in keyof T]?: T[K][] };
 
-type Stream<TOut, TIn extends any[] = unknown[], TPullOptions = unknown> = {
+type Stream<TOut, TIn extends any[] = unknown[], TPullOptions = undefined> = {
   /** Subscribes to changes and immediately pulls the current state */
   subscribe(
     fn: (entity: Awaited<TOut>) => void,
