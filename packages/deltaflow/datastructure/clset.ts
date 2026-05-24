@@ -35,6 +35,10 @@ function reset(meta: CLMeta) {
   return meta;
 }
 
+function alive(meta: CLMeta) {
+  return meta[1] % 2 === 1;
+}
+
 function peer(clock: number) {
   return clock % CLOCK;
 }
@@ -97,5 +101,5 @@ function copy<T>(item: CLSet<T>) {
   );
 }
 
-export { revive, tombstone, tick, bump, peer, copy, merge };
+export { revive, tombstone, tick, bump, peer, alive, copy, merge };
 export type { CLSet, CLMeta, CLGlobal, NextVersion };
