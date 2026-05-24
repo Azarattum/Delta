@@ -46,7 +46,6 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
   return zStream({
     pull: ({ filter, order, cursor, total, cardinality: n = 1 } = {}) => {
       order ??= pks;
-      const orderKeys = order.map((x) => (Array.isArray(x) ? x[0] : x));
 
       const reverse = cursor?.count != null && cursor.count < 0;
       const effectiveOrder = order.map((x) => {
@@ -65,21 +64,8 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
         return `(${columnKeys}) ${exclude ? "NOT" : ""} IN (${tuples})`;
       });
 
-      const cteReverse = reverse && !!cursor?.anchor;
-      const cteOrder =
-        cteReverse ? effectiveOrder
-        : cursor?.anchor ? order
-        : effectiveOrder;
-      const cteOrderBy = `ORDER BY ${cteOrder.map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
-      const cte =
-        cursor ?
-          `WITH cursor AS (SELECT ${orderKeys.join()} FROM ${table}
-          ${cursor.anchor ? `WHERE ${compareBy(order, table, cursor.anchor, true, cteReverse)}` : ""}
-          ${cteOrderBy} LIMIT 1 OFFSET ${cursor.offset ?? 0})`
-        : "";
-
-      const pagination = cursor && [
-        compareBy(order, table, "cursor", !cursor?.exclusive, reverse),
+      const pagination = cursor?.anchor && [
+        compareBy(order, table, cursor.anchor, !cursor.exclusive, reverse),
       ];
 
       const conditions = (filtering ?? [])
@@ -87,15 +73,12 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
         .join(" AND ");
 
       const where = conditions.length > 0 ? `WHERE ${conditions}` : "";
-      const limit =
-        cursor?.count != null ? `LIMIT ${Math.abs(cursor.count)}` : "";
+      const limit = `LIMIT ${cursor?.count != null ? Math.abs(cursor.count) : "-1"}`;
+      const offset = cursor?.offset ? `OFFSET ${cursor.offset}` : "";
       const select = `SELECT ${table}.*`;
-
       const orderBy = `ORDER BY ${effectiveOrder.map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
 
-      const main = `${select} FROM ${table}${cte ? ",cursor" : ""} ${where}`;
-      let query = `${cte}\n${main} ${orderBy} ${limit}`;
-
+      const query = `${select} FROM ${table} ${where} ${orderBy} ${limit} ${offset}`;
       const scan = db.query(query).all();
       if (reverse) scan.reverse();
 
