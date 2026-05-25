@@ -1,7 +1,7 @@
 import { zStream, type OfZStream, type ValidKey, type ZStream } from "./stream";
 import { add, cardinality, multiply, zero } from "../datastructure/zset";
+import { SyncPromise, type Follows, type PullOf } from "../stream";
 import type { ZSet } from "../datastructure/zset";
-import { SyncPromise } from "../stream";
 
 export function join<
   const AStream extends ZStream<A>,
@@ -59,7 +59,7 @@ export function join<
         ]).then(([a, b]) => {
           return multiply(a, aKey, b, bKey, relationship, single);
         }),
-      );
+      ) as Follows<[PullOf<AStream>, PullOf<BStream>], C>;
     },
   })(aUpstream, bUpstream);
 }

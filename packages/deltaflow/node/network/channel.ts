@@ -1,9 +1,10 @@
-import { stream, SyncPromise, type Stream } from "../../stream";
+import type { OptionsOf, PullOf, Stream } from "../../stream";
+import { stream, SyncPromise } from "../../stream";
 
 export function channel(channel: Channel) {
   const tx = <TStream extends Stream<any>>(upstream: TStream) => {
-    type TData = TStream extends Stream<infer T, any[], any> ? T : never;
-    type TOpt = TStream extends Stream<any, any[], infer T> ? T : never;
+    type TOpt = OptionsOf<TStream>;
+    type TData = PullOf<TStream>;
 
     return stream({
       push: (x: TData) => x,

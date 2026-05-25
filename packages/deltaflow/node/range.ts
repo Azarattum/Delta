@@ -6,11 +6,12 @@ import {
   zero,
   add,
 } from "../datastructure/zset";
-import { stream, SyncPromise, type MaybePromise, type Stream } from "../stream";
+import type { Follows, MaybePromise, PullOf, Stream } from "../stream";
 import type { ZStream, OfZStream, ZPullOptions } from "./stream";
 import { compare, primary } from "../datastructure/shape";
 import { len, traverse } from "../datastructure/metaset";
 import type { ZSet } from "../datastructure/zset";
+import { stream, SyncPromise } from "../stream";
 
 export function range<
   TStream extends ZStream<T>,
@@ -213,7 +214,7 @@ export function range<
           bounds = [set[0][0], set[0][count - 1]];
           return set;
         }),
-      );
+      ) as Follows<[PullOf<TStream>, PullOf<typeof range>], ZSet<T>>;
     },
     compress([sets, ranges]) {
       return [[sets?.reduce((acc, x) => add(acc, x, false)), ranges?.at(-1)]];

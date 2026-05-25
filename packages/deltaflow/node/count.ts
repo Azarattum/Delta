@@ -1,13 +1,13 @@
 import type { ZStream, OfZStream, ZPullOptions } from "./stream";
 import { cardinality, type ZSet } from "../datastructure/zset";
-import type { IsAsyncStream, MaybePromise } from "../stream";
+import type { Follows, MaybePromise, PullOf } from "../stream";
 import { stream, SyncPromise } from "../stream";
 
 export function count<
   TStream extends ZStream<T>,
   T extends Record<string, unknown> = OfZStream<TStream>,
 >(upstream: TStream) {
-  type TReturn = IsAsyncStream<TStream, MaybePromise<number>, number>;
+  type TReturn = number | Follows<[PullOf<TStream>], number>;
   let total: number | undefined;
 
   return stream({

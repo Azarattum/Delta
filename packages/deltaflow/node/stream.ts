@@ -9,9 +9,10 @@ import {
 import { add, type ZSet } from "../datastructure/zset";
 import type { CLSet } from "../datastructure/clset";
 import type { Order } from "../datastructure/shape";
+import type { Query } from "./source/datastore";
 
 const zStream = <
-  TPush extends ZSet<any>,
+  TPush extends MaybePromise<ZSet<any>>,
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends ZSet<any>[] = [Awaited<TPull>],
   TExtensions extends StreamExtensions = {},
@@ -35,7 +36,7 @@ type OfZStream<T extends Stream<any>> = T extends ZStream<infer U> ? U : never;
 
 // TODO: CL specific stream implementation (compress CLSets)
 const clStream = <
-  TPush extends CLSet<any>,
+  TPush extends MaybePromise<CLSet<any>>,
   TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
   TIn extends CLSet<any>[] = [Awaited<TPull>],
   TExtensions extends StreamExtensions = {},
@@ -51,7 +52,7 @@ type CLStream<T = any> = Stream<
   unknown[],
   CLPullOptions
 >;
-type OfCLStream<T extends Stream<any>> =
+type OfCLStream<T extends CLStream<any>> =
   T extends CLStream<infer U> ? U : never;
 
 type ZPullOptions<T = Record<string, unknown>> = {

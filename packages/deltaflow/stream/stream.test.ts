@@ -164,6 +164,16 @@ it("handles async pulls", () => {
     expect(fromAsync.pull()).toBe("1337");
     expectTypeOf(fromAsync.pull()).toEqualTypeOf<string>();
   }
+
+  const cached = stream({
+    push: (x: number) => x,
+    pull: (): number | Promise<number> => 42,
+  })(asyncSource);
+
+  expectTypeOf(cached.pull()).toEqualTypeOf<number | Promise<number>>();
+
+  // @ts-expect-error pull must return the same value family as push.
+  stream({ push: () => 1, pull: () => "bad" })(null);
 });
 
 it("allows explicit pulls to use different downstream options", () => {

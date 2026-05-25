@@ -6,8 +6,8 @@ const internal = Symbol();
 
 function stream<
   TPush,
-  TPull extends MaybePromise<TPush> = MaybePromise<TPush>,
-  TIn extends any[] = [Awaited<TPull>],
+  TPull extends DefaultPull<NoInfer<TPush>> = DefaultPull<TPush>,
+  TIn extends any[] = [Awaited<ActualPull<TPull>>],
   TOptions = undefined,
   TExtensions extends StreamExtensions = {},
   TThis = {},
@@ -109,7 +109,7 @@ function stream<
     }
 
     const stream: Stream<TOut, TIn, TOptions> = {
-      pull: (options) => (scheduler.current.flush(), pull(options)),
+      pull: (options) => (scheduler.current.flush(), pull(options) as TOut),
       push: (...entities) => {
         entities.forEach((x, i) => x != null && (queue[i] ??= []).push(x));
         return schedule();
@@ -138,23 +138,24 @@ function stream<
   };
 }
 
+declare const defaultPull: unique symbol;
+type ActualPull<TPull> = Exclude<TPull, typeof defaultPull>;
+type DefaultPull<TPush> = MaybePromise<TPush> | typeof defaultPull;
+
 type IsAsyncStream<TStream, TTrue = true, TFalse = false> = HasPromise<
-  TStream extends Stream<infer TOut, any> ? TOut : never,
+  PullOf<TStream>,
   TTrue,
   TFalse
 >;
 
 type InferOut<TPush, TPull, TUpstreams extends any[]> =
-  // Check if TPull is exactly T | Promise<T> for some T
-  (<U>() => U extends TPull ? 1 : 2) extends (
-    <U>() => U extends MaybePromise<TPull> ? 1 : 2
-  ) ?
+  typeof defaultPull extends TPull ?
     IsAsyncStream<
       TUpstreams[number],
-      Promise<Awaited<TPull>>,
-      HasPromise<TPush, Promise<Awaited<TPull>>, Awaited<TPull>>
+      Promise<Awaited<TPush>>,
+      HasPromise<TPush, Promise<Awaited<TPush>>, Awaited<TPush>>
     >
-  : TPull;
+  : ActualPull<TPull>;
 
 type PartialEntities<T extends any[]> =
   T extends [infer U] ? [U] : { [K in keyof T]?: T[K] };
@@ -183,14 +184,23 @@ type Stream<TOut, TIn extends any[] = unknown[], TPullOptions = undefined> = {
   [internal]: any;
 };
 
+type PullOf<TStream> =
+  TStream extends Stream<infer TOut, any[], any> ? TOut : never;
+
+type PushOf<TStream> =
+  TStream extends Stream<any, infer TIn, any> ? TIn : never;
+
+type OptionsOf<TStream> =
+  TStream extends Stream<any, any[], infer TPullOptions> ? TPullOptions : never;
+
 type StreamExtensions = Record<string, unknown> & {
   [K in keyof Stream<unknown>]?: never;
 };
 
 type StreamOptions<
   TOut,
-  TPull extends MaybePromise<TOut> = MaybePromise<TOut>,
-  TIn extends any[] = [Awaited<TPull>],
+  TPull extends DefaultPull<NoInfer<TOut>> = DefaultPull<TOut>,
+  TIn extends any[] = [Awaited<ActualPull<TPull>>],
   TOptions = undefined,
   TExtensions extends StreamExtensions = {},
 > = {
@@ -199,7 +209,7 @@ type StreamOptions<
   /** Describes the behavior when somebody pushes to the stream */
   push?: (...entities: PartialEntities<TIn>) => TOut;
   /** Describes any additional flush behavior */
-  flush?: (entities: Awaited<TPull>[]) => MaybePromise<void>;
+  flush?: (entities: Awaited<ActualPull<TPull>>[]) => MaybePromise<void>;
   /** Describes how to compress multiple pushes */
   compress?: (queue: EntityQueue<TIn>) => PartialEntities<TIn>[];
   /** Describes initialization that is called on the first subscriber and disposed on no subscribers */
@@ -212,6 +222,9 @@ type StreamOptions<
 export { stream };
 export type {
   Stream,
+  PullOf,
+  PushOf,
+  OptionsOf,
   EntityQueue,
   StreamOptions,
   IsAsyncStream,
