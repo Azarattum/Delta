@@ -39,6 +39,25 @@ function alive(meta: CLMeta) {
   return meta[1] % 2 === 1;
 }
 
+function remap(meta: CLMeta, fromPeers: number[], toPeers: number[]) {
+  for (let i = 2; i < meta.length; i++) {
+    const fromIndex = peer(meta[i]);
+    let toIndex = toPeers.indexOf(fromPeers[fromIndex]);
+    if (toIndex === -1) {
+      toPeers.push(fromPeers[fromIndex]);
+      toIndex = toPeers.length - 1;
+    }
+    meta[i] += -fromIndex + toIndex;
+  }
+  return meta;
+}
+
+function compare(a: CLMeta, b: CLMeta, i: number, peers: number[]) {
+  const [aPeer, bPeer] = [peer(a[i + 2]), peer(b[i + 2])];
+  let compare = a[i + 2] - aPeer - (b[i + 2] - bPeer);
+  return (compare ||= peers[aPeer] - peers[bPeer]);
+}
+
 function peer(clock: number) {
   return clock % CLOCK;
 }
@@ -101,5 +120,16 @@ function copy<T>(item: CLSet<T>) {
   );
 }
 
-export { revive, tombstone, tick, bump, peer, alive, copy, merge };
+export {
+  tombstone,
+  compare,
+  revive,
+  alive,
+  merge,
+  remap,
+  tick,
+  bump,
+  peer,
+  copy,
+};
 export type { CLSet, CLMeta, CLGlobal, NextVersion };
