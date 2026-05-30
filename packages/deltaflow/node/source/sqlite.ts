@@ -7,7 +7,7 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
   db: Database,
   table: string,
 ) {
-  return ((keys, types, pks, idx) => {
+  return ((pks, keys, types, idx) => {
     // TODO: check init pattern with indexeddb
     const columns = keys.map((key, i) => {
       return `${key} ${toSQLType(types[i])} ${isNullable(types[i]) ? "" : "NOT NULL"}`;

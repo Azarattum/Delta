@@ -73,7 +73,7 @@ export function sync<
   const keyOf = (data: Partial<T>) =>
     JSON.stringify(pks.map((key) => data[key]));
 
-  const result = SyncPromise.one(store(keys, types, pkCols, indexes)).then(
+  const result = SyncPromise.one(store(pkCols, keys, types, indexes)).then(
     (store) =>
       SyncPromise.one(
         store.query<MetaRow>({

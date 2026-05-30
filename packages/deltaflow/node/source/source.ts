@@ -4,6 +4,7 @@ import {
   isPrimary,
   compare,
   primary,
+  reorder,
 } from "../../datastructure/shape";
 import type { Order, Shape } from "../../datastructure/shape";
 import { zStream, type ZPullOptions, type ZStream } from "../stream";
@@ -35,6 +36,10 @@ export function source<
   const idx = keys
     .filter((_, i) => isRelation(types[i]) && !isPrimary(types[i]))
     .map((key) => [key]);
+  const order = shape.order.map((entry) => {
+    const key = shape.keys[entry >> 1] as keyof T & string;
+    return [key, entry & 1 ? "desc" : "asc"] as const;
+  });
 
   const created = create(shape);
   const removed = remove(shape);
@@ -43,7 +48,7 @@ export function source<
   return <TStream extends ZStream<Partial<T>>>(
     upstream: TStream | null = null,
   ) => {
-    const data = SyncPromise.one(store(keys, types, pks, idx)).then((store) => {
+    const data = SyncPromise.one(store(pks, keys, types, idx)).then((store) => {
       let localNeeded = true;
       const localSource = zStream({
         push: (x: ZSet<T>) => x,
@@ -64,14 +69,15 @@ export function source<
           });
         },
         pull({ cardinality = 1, ...rest } = {}) {
-          const query = { order: pks, ...rest } as Query<T>;
+          const queryShape = rest.order ? reorder(shape, ...rest.order) : shape;
+          const query = { order, ...rest } as Query<T>;
           return SyncPromise.one(store.query(query)).then((rows) => {
             const meta =
-              cardinality > 0 ? create(shape, cardinality)
-              : cardinality < 0 ? remove(shape, -cardinality)
+              cardinality > 0 ? create(queryShape, cardinality)
+              : cardinality < 0 ? remove(queryShape, -cardinality)
               : 0;
 
-            return [rows, Array(rows.length).fill(meta), shape] as ZSet<T>;
+            return [rows, Array(rows.length).fill(meta), queryShape] as ZSet<T>;
           }) as Follows<Async, ZSet<T>>;
         },
         flush(changes) {
@@ -127,10 +133,7 @@ export function source<
 
       function reconstruct(set: ZSet<Partial<T>>) {
         return SyncPromise.one(
-          store.query({
-            order: pks,
-            filter: [{ keys: [pks], items: set[0] }],
-          }),
+          store.query({ filter: [{ keys: [pks], items: set[0] }], order }),
         ).then((current) => {
           return traverse(
             {
@@ -199,9 +202,9 @@ export type Query<T extends Record<string, unknown>> = {
 };
 
 export type Store<T extends Record<string, unknown>> = <TRow extends T = T>(
+  pks: (keyof TRow & string)[],
   keys: readonly (keyof TRow & string)[],
   types: readonly number[],
-  pks: (keyof TRow & string)[],
   idx: (keyof TRow & string)[][],
 ) => MaybePromise<{
   mutate<TRow extends T = T>(mutations: Mutations<TRow>): MaybePromise<void>;

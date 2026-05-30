@@ -15,9 +15,9 @@ type Note = {
 it("applies creates, sparse updates, and removes in one transaction", () => {
   const db = new SQLite(":memory:");
   const store = sqlite<Note>(db, "notes")(
+    ["id"],
     ["id", "title", "body"],
     [0, 2, 2],
-    ["id"],
     [],
   );
 
@@ -53,9 +53,9 @@ it("applies creates, sparse updates, and removes in one transaction", () => {
 it("rolls back the whole mutation batch on failure", () => {
   const db = new SQLite(":memory:");
   const store = sqlite<Note>(db, "notes")(
+    ["id"],
     ["id", "title", "body"],
     [0, 2, 2],
-    ["id"],
     [],
   );
 
