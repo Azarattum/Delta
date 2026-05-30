@@ -1,23 +1,33 @@
 import { it, expect, describe, beforeEach, mock } from "bun:test";
-import { shape, range, sink, limit, sqlite } from "..";
 import { create, remove, update } from "../datastructure/zset";
+import { shape, range, sink, limit, sqlite } from "..";
+import { source } from "./source/source";
 import SQLite from "bun:sqlite";
 
-const idShape = shape((t) => ({ id: t(t.DOUBLE, t.PRIMARY) }));
-const ids = (...x: number[]) => x.map((id) => ({ id }));
-const [add, del, upd] = [create(idShape), remove(idShape), update(idShape)];
+const idShape = shape((t) => ({
+  id: t(t.DOUBLE, t.PRIMARY),
+  value: t.INT,
+}));
+const ids = (...x: number[]) => x.map((id) => ({ id, value: 0 }));
+const updIds = (...x: number[]) => x.map((id) => ({ id, value: 1 }));
+const [add, del, upd] = [
+  create(idShape),
+  remove(idShape),
+  update(idShape, "value"),
+];
 
 it("limits simple queries", async () => {
   const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
 
   const db = new SQLite(":memory:");
-  const users = sqlite(db, "users", user, [
+  const users = source(user, sqlite(db, "users"))();
+  users.create(
     { id: 0, name: "Aron" },
     { id: 10, name: "Alice" },
     { id: 20, name: "Bob" },
     { id: 30, name: "Clara" },
     { id: 40, name: "Dave" },
-  ]);
+  );
 
   const view = sink(range(users, limit(3, 1)));
 
@@ -27,7 +37,7 @@ it("limits simple queries", async () => {
     { id: 30, name: "Clara" },
   ]);
 
-  users.push([[{ id: 50, name: "Eve" }], [create(user)], user]);
+  users.create({ id: 50, name: "Eve" });
   await users.flush();
 
   expect(view.pull()[0]).toEqual([
@@ -36,15 +46,11 @@ it("limits simple queries", async () => {
     { id: 30, name: "Clara" },
   ]);
 
-  users.push([
-    [
-      { id: 5, name: "Aron" },
-      { id: 25, name: "Agatha" },
-      { id: 35, name: "Dave" },
-    ],
-    [create(user), create(user), create(user)],
-    user,
-  ]);
+  users.create(
+    { id: 5, name: "Aron" },
+    { id: 25, name: "Agatha" },
+    { id: 35, name: "Dave" },
+  );
   await users.flush();
 
   expect(view.pull()[0]).toEqual([
@@ -58,27 +64,24 @@ it("respects limit bounds", async () => {
   const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
 
   const db = new SQLite(":memory:");
-  const users = sqlite(db, "users", user, [
+  const users = source(user, sqlite(db, "users"))();
+  users.create(
     { id: 0, name: "Aron" },
     { id: 10, name: "Alice" },
     { id: 20, name: "Bob" },
     { id: 30, name: "Clara" },
     { id: 40, name: "Dave" },
-  ]);
+  );
 
   const view = sink(range(users, limit(3, 1)));
   // TODO: this `.pull` should not be necessary
   view.pull();
 
-  users.push([
-    [
-      { id: 25, name: "Agatha" },
-      { id: 27, name: "Gina" },
-      { id: 28, name: "Hannah" },
-    ],
-    [create(user), create(user), create(user)],
-    user,
-  ]);
+  users.create(
+    { id: 25, name: "Agatha" },
+    { id: 27, name: "Gina" },
+    { id: 28, name: "Hannah" },
+  );
   await users.flush();
 
   expect(view.pull()[0]).toEqual([
@@ -87,7 +90,7 @@ it("respects limit bounds", async () => {
     { id: 25, name: "Agatha" },
   ]);
 
-  users.push([[{ id: 28, name: "Hannah" }], [remove(user)], user]);
+  users.create({ id: 28, name: "Hannah" });
   await users.flush();
 
   expect(view.pull()[0]).toEqual([
@@ -101,14 +104,15 @@ it("moves window dynamically", async () => {
   const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
 
   const db = new SQLite(":memory:");
-  const users = sqlite(db, "users", user, [
+  const users = source(user, sqlite(db, "users"))();
+  users.create(
     { id: 0, name: "Aron" },
     { id: 10, name: "Alice" },
     { id: 20, name: "Bob" },
     { id: 30, name: "Clara" },
     { id: 40, name: "Dave" },
     { id: 50, name: "Eve" },
-  ]);
+  );
 
   const window = limit(3, 1);
   const view = sink(range(users, window));
@@ -155,20 +159,21 @@ it("can push without pulling", async () => {
   const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
 
   const db = new SQLite(":memory:");
-  const users = sqlite(db, "users", user, [
+  const users = source(user, sqlite(db, "users"))();
+  users.create(
     { id: 0, name: "Aron" },
     { id: 10, name: "Alice" },
     { id: 20, name: "Bob" },
     { id: 30, name: "Clara" },
     { id: 40, name: "Dave" },
     { id: 50, name: "Eve" },
-  ]);
+  );
 
   const window = limit(3, 1);
   const view = sink(range(users, window));
 
   window.push([3, 2]);
-  users.push([[{ id: 35, name: "Eve" }], [create(user)], user]);
+  users.create({ id: 35, name: "Eve" });
 
   expect(view.pull()[0]).toEqual([
     { id: 20, name: "Bob" },
@@ -275,14 +280,15 @@ describe.each([
 
   it.each([3, 2, 1, 0])("with limit %d", async (i) => {
     const db = new SQLite(":memory:");
-    const users = sqlite(db, "users", user, [
+    const users = source(user, sqlite(db, "users"))();
+    users.create(
       { id: 0, name: "Aron" },
       { id: 10, name: "Alice" },
       { id: 20, name: "Bob" },
       { id: 30, name: "Clara" },
       { id: 40, name: "Dave" },
       { id: 50, name: "Eve" },
-    ]);
+    );
 
     const view = sink(range(users, limit(i, 1)));
     expect(view.pull()[0]).toEqual(
@@ -293,32 +299,34 @@ describe.each([
       ].slice(0, i),
     );
 
-    users.push([
-      structuredClone(data),
-      meta.map((x) => (x > 0 ? create(user) : remove(user))),
-      user,
-    ]);
+    data.forEach((x, i) => {
+      if (meta[i] > 0) users.create(structuredClone(x));
+      else if (meta[i] < 0) users.delete(structuredClone(x));
+    });
     await users.flush();
     expect(view.pull()[0]).toEqual(expected.slice(0, i));
   });
 });
 
 describe("limits lower bound with", async () => {
-  let items: ReturnType<typeof sqlite<{ id: number }>>;
-  let view: ReturnType<typeof range<typeof items, { id: number }>>;
-  let delta: ReturnType<
-    typeof mock<(data: { id: number }[], meta: number[]) => void>
-  >;
+  let items: ReturnType<typeof lowerBoundFixture>["items"];
+  let view: ReturnType<typeof lowerBoundFixture>["view"];
+  let delta: ReturnType<typeof lowerBoundFixture>["delta"];
 
   beforeEach(() => {
-    const db = new SQLite(":memory:");
-    items = sqlite(db, "items", idShape, ids(1, 2, 3, 4, 5, 6));
-    view = range(items, limit(10, 2));
+    ({ items, view, delta } = lowerBoundFixture());
     expect(view.pull()[0]).toEqual(ids(3, 4, 5, 6));
-
-    delta = mock();
-    view.connect((x) => delta(x[0], x[1]));
   });
+
+  function lowerBoundFixture() {
+    const db = new SQLite(":memory:");
+    const items = source(idShape, sqlite(db, "items"))();
+    items.create(...ids(1, 2, 3, 4, 5, 6));
+    const view = range(items, limit(10, 2));
+    const delta = mock<(data: { id: number }[], meta: number[]) => void>();
+    view.connect((x) => delta(x[0], x[1]));
+    return { items, view, delta };
+  }
 
   it("adds (no interleaf)", async () => {
     await items.push([ids(1.5), [add], idShape]);
@@ -409,14 +417,17 @@ describe("limits lower bound with", async () => {
   });
 
   it("updates at anchor", async () => {
-    await items.push([ids(3), [upd], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3), [upd]);
+    await items.push([updIds(3), [upd], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(updIds(3), [upd]);
     expect(view.bounds.lower?.id).toBe(3);
   });
 
   it("removes then updates at anchor", async () => {
-    await items.push([ids(1.5, 3), [add, upd], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(2, 3), [add, upd]);
+    await items.push([[...ids(1.5), ...updIds(3)], [add, upd], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(
+      [...ids(2), ...updIds(3)],
+      [add, upd],
+    );
     expect(view.bounds.lower?.id).toBe(2);
   });
 
@@ -434,21 +445,24 @@ describe("limits lower bound with", async () => {
 });
 
 describe("limits upper bound with", async () => {
-  let items: ReturnType<typeof sqlite<{ id: number }>>;
-  let view: ReturnType<typeof range<typeof items, { id: number }>>;
-  let delta: ReturnType<
-    typeof mock<(data: { id: number }[], meta: number[]) => void>
-  >;
+  let items: ReturnType<typeof upperBoundFixture>["items"];
+  let view: ReturnType<typeof upperBoundFixture>["view"];
+  let delta: ReturnType<typeof upperBoundFixture>["delta"];
 
   beforeEach(() => {
-    const db = new SQLite(":memory:");
-    items = sqlite(db, "items", idShape, ids(1, 2, 3, 4, 5, 6));
-    view = range(items, limit(4, 0));
+    ({ items, view, delta } = upperBoundFixture());
     expect(view.pull()[0]).toEqual(ids(1, 2, 3, 4));
-
-    delta = mock();
-    view.connect((x) => delta(x[0], x[1]));
   });
+
+  function upperBoundFixture() {
+    const db = new SQLite(":memory:");
+    const items = source(idShape, sqlite(db, "items"))();
+    items.create(...ids(1, 2, 3, 4, 5, 6));
+    const view = range(items, limit(4, 0));
+    const delta = mock<(data: { id: number }[], meta: number[]) => void>();
+    view.connect((x) => delta(x[0], x[1]));
+    return { items, view, delta };
+  }
 
   it("adds (out of range)", async () => {
     await items.push([ids(4.5), [add], idShape]);
@@ -533,14 +547,17 @@ describe("limits upper bound with", async () => {
   });
 
   it("updates at anchor", async () => {
-    await items.push([ids(4), [upd], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(4), [upd]);
+    await items.push([updIds(4), [upd], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(updIds(4), [upd]);
     expect(view.bounds.upper?.id).toBe(4);
   });
 
   it("removes then updates at anchor", async () => {
-    await items.push([ids(3, 4), [del, upd], idShape]);
-    expect(delta).toHaveBeenLastCalledWith(ids(3, 4, 5), [del, upd, add]);
+    await items.push([[...ids(3), ...updIds(4)], [del, upd], idShape]);
+    expect(delta).toHaveBeenLastCalledWith(
+      [...ids(3), ...updIds(4), ...ids(5)],
+      [del, upd, add],
+    );
     expect(view.bounds.upper?.id).toBe(5);
   });
 
@@ -573,21 +590,24 @@ describe("limits upper bound with", async () => {
 });
 
 describe("limits both bounds with", async () => {
-  let items: ReturnType<typeof sqlite<{ id: number }>>;
-  let view: ReturnType<typeof range<typeof items, { id: number }>>;
-  let delta: ReturnType<
-    typeof mock<(data: { id: number }[], meta: number[]) => void>
-  >;
+  let items: ReturnType<typeof bothBoundsFixture>["items"];
+  let view: ReturnType<typeof bothBoundsFixture>["view"];
+  let delta: ReturnType<typeof bothBoundsFixture>["delta"];
 
   beforeEach(() => {
-    const db = new SQLite(":memory:");
-    items = sqlite(db, "items", idShape, ids(1, 2, 3, 4, 5, 6));
-    view = range(items, limit(2, 2));
+    ({ items, view, delta } = bothBoundsFixture());
     expect(view.pull()[0]).toEqual(ids(3, 4));
-
-    delta = mock();
-    view.connect((x) => delta(x[0], x[1]));
   });
+
+  function bothBoundsFixture() {
+    const db = new SQLite(":memory:");
+    const items = source(idShape, sqlite(db, "items"))();
+    items.create(...ids(1, 2, 3, 4, 5, 6));
+    const view = range(items, limit(2, 2));
+    const delta = mock<(data: { id: number }[], meta: number[]) => void>();
+    view.connect((x) => delta(x[0], x[1]));
+    return { items, view, delta };
+  }
 
   it("multiple adds below - multiple enter, multiple leave", async () => {
     await items.push([ids(1.5, 2.5), [add, add], idShape]);

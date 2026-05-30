@@ -251,5 +251,6 @@ export {
   either,
   shape,
   nest,
+  TYPE,
 };
 export type { Shape, Children, Order };
