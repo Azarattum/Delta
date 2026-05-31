@@ -1,9 +1,10 @@
-import { create, remove, update } from "../../datastructure/zset";
-import { createStore, indexeddb } from "./indexeddb";
 import { expect, expectTypeOf, it } from "bun:test";
+import { create } from "../../datastructure/zset";
 import { shape } from "../../datastructure/shape";
 import type { MaybePromise } from "../../stream";
+import { indexeddb } from "./indexeddb";
 import { join, order, sink } from "..";
+import { source } from "./source";
 import { mock } from "bun:test";
 
 import "fake-indexeddb/auto";
@@ -20,26 +21,18 @@ it("works with indexed DB", async () => {
     user: t(t.INT, t.RELATION(1)),
   }));
 
-  const idbRequest = indexedDB.open("test1", 1);
-  idbRequest.onupgradeneeded = () => {
-    createStore(idbRequest.result, "users", user);
-    createStore(idbRequest.result, "messages", message);
-  };
+  const users = await source(user, indexeddb("test1", "users"))();
+  await users.create({ id: 0, name: "Bob" }, { id: 1, name: "Alice" }).flush();
 
-  const db = await new Promise<IDBDatabase>(
-    (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
-  );
-
-  const users = await indexeddb(db, "users", user, [
-    { id: 0, name: "Bob" },
-    { id: 1, name: "Alice" },
-  ]);
-  const messages = await indexeddb(db, "messages", message, [
-    { id: 0, text: "Hello", user: 0 },
-    { id: 1, text: "I'm Bob", user: 0 },
-    { id: 2, text: "And I'm Alice!", user: 1 },
-    { id: 3, text: "I'll be here!", user: 2 },
-  ]);
+  const messages = await source(message, indexeddb("test1", "messages"))();
+  await messages
+    .create(
+      { id: 0, text: "Hello", user: 0 },
+      { id: 1, text: "I'm Bob", user: 0 },
+      { id: 2, text: "And I'm Alice!", user: 1 },
+      { id: 3, text: "I'll be here!", user: 2 },
+    )
+    .flush();
 
   expectTypeOf(users.flush).returns.toEqualTypeOf<MaybePromise<void>>();
   expectTypeOf(messages.flush).returns.toEqualTypeOf<MaybePromise<void>>();
@@ -66,11 +59,7 @@ it("works with indexed DB", async () => {
     },
   ]);
 
-  messages.push([
-    [{ id: 4, text: "Nice to meet you!", user: 1 }],
-    [create(message)],
-    message,
-  ]);
+  messages.create({ id: 4, text: "Nice to meet you!", user: 1 });
   await expect(joined.flush()).resolves.toBe(undefined);
   expect(joined.pull()[0]).toEqual([
     {
@@ -91,7 +80,7 @@ it("works with indexed DB", async () => {
     },
   ]);
 
-  users.push([[{ id: 2, name: "Emily" }], [create(user)], user]);
+  users.create({ id: 2, name: "Emily" });
   await joined.flush();
   expect(joined.pull()[0]).toEqual([
     {
@@ -117,8 +106,8 @@ it("works with indexed DB", async () => {
     },
   ]);
 
-  // Parent updates are synchronous
-  users.push([[{ id: 2, name: "Emilia" }], [update(user, "name")], user]);
+  users.update({ id: 2, name: "Emilia" });
+  await joined.flush();
   expect(joined.pull()[0]).toEqual([
     {
       id: 0,
@@ -143,13 +132,7 @@ it("works with indexed DB", async () => {
     },
   ]);
 
-  // Children updates still need an async flush to retrieve its parent node
-  // TODO: think if we can work around this
-  messages.push([
-    [{ id: 4, text: "I'm glad to meet you!", user: 1 }],
-    [update(message, "text")],
-    message,
-  ]);
+  messages.update({ id: 4, text: "I'm glad to meet you!" });
   await joined.flush();
   expect(joined.pull()[0]).toEqual([
     {
@@ -185,25 +168,14 @@ it("works with indexed DB", async () => {
   ]);
 });
 
-it("pushes synchronously when possible", async () => {
+it("pushes through indexeddb", async () => {
   const user = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
     name: t.STRING,
   }));
 
-  const idbRequest = indexedDB.open("test2", 1);
-  idbRequest.onupgradeneeded = () => {
-    createStore(idbRequest.result, "users", user);
-  };
-
-  const db = await new Promise<IDBDatabase>(
-    (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
-  );
-
-  const users = await indexeddb(db, "users", user, [
-    { id: 0, name: "Bob" },
-    { id: 1, name: "Alice" },
-  ]);
+  const users = await source(user, indexeddb("test2", "users"))();
+  await users.create({ id: 0, name: "Bob" }, { id: 1, name: "Alice" }).flush();
 
   const view = sink(users);
 
@@ -216,13 +188,15 @@ it("pushes synchronously when possible", async () => {
     { id: 1, name: "Alice" },
   ]);
 
-  users.push([[{ id: 2, name: "Emily" }], [create(user)], user]);
+  users.create({ id: 2, name: "Emily" });
+  await view.flush();
   expect(view.pull()[0]).toEqual([
     { id: 0, name: "Bob" },
     { id: 1, name: "Alice" },
     { id: 2, name: "Emily" },
   ]);
 
+  await users.flush();
   expect((await users.pull())[0]).toEqual([
     { id: 0, name: "Bob" },
     { id: 1, name: "Alice" },
@@ -232,9 +206,11 @@ it("pushes synchronously when possible", async () => {
   const spy = mock();
   view.connect(spy);
   expect(spy).not.toHaveBeenCalled();
-  users.push([[{ id: 3, name: "John" }], [create(user)], user]);
+  users.create({ id: 3, name: "John" });
   expect(spy).not.toHaveBeenCalled();
   const promise = view.flush();
+  expect(promise).toBeInstanceOf(Promise);
+  await promise;
   expect(spy).toHaveBeenLastCalledWith([
     [
       { id: 0, name: "Bob" },
@@ -245,8 +221,6 @@ it("pushes synchronously when possible", async () => {
     [create(user), create(user), create(user), create(user)],
     user,
   ]);
-  expect(promise).toBeInstanceOf(Promise);
-  await promise;
 });
 
 it("subscribes and handles pushes", async () => {
@@ -255,25 +229,14 @@ it("subscribes and handles pushes", async () => {
     name: t.STRING,
   }));
 
-  const idbRequest = indexedDB.open("test3", 1);
-  idbRequest.onupgradeneeded = () => {
-    createStore(idbRequest.result, "users", user);
-  };
-
-  const db = await new Promise<IDBDatabase>(
-    (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
-  );
-
-  const users = await indexeddb(db, "users", user, [
-    { id: 0, name: "Bob" },
-    { id: 1, name: "Alice" },
-  ]);
+  const users = await source(user, indexeddb("test3", "users"))();
+  await users.create({ id: 0, name: "Bob" }, { id: 1, name: "Alice" }).flush();
 
   const view = sink(users);
 
   const spy = mock();
   view.subscribe(spy);
-  users.push([[{ id: 2, name: "John" }], [create(user)], user]);
+  users.create({ id: 2, name: "John" });
 
   expect(spy).toHaveBeenLastCalledWith([[], []]);
 
@@ -297,22 +260,16 @@ it("pulls with constraints", async () => {
     user: t(t.INT, t.RELATION(1)),
   }));
 
-  const idbRequest = indexedDB.open("test4", 1);
-  idbRequest.onupgradeneeded = () => {
-    createStore(idbRequest.result, "messages", message, ["text"]);
-  };
-
-  const db = await new Promise<IDBDatabase>(
-    (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
-  );
-
-  const messages = await indexeddb(db, "messages", message, [
-    { id: 0, text: "Hello", user: 0 },
-    { id: 1, text: "I'm Bob", user: 1 },
-    { id: 2, text: "And I'm Alice!", user: 2 },
-    { id: 3, text: "I'll be here!", user: 3 },
-    { id: 4, text: "I'm Bob too", user: 1 },
-  ]);
+  const messages = await source(message, indexeddb("test4", "messages"))();
+  await messages
+    .create(
+      { id: 0, text: "Hello", user: 0 },
+      { id: 1, text: "I'm Bob", user: 1 },
+      { id: 2, text: "And I'm Alice!", user: 2 },
+      { id: 3, text: "I'll be here!", user: 3 },
+      { id: 4, text: "I'm Bob too", user: 1 },
+    )
+    .flush();
 
   {
     const result = await messages.pull({
@@ -341,8 +298,8 @@ it("pulls with constraints", async () => {
     const result = await messages.pull({
       filter: [
         {
-          keys: [["text"], ["ref"]],
-          items: [{ ref: "Hello" }, { ref: "Non-existent" }],
+          keys: [["user"], ["ref"]],
+          items: [{ ref: 0 }, { ref: 4 }],
         },
       ],
     });
@@ -357,19 +314,15 @@ it("writes to indexeddb", async () => {
     text: t.STRING,
   }));
 
-  const idbRequest = indexedDB.open("test5", 1);
-  idbRequest.onupgradeneeded = () => {
-    createStore(idbRequest.result, "messages", message, ["text"]);
-  };
+  const messages = await source(message, indexeddb("test5", "messages"))();
 
-  const db = await new Promise<IDBDatabase>(
-    (r) => (idbRequest.onsuccess = () => r(idbRequest.result)),
-  );
-
-  const messages = await indexeddb(db, "messages", message);
+  const request = indexedDB.open("test5");
+  const db = await new Promise<IDBDatabase>((resolve) => {
+    request.onsuccess = () => resolve(request.result);
+  });
 
   {
-    messages.push([[{ id: 0, text: "Hello" }], [create(message)], message]);
+    messages.create({ id: 0, text: "Hello" });
     await messages.flush();
 
     const stored = await new Promise((resolve) => {
@@ -382,11 +335,7 @@ it("writes to indexeddb", async () => {
     expect(stored).toEqual([{ id: 0, text: "Hello" }]);
   }
   {
-    messages.push([
-      [{ id: 0, text: "Hi" }],
-      [update(message, "text")],
-      message,
-    ]);
+    messages.update({ id: 0, text: "Hi" });
     await messages.flush();
 
     const stored = await new Promise((resolve) => {
@@ -399,7 +348,7 @@ it("writes to indexeddb", async () => {
     expect(stored).toEqual([{ id: 0, text: "Hi" }]);
   }
   {
-    messages.push([[{ id: 0, text: "Hi" }], [remove(message)], message]);
+    messages.delete({ id: 0 });
     await messages.flush();
 
     const stored = await new Promise((resolve) => {
