@@ -26,8 +26,9 @@ const zStream = <
 ) =>
   stream({
     compress: (queue) => {
+      const opts = { identity: "relations" as const };
       return [
-        queue.map((x) => x?.reduce((acc, x) => add(acc, x, false))),
+        queue.map((x) => x?.reduce((acc, x) => add(acc, x, opts))),
       ] as PartialEntities<TIn>[];
     },
     ...options,

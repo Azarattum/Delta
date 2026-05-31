@@ -217,7 +217,8 @@ export function range<
       ) as Follows<[PullOf<TStream>, PullOf<typeof range>], ZSet<T>>;
     },
     compress([sets, ranges]) {
-      return [[sets?.reduce((acc, x) => add(acc, x, false)), ranges?.at(-1)]];
+      const opts = { identity: "relations" as const };
+      return [[sets?.reduce((acc, x) => add(acc, x, opts)), ranges?.at(-1)]];
     },
     extensions: {
       get bounds() {

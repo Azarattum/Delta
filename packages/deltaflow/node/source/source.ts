@@ -1,6 +1,5 @@
 import {
   isRelation,
-  nonPrimary,
   isPrimary,
   compare,
   primary,
@@ -9,16 +8,16 @@ import {
 import type { Order, Shape } from "../../datastructure/shape";
 import { zStream, type ZPullOptions, type ZStream } from "../stream";
 import {
-  add,
+  materialize,
   changed,
-  copy,
   create,
   remove,
   update,
+  copy,
   zero,
+  add,
 } from "../../datastructure/zset";
 import type { Follows, MaybePromise, Stream } from "../../stream";
-import { traverse } from "../../datastructure/metaset";
 import type { ZSet } from "../../datastructure/zset";
 import { couple, SyncPromise } from "../../stream";
 
@@ -26,13 +25,11 @@ export function source<
   TShape extends Shape<T>,
   TStore extends Store<T>,
   T extends Record<string, unknown> = TShape["~type"],
->(shape: TShape, store: TStore) {
-  type NonPrimaryKey = Exclude<keyof TShape["~type"], keyof TShape["~id"]>;
+>(shape: FlatOnly<TShape>, store: TStore) {
   type Async = [QueryOf<TStore>];
 
   const { keys, types } = shape;
   const pks = primary(shape);
-  const nonPks = nonPrimary(shape) as NonPrimaryKey[];
   const idx = keys
     .filter((_, i) => isRelation(types[i]) && !isPrimary(types[i]))
     .map((key) => [key]);
@@ -101,7 +98,7 @@ export function source<
             });
           });
 
-          return store.mutate({ creates, updates, removes });
+          return store.mutate({ removes, creates, updates });
         },
         extensions: {
           create(...items: T[]) {
@@ -134,37 +131,16 @@ export function source<
       function reconstruct(set: ZSet<Partial<T>>) {
         return SyncPromise.one(
           store.query({ filter: [{ keys: [pks], items: set[0] }], order }),
-        ).then((current) => {
-          return traverse(
-            {
-              combine: (data, meta, reference) => {
-                if (meta >= created) return;
-                if (meta <= removed) return [reference, meta];
-                const changedKeys = nonPks.filter((key) => {
-                  if (!(key in data)) return false;
-                  if (!changed(meta, shape, key as keyof T)) return false;
-                  if (data[key] === reference[key]) return false;
-                  reference[key] = data[key];
-                  return true;
-                });
-
-                if (!changedKeys.length) return;
-                return [reference, update(shape, ...changedKeys)];
-              },
-              update: (data, meta) => (meta > 0 ? [data, meta] : undefined),
-              insert: () => undefined,
-              shallow: true,
-            },
-            set,
-            [current, [], shape] as ZSet<Partial<T>>,
-          ) as ZSet<T>;
-        });
+        ).then((current) => materialize(set, current));
       }
     });
 
     return data as Follows<[ReturnType<TStore>], Awaited<typeof data>>;
   };
 }
+
+type FlatOnly<TShape extends Shape<any>> =
+  keyof NonNullable<TShape>["children"] extends never ? TShape : never;
 
 export type Mutations<T extends Record<string, unknown>> = {
   updates?: Partial<T>[];

@@ -1,60 +1,92 @@
-import { add, sort, distinct, create, remove } from "../../datastructure/zset";
-import { children, compare, reorder } from "../../datastructure/shape";
-import type { Shape } from "../../datastructure/shape";
-import type { ZSet } from "../../datastructure/zset";
-import { zStream } from "../stream";
+import type { Order } from "../../datastructure/shape";
+import type { Query, Store } from "./source";
 
-// TODO: memory is extremely incomplete compared to SQLite source!
-export function memory<T extends Record<string, unknown>>(
-  shape: Shape<T>,
-  initialData: T[] = [],
-  // TODO: allow memory to accept upstream (e.g. to allow pushes to it)
+export function memory<T extends Record<string, unknown>>() {
+  return ((pks) => {
+    const data: T[] = [];
+
+    return {
+      query<TRow extends T = T>({ filter, order, cursor, total }: Query<TRow>) {
+        const reverse = cursor?.count != null && cursor.count < 0;
+
+        let scan = data.filter((row) => {
+          if (!filter) return true;
+          return filter?.every(({ items, keys, exclude }) => {
+            const rowKeys = keys[0];
+            const refKeys = keys[1] ?? rowKeys;
+            const contains = items.some((ref) => {
+              return rowKeys.every((key, i) => row[key] === ref[refKeys[i]]);
+            });
+
+            return contains !== !!exclude;
+          });
+        });
+
+        if (total) total.out = scan.length;
+
+        scan = scan.sort((a, b) => compareBy(a, b, order, reverse));
+
+        if (cursor?.anchor) {
+          scan = scan.filter((row) => {
+            const cmp = compareBy(row, cursor.anchor!, order, reverse);
+            return cursor.exclusive ? cmp > 0 : cmp >= 0;
+          });
+        }
+
+        if (cursor?.offset) scan = scan.slice(cursor.offset);
+        if (cursor?.count != null) scan = scan.slice(0, Math.abs(cursor.count));
+        if (reverse) scan.reverse();
+
+        return structuredClone(scan) as TRow[];
+      },
+      mutate({ creates, updates, removes }) {
+        removes?.forEach((row) => {
+          const existing = data.findIndex((item) => samePrimary(item, row));
+          if (existing >= 0) data.splice(existing, 1);
+        });
+
+        creates?.forEach((row) => {
+          const existing = data.findIndex((item) => samePrimary(item, row));
+          if (existing >= 0) data[existing] = structuredClone(row);
+          else data.push(structuredClone(row));
+        });
+
+        updates?.forEach((row) => {
+          const existing = data.find((item) => samePrimary(item, row));
+          if (existing) Object.assign(existing, structuredClone(row));
+        });
+      },
+    };
+
+    function samePrimary(a: Partial<T>, b: Partial<T>) {
+      return pks.every((key) => a[key] === b[key]);
+    }
+  }) satisfies Store<T>;
+}
+
+function compareBy(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  order: Order<Record<string, unknown>>,
+  reverse = false,
 ) {
-  const data = [
-    initialData.sort((a, b) => compare(a, b, shape)),
-    Array(initialData.length).fill(create(shape)),
-    shape,
-  ] as ZSet<T>;
+  for (const entry of order) {
+    const [key, direction = "asc"] = Array.isArray(entry) ? entry : [entry];
+    const sign = (direction === "asc" ? 1 : -1) * (reverse ? -1 : 1);
+    const x = a[key];
+    const y = b[key];
 
-  children(shape).forEach(([key]) => {
-    (data[1] as Record<string, unknown>)[key] ??= [];
-    data[0].forEach(
-      (x, i) =>
-        (data[1][key][i] = Array((x[key] as unknown[]).length).fill(
-          create((shape.children as any)[key].shape),
-        )),
-    );
-  });
+    if (x === y) continue;
+    if (y == null) return sign;
+    if (x == null) return -sign;
 
-  return zStream({
-    pull: ({ order, filter, cardinality: n = 1 } = {}) => {
-      const scan = structuredClone(
-        filter?.length ?
-          data[0].filter((x) =>
-            filter.every(({ items, keys, exclude }) => {
-              const refKeys = keys[1] ?? keys[0];
-              const contains = items.find((ref) =>
-                keys[0].every((k, i) => x[k] === ref[refKeys[i]]),
-              );
+    const type = typeof x;
+    if (type !== typeof y || type === "object" || type === "function") {
+      throw new Error(`Unsupported compare types: ${type} ${typeof y}`);
+    }
 
-              return !!contains !== !!exclude;
-            }),
-          )
-        : data[0],
-      );
+    return (x < y ? -1 : 1) * sign;
+  }
 
-      const scanShape = order ? reorder(shape, ...order) : shape;
-      const meta =
-        n > 0 ? create(scanShape, n)
-        : n < 0 ? remove(scanShape, -n)
-        : 0;
-      const scanMeta = Array(scan.length).fill(meta);
-      const scanSet = [scan, scanMeta, scanShape] as ZSet<T>;
-
-      if (order) sort(scanSet, (a, b) => compare(a, b, scanShape));
-      // TODO: support cursor
-      return scanSet;
-    },
-    flush: (changes) => changes.forEach((x) => distinct(add(data, x))),
-  })(null);
+  return 0;
 }

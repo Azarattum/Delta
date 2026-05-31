@@ -1,6 +1,6 @@
 import { create, remove, update, type ZSet } from "../../datastructure/zset";
 import { expect, expectTypeOf, it, mock } from "bun:test";
-import { shape } from "../../datastructure/shape";
+import { nest, shape } from "../../datastructure/shape";
 import { source } from "./source";
 import { sqlite } from "./sqlite";
 import SQLite from "bun:sqlite";
@@ -93,6 +93,32 @@ it("executes and collapses actions", () => {
   ]);
 });
 
+it("collapses chained raw relation updates before materialization", () => {
+  const db = new SQLite(":memory:");
+  const user = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    msg: t(t.INT, t.RELATION(1)),
+    name: t.STRING,
+  }));
+  const users = source(user, sqlite(db, "relation_updates"))();
+
+  users.create({ id: 0, msg: 0, name: "Alice" }).flush();
+
+  const spy = mock();
+  users.local.connect(spy);
+
+  users.update({ id: 0, msg: 1 }).update({ id: 0, msg: 2 }).flush();
+
+  expect(spy).toHaveBeenLastCalledWith([
+    [
+      { id: 0, msg: 0, name: "Alice" },
+      { id: 0, msg: 2, name: "Alice" },
+    ],
+    [remove(user), create(user)],
+    user,
+  ]);
+});
+
 it("respects async and sync queries", () => {
   const asyncDB = () => ({ mutate: () => {}, query: async () => [] });
   const syncDB = () => ({ mutate: () => {}, query: () => [] });
@@ -127,4 +153,16 @@ it("respects async and sync initializations", () => {
     expectTypeOf(store).not.toExtend<Promise<unknown>>();
     expect(store).not.toBeInstanceOf(Promise);
   }
+});
+
+it("rejects nested shapes", () => {
+  const db = new SQLite(":memory:");
+  const note = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    text: t.STRING,
+  }));
+  const nested = nest(note, "children", note);
+
+  // @ts-expect-error source stores only flat shapes
+  source(nested, sqlite(db, "nested_type"));
 });

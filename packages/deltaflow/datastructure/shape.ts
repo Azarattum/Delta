@@ -169,14 +169,17 @@ type Shape<T = any, TId = {}> =
       children: 0 extends 1 & T ?
         Record<keyof T, { single: boolean; shape: Shape<T[keyof T]> }>
       : {
-          [K in keyof T as T[K] extends object ? K : never]: T[K] extends (
-            (infer U)[]
-          ) ?
+          [K in keyof T as IsObject<T[K], K, never>]: T[K] extends (infer U)[] ?
             { single: false; shape: Shape<U> }
           : { single: true; shape: Shape<T[K]> };
         };
     }>
   : undefined;
+
+type IsObject<T, TTrue = true, TFalse = false> =
+  [T] extends [never] ? TFalse
+  : T extends object ? TTrue
+  : TFalse;
 
 type ShapeLike<K extends keyof any> = Readonly<{
   keys: readonly K[];

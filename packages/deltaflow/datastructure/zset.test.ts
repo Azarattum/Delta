@@ -1,5 +1,6 @@
 import {
   cardinality,
+  materialize,
   distinct,
   multiply,
   changed,
@@ -1013,6 +1014,28 @@ it("compresses shaped zsets with ordered row-delta algebra", () => {
   expect(merge(create(user), create(user))).toBe(create(user, 2));
 });
 
+it("does not copy absent fields from partial updates", () => {
+  const note = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    text: t.STRING,
+    likes: t.INT,
+  }));
+
+  const notes: ZSet<(typeof note)["~type"]> = [
+    [{ id: 1, text: "hello", likes: 0 }],
+    [0],
+    note,
+  ];
+
+  add(notes, [[{ id: 1, text: "hello 2" }], [update(note)], note] as any);
+
+  expect(notes).toEqual([
+    [{ id: 1, text: "hello 2", likes: 0 }],
+    [update(note)],
+    note,
+  ]);
+});
+
 it("supports 50 shaped fields without bitwise truncation", () => {
   const wide = {
     keys: ["id", ...Array.from({ length: 50 }, (_, i) => `f${i}`)],
@@ -1065,4 +1088,245 @@ it("accepts 50 non-primary fields and rejects 51", () => {
 
   expect(() => defineWide(50)).not.toThrow();
   expect(() => defineWide(51)).toThrow("Too many non-primary fields: 51");
+});
+
+it("materializes partial source deltas", () => {
+  const note = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    text: t.STRING,
+    likes: t.INT,
+  }));
+
+  const set: ZSet<Partial<(typeof note)["~type"]>> = [
+    [
+      { id: 1, likes: 1 },
+      { id: 2, likes: 2 },
+      { id: 3 },
+      { id: 4, text: "new", likes: 0 },
+      { id: 5, text: "existing", likes: 1 },
+      { id: 6 },
+    ],
+    [
+      update(note),
+      update(note),
+      remove(note),
+      create(note),
+      create(note),
+      remove(note),
+    ],
+    note,
+  ];
+
+  const current = [
+    { id: 1, text: "hello", likes: 0 },
+    { id: 3, text: "bye", likes: 0 },
+    { id: 5, text: "existing", likes: 1 },
+  ];
+
+  expect(materialize(set, current)).toBe(set as ZSet<(typeof note)["~type"]>);
+  expect(set).toEqual([
+    [
+      { id: 1, text: "hello", likes: 1 },
+      { id: 3, text: "bye", likes: 0 },
+      { id: 4, text: "new", likes: 0 },
+    ],
+    [update(note, "likes"), remove(note), create(note)],
+    note,
+  ]);
+});
+
+it("splits materialized relation updates into remove & create", () => {
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t(t.INT, t.RELATION(1)),
+    text: t.STRING,
+  }));
+
+  const set: ZSet<Partial<(typeof message)["~type"]>> = [
+    [
+      { id: 1, text: "hello!" },
+      { id: 2, user: 2 },
+      { id: 2, text: "layered" },
+    ],
+    [update(message), update(message, "user"), update(message, "text")],
+    message,
+  ];
+
+  materialize(set, [
+    { id: 1, user: 1, text: "hello" },
+    { id: 2, user: 1, text: "move" },
+  ]);
+
+  expect(set).toEqual([
+    [
+      { id: 1, user: 1, text: "hello!" },
+      { id: 2, user: 1, text: "move" },
+      { id: 2, user: 2, text: "layered" },
+    ],
+    [update(message, "text"), remove(message), create(message)],
+    message,
+  ]);
+});
+
+it("materializes with consecutive splits", () => {
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t(t.INT, t.RELATION(1)),
+    text: t.STRING,
+  }));
+
+  const set: ZSet<Partial<(typeof message)["~type"]>> = [
+    [
+      { id: 1, user: 2 },
+      { id: 2, user: 3 },
+      { id: 3, user: 4 },
+    ],
+    [update(message), update(message), update(message)],
+    message,
+  ];
+
+  materialize(set, [
+    { id: 1, user: 1, text: "one" },
+    { id: 2, user: 2, text: "two" },
+    { id: 3, user: 3, text: "three" },
+  ]);
+
+  expect(set).toEqual([
+    [
+      { id: 1, user: 1, text: "one" },
+      { id: 1, user: 2, text: "one" },
+      { id: 2, user: 2, text: "two" },
+      { id: 2, user: 3, text: "two" },
+      { id: 3, user: 3, text: "three" },
+      { id: 3, user: 4, text: "three" },
+    ],
+    [
+      remove(message),
+      create(message),
+      remove(message),
+      create(message),
+      remove(message),
+      create(message),
+    ],
+    message,
+  ]);
+});
+
+it("materializes complex updates with noop operations", () => {
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t(t.INT, t.RELATION(1)),
+    text: t.STRING,
+  }));
+
+  const set: ZSet<Partial<(typeof message)["~type"]>> = [
+    [
+      { id: 1, text: "same" },
+      { id: 2 },
+      { id: 3, user: 4 },
+      { id: 4, text: "must still be read" },
+    ],
+    [update(message), remove(message), update(message), update(message)],
+    message,
+  ];
+
+  materialize(set, [
+    { id: 1, user: 1, text: "same" },
+    { id: 3, user: 3, text: "three" },
+    { id: 4, user: 4, text: "four" },
+  ]);
+
+  expect(set).toEqual([
+    [
+      { id: 3, user: 3, text: "three" },
+      { id: 3, user: 4, text: "three" },
+      { id: 4, user: 4, text: "must still be read" },
+    ],
+    [remove(message), create(message), update(message, "text")],
+    message,
+  ]);
+});
+
+it("materializes already split deltas", () => {
+  const item = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    value: t.INT,
+  }));
+
+  const set: ZSet<Partial<(typeof item)["~type"]>> = [
+    [{ id: 1 }, { id: 1, value: 1 }],
+    [remove(item), create(item)],
+    item,
+  ];
+
+  expect(materialize(copy(set), [])).toEqual([
+    [{ id: 1, value: 1 }],
+    [create(item)],
+    item,
+  ]);
+
+  expect(materialize(copy(set), [{ id: 1, value: 0 }])).toEqual([
+    [{ id: 1, value: 1 }],
+    [update(item, "value")],
+    item,
+  ]);
+
+  expect(materialize(copy(set), [{ id: 1, value: 1 }])).toEqual([[], [], item]);
+});
+
+it("materializes multiple same primary key deltas", () => {
+  const item = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    value: t.INT,
+  }));
+
+  const set: ZSet<Partial<(typeof item)["~type"]>> = [
+    [{ id: 1 }, { id: 1, value: 1 }, { id: 1, value: 2 }],
+    [remove(item), create(item), update(item, "value")],
+    item,
+  ];
+
+  expect(materialize(copy(set), [])).toEqual([
+    [{ id: 1, value: 2 }],
+    [create(item)],
+    item,
+  ]);
+
+  expect(materialize(copy(set), [{ id: 1, value: 0 }])).toEqual([
+    [{ id: 1, value: 2 }],
+    [update(item, "value")],
+    item,
+  ]);
+
+  expect(materialize(copy(set), [{ id: 1, value: 2 }])).toEqual([[], [], item]);
+});
+
+it("adds with different identity parameters", () => {
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t(t.INT, t.RELATION(1)),
+    text: t.STRING,
+  }));
+
+  const oldRow = { id: 1, user: 1, text: "hello" };
+  const newRow = { id: 1, user: 2, text: "hello" };
+
+  const relationDelta = add(
+    [[oldRow], [remove(message)], message],
+    [[newRow], [create(message)], message],
+    { identity: "relations" },
+  );
+
+  expect(relationDelta).toEqual([
+    [oldRow, newRow],
+    [remove(message), create(message)],
+    message,
+  ]);
+
+  const primaryDelta = add(
+    [[oldRow], [remove(message)], message],
+    [[newRow], [create(message)], message],
+  );
+
+  expect(primaryDelta).toEqual([[newRow], [0], message]);
 });

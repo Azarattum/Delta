@@ -1,8 +1,9 @@
 import { children, compare, isRelation, nest, nonPrimary } from "./shape";
-import { recurse, traverse, type MetaSet } from "./metaset";
+import { len, recurse, traverse, type MetaSet } from "./metaset";
 import type { Shape } from "./shape";
 
 type ZSet<T> = MetaSet<T, number>;
+type Identity = "order" | "relations";
 
 function create(shape?: Shape, n = 1) {
   return (shape ? shape.mask : 0) + n;
@@ -71,23 +72,40 @@ function bit<T>(shape: Shape<T>, key: keyof T) {
   return index === -1 ? 0 : 2 ** index;
 }
 
-function add<T>(a: ZSet<T>, b: ZSet<T>, collapseFKs = true) {
+function merge<T>(
+  aData: T,
+  aMeta: number,
+  bData: T,
+  bMeta: number,
+  shape: Shape,
+): [T, number] {
+  if (bMeta > 0) {
+    if (aData && typeof aData === "object" && bMeta < create(shape)) {
+      nonPrimary(shape).forEach((key) => {
+        if (!(key in (bData as Record<string, unknown>))) return;
+        if (!changed(bMeta, shape, key)) return;
+        aData[key as keyof T] = bData[key as keyof T];
+      });
+    } else {
+      aData = bData;
+    }
+  }
+
+  return [aData, combine(aMeta, bMeta, shape)];
+}
+
+function add<T>(
+  a: ZSet<T>,
+  b: ZSet<T>,
+  { identity = "order" }: { identity?: Identity } = {},
+) {
   if (!b[0].length) return a;
 
   return traverse(
     {
-      combine: (aData, aMeta, bData, bMeta, shape) => {
-        if (bMeta > 0) {
-          if (aData && typeof aData === "object" && bMeta < create(shape)) {
-            Object.assign(aData, bData);
-          } else {
-            aData = bData;
-          }
-        }
-        return [aData, combine(aMeta, bMeta, shape)];
-      },
+      combine: merge,
       compare:
-        collapseFKs ? compare : (
+        identity === "order" ? compare : (
           (aData, bData, shape) => {
             const cmp = compare(aData, bData, shape);
             if (cmp !== 0 || !shape) return cmp;
@@ -102,6 +120,72 @@ function add<T>(a: ZSet<T>, b: ZSet<T>, collapseFKs = true) {
     a,
     b,
   );
+}
+
+function materialize<T>(set: ZSet<Partial<T>>, ref: T[]): ZSet<T> {
+  const [data, meta, shape] = set;
+  if (!shape) return set as ZSet<T>;
+  const cmp = compare<Partial<T>>;
+
+  const fields = nonPrimary(shape).map((key, i) => {
+    const relation = isRelation(shape.types[shape.keys.indexOf(key)]);
+    return [key, 2 ** i, relation] as const;
+  });
+
+  let written = 0;
+  for (let i = 0, j = 0; i < len(set); i++) {
+    let [item, weight] = [data[i], meta[i]];
+
+    while (j < ref.length && cmp(ref[j], item, shape) < 0) j++;
+    const old = cmp(ref[j], item, shape) ? undefined : ref[j];
+    let exists = old !== undefined;
+
+    for (let nextItem = item, nextWeight = weight; ; i++) {
+      const count = cardinality(nextWeight, shape);
+
+      if (count > 0 && !exists) {
+        [item, weight, exists] = [nextItem, nextWeight, true];
+      } else if (count < 0 && exists) {
+        [weight, exists] = [nextWeight, false];
+      } else if (count === 0 && exists) {
+        [item, weight] = merge(item, weight, nextItem, nextWeight, shape);
+      }
+
+      if (i + 1 >= len(set) || cmp(item, data[i + 1], shape) !== 0) break;
+      [nextItem, nextWeight] = [data[i + 1], meta[i + 1]];
+    }
+
+    if (!old && !exists) continue;
+    if (!old || !exists) {
+      data[written] = old ?? item;
+      meta[written++] = old ? remove(shape) : create(shape);
+      continue;
+    }
+
+    let relation = false;
+    let mask = 0;
+
+    fields.forEach(([key, bit, isRelation]) => {
+      const unchanged = !(key in item) || !changed(weight, shape as any, key);
+      if (unchanged) return (item[key] = old[key]);
+      if (item[key] === old[key as keyof T]) return;
+      (relation ||= isRelation), (mask += bit);
+    });
+
+    if (!mask) continue;
+    if (relation) {
+      data.splice(written, 0, old);
+      meta.splice(written++, 0, remove(shape));
+      i++; // The inserted remove sits before the unread tail, so skip over it.
+    }
+
+    data[written] = item;
+    meta[written++] = relation ? create(shape) : mask;
+  }
+
+  data.length = written;
+  meta.length = written;
+  return set as ZSet<T>;
 }
 
 function multiply<A, B, K extends string, S extends boolean = false>(
@@ -240,19 +324,20 @@ const cutMeta = recurse(([meta1, meta2], key, at: number) => {
 });
 
 export {
-  add,
-  cut,
-  sort,
-  distinct,
-  zero,
-  copy,
+  cardinality,
+  materialize,
   transform,
   multiply,
+  distinct,
+  changed,
   combine,
   create,
   remove,
   update,
-  cardinality,
-  changed,
+  sort,
+  zero,
+  copy,
+  add,
+  cut,
 };
 export type { ZSet };

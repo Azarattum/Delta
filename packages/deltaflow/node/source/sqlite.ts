@@ -96,9 +96,9 @@ export function sqlite<T extends Record<string, SQLQueryBindings>>(
       },
       mutate: (mutations) => {
         return db.transaction(() => {
+          mutations.removes?.forEach(remove);
           mutations.creates?.forEach(create);
           mutations.updates?.forEach(update);
-          mutations.removes?.forEach(remove);
         })();
       },
     };
