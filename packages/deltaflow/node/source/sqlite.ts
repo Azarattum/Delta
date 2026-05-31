@@ -1,135 +1,112 @@
-import {
-  isNullable,
-  nonPrimary,
-  datatype,
-  primary,
-} from "../../datastructure/shape";
-import { cardinality, changed, create, remove } from "../../datastructure/zset";
-import type { SQLQueryBindings, Database } from "bun:sqlite";
-import type { Shape } from "../../datastructure/shape";
-import { zStream, type ZPullOptions } from "../stream";
-import type { ZSet } from "../../datastructure/zset";
-import { len } from "../../datastructure/metaset";
+import type { Database, Statement, SQLQueryBindings } from "bun:sqlite";
+import type { Query, Store } from "./source";
+import { datatype, isNullable } from "../..";
 
-/** TODO: this is just a prototype */
+// TODO: fix SQL-injection
 export function sqlite<T extends Record<string, SQLQueryBindings>>(
   db: Database,
   table: string,
-  shape: Shape<T>,
-  initialData: T[] = [],
 ) {
-  // For debugging
-  // const orig = sqlite.query;
-  // sqlite.query = (...args) => (
-  //   console.log("SQL:", args[0]), orig.call(sqlite, ...args)
-  // );
-  const pks = primary(shape);
-  const fields = nonPrimary(shape);
+  return ((pks, keys, types, idx) => {
+    // TODO: check init pattern with indexeddb
+    const columns = keys.map((key, i) => {
+      return `${key} ${toSQLType(types[i])} ${isNullable(types[i]) ? "" : "NOT NULL"}`;
+    });
 
-  const columns = shape.keys.map((name, i) => {
-    const type = shape.types[i];
-    return `${name} ${toSQLType(type)} ${isNullable(type) ? "" : "NOT NULL"}`;
-  });
-
-  // Autocreating for testing convenience (TODO: remove later)
-  db.run(
-    `CREATE TABLE IF NOT EXISTS ${table} (${columns}, PRIMARY KEY (${pks}))`,
-  );
-  if (initialData.length) {
     db.run(
-      `INSERT OR IGNORE INTO ${table} VALUES ${initialData.map(() => `(${shape.keys.map(() => "?").join(",")})`)}`,
-      initialData.flatMap((x) => Object.values(x)),
+      `CREATE TABLE IF NOT EXISTS ${table} (${columns}, PRIMARY KEY (${pks}))`,
     );
-  }
+    idx.forEach((index, i) => {
+      db.run(`CREATE INDEX IF NOT EXISTS ${table}_${i} ON ${table} (${index})`);
+    });
 
-  // TODO: use proper bindings to avoid SQL injection
-  return zStream({
-    pull: ({ filter, order, cursor, total, cardinality: n = 1 } = {}) => {
-      order ??= pks;
+    const fields = keys.filter((key) => !pks.includes(key));
+    const cache = new Map<string, Statement>();
 
-      const reverse = cursor?.count != null && cursor.count < 0;
-      const effectiveOrder = order.map((x) => {
-        let [key, direction = "asc"] = Array.isArray(x) ? x : [x];
-        if (reverse) direction = direction === "asc" ? "desc" : "asc";
-        return [key, direction] as [string, "asc" | "desc"];
-      });
+    const where = pks.map((key) => `${key} = ?`).join(" AND ");
+    const values = keys.map(() => "?");
 
-      const filtering = filter?.map(({ items, keys, exclude }) => {
-        const columnKeys = keys[0].map((k) => `${table}.${k}`);
-        const tupleKeys = keys[1] ?? keys[0];
-        const tuples = items.map(
-          (x) => `(${tupleKeys.map((k) => JSON.stringify(x[k]))})`,
-        );
+    const deletion = db.prepare(`DELETE FROM ${table} WHERE ${where}`);
+    const creation = db.prepare(
+      `INSERT OR REPLACE INTO ${table} VALUES (${values})`,
+    );
 
-        return `(${columnKeys}) ${exclude ? "NOT" : ""} IN (${tuples})`;
-      });
+    const create = (row: T) => creation.run(...bindings(row, keys));
+    const remove = (row: Partial<T>) => deletion.run(...bindings(row, pks));
+    const update = (row: Partial<T>) => {
+      const changed = fields.filter((key) => key in row);
+      if (!changed.length) return;
+      const updates = changed.map((key) => `${key} = ?`).join(",");
 
-      const pagination = cursor?.anchor && [
-        compareBy(order, table, cursor.anchor, !cursor.exclusive, reverse),
-      ];
+      const statement =
+        cache.get(updates) ??
+        db.prepare(`UPDATE ${table} SET ${updates} WHERE ${where}`);
+      if (!cache.has(updates)) cache.set(updates, statement);
 
-      const conditions = (filtering ?? [])
-        .concat(pagination ?? [])
-        .join(" AND ");
+      statement.run(...bindings(row, changed), ...bindings(row, pks));
+    };
 
-      const where = conditions.length > 0 ? `WHERE ${conditions}` : "";
-      const limit = `LIMIT ${cursor?.count != null ? Math.abs(cursor.count) : "-1"}`;
-      const offset = cursor?.offset ? `OFFSET ${cursor.offset}` : "";
-      const select = `SELECT ${table}.*`;
-      const orderBy = `ORDER BY ${effectiveOrder.map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
+    return {
+      query<TRow extends T = T>({ filter, order, cursor, total }: Query<TRow>) {
+        const reverse = cursor?.count != null && cursor.count < 0;
+        const effectiveOrder = order.map((x) => {
+          let [key, direction = "asc"] = Array.isArray(x) ? x : [x];
+          if (reverse) direction = direction === "asc" ? "desc" : "asc";
+          return [key, direction] as [string, "asc" | "desc"];
+        });
 
-      const query = `${select} FROM ${table} ${where} ${orderBy} ${limit} ${offset}`;
-      const scan = db.query(query).all();
-      if (reverse) scan.reverse();
+        const filtering = filter?.map(({ items, keys, exclude }) => {
+          const columnKeys = keys[0].map((k) => `${table}.${k}`);
+          const tupleKeys = keys[1] ?? keys[0];
+          const tuples = items.map(
+            (x) => `(${tupleKeys.map((k) => JSON.stringify(x[k]))})`,
+          );
 
-      if (total) {
-        const filterWhere = filtering ? `WHERE ${filtering.join(" AND ")}` : "";
-        total.out = db
-          .query(`SELECT COUNT(*) as count FROM ${table} ${filterWhere}`)
-          .get()!["count" as keyof {}] as number;
-      }
+          return `(${columnKeys}) ${exclude ? "NOT" : ""} IN (${tuples})`;
+        });
 
-      const meta =
-        n > 0 ? create(shape, n)
-        : n < 0 ? remove(shape, -n)
-        : 0;
-      return [scan, Array(scan.length).fill(meta), shape] as ZSet<T>;
-    },
-    flush: (changes: ZSet<T>[]) => {
-      changes.forEach((set) => {
-        const [data, meta, thisShape = shape] = set;
-        // TODO: batch these queries for better performance
-        for (let i = 0; i < len(set); i++) {
-          const count = cardinality(meta[i], thisShape);
-          if (count < 0) {
-            db.run(
-              `DELETE FROM ${table} WHERE ${pks.map((key) => `${key} = ?`).join(" AND ")}`,
-              pks.map((key) => data[i][key]) as SQLQueryBindings[],
-            );
-          } else if (count > 0) {
-            db.run(
-              `INSERT INTO ${table} VALUES (${shape.keys.map(() => "?").join(",")})`,
-              Object.values(data[i]) as SQLQueryBindings[],
-            );
-          } else if (meta[i]) {
-            const changes = changed(meta[i], thisShape);
-            if (!changes.length) continue;
-            db.run(
-              `UPDATE ${table} SET ${changes.map((i) => `${fields[i]} = ?`).join(",")} WHERE ${pks.map((key) => `${key} = ?`).join(" AND ")}`,
-              [
-                ...changes.map((i) => data[i][fields[i]]),
-                ...pks.map((key) => data[i][key]),
-              ] as SQLQueryBindings[],
-            );
-          }
+        const pagination = cursor?.anchor && [
+          compareBy(order, table, cursor.anchor, !cursor.exclusive, reverse),
+        ];
+
+        const conditions = (filtering ?? [])
+          .concat(pagination ?? [])
+          .join(" AND ");
+
+        const where = conditions.length > 0 ? `WHERE ${conditions}` : "";
+        const limit = `LIMIT ${cursor?.count != null ? Math.abs(cursor.count) : "-1"}`;
+        const offset = cursor?.offset ? `OFFSET ${cursor.offset}` : "";
+        const select = `SELECT ${table}.*`;
+
+        const orderBy = `ORDER BY ${effectiveOrder.map((x) => `${table}.${Array.isArray(x) ? x.join(" ") : x}`).join()}`;
+
+        const query = `${select} FROM ${table} ${where} ${orderBy} ${limit} ${offset}`;
+        const scan = db.query<TRow, []>(query).all();
+        if (reverse) scan.reverse();
+
+        if (total) {
+          const filterWhere =
+            filtering ? `WHERE ${filtering.join(" AND ")}` : "";
+          total.out = db
+            .query(`SELECT COUNT(*) as count FROM ${table} ${filterWhere}`)
+            .get()!["count" as keyof {}] as number;
         }
-      });
-    },
-  })(null);
+
+        return scan;
+      },
+      mutate: (mutations) => {
+        return db.transaction(() => {
+          mutations.removes?.forEach(remove);
+          mutations.creates?.forEach(create);
+          mutations.updates?.forEach(update);
+        })();
+      },
+    };
+  }) satisfies Store<T>;
 }
 
-function compareBy(
-  order: NonNullable<ZPullOptions["order"]>,
+function compareBy<T extends Record<string, unknown>>(
+  order: NonNullable<Query<T>["order"]>,
   table: string,
   reference: string | Record<string, unknown>,
   inclusive = false,
@@ -152,6 +129,13 @@ function compareBy(
   });
 
   return `(${expressions.join(" OR ")})`;
+}
+
+function bindings<T extends Record<string, SQLQueryBindings>>(
+  row: Partial<T>,
+  columns: readonly string[],
+) {
+  return columns.map((key) => row[key]) as SQLQueryBindings[];
 }
 
 function toSQLType(type: number) {

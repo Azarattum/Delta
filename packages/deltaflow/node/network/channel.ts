@@ -1,8 +1,10 @@
-import type { OptionsOf, PullOf, Stream } from "../../stream";
+import type { MaybePromise, OptionsOf, PullOf, Stream } from "../../stream";
 import { stream, SyncPromise } from "../../stream";
 
-export function channel(channel: Channel) {
-  const tx = <TStream extends Stream<any>>(upstream: TStream) => {
+export function channel<TChannelData = unknown>(channel: Channel) {
+  const tx = <TStream extends Stream<MaybePromise<TChannelData>, any[], any>>(
+    upstream: TStream,
+  ) => {
     type TOpt = OptionsOf<TStream>;
     type TData = PullOf<TStream>;
 
@@ -21,14 +23,17 @@ export function channel(channel: Channel) {
       },
       flush(messages) {
         const id = crypto.randomUUID();
-        return SyncPromise.all(messages.flat()).then((data) =>
+        return SyncPromise.all(messages).then((data) =>
           channel.postMessage({ id, type: "push", data }),
         );
       },
-    })(upstream);
+    })(upstream as Stream<MaybePromise<TData>, any[], TOpt>);
   };
 
-  const rx = <TData, TOpt>() => {
+  const rx = <
+    TData extends TChannelData = TChannelData,
+    TOpt = undefined,
+  >() => {
     const node = stream({
       init() {
         const handle = async (event: MessageEvent<Message<TData, TOpt>>) => {

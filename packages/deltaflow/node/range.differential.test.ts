@@ -1,15 +1,16 @@
+import { add, create, distinct, remove, update } from "../datastructure/zset";
 import { TRACE, instrumentPull, formatRangeTrace } from "../debug/trace";
-import { add, distinct } from "../datastructure/zset";
 import type { ZSet } from "../datastructure/zset";
 import { describe, expect, it } from "bun:test";
 import type { StepTrace } from "../debug/trace";
 import { shape } from "../datastructure/shape";
+import { source } from "./source/source";
 import { sqlite } from "./source/sqlite";
 import { limit, range } from "./range";
 import { fullGC } from "bun:jsc";
 import SQLite from "bun:sqlite";
 
-const idShape = shape((t) => ({ id: t(t.DOUBLE, t.PRIMARY) }));
+const idShape = shape((t) => ({ id: t(t.DOUBLE, t.PRIMARY), value: t.INT }));
 
 describe("single adds", () => {
   const data = [1, 2, 3, 4, 5, 6];
@@ -1436,7 +1437,8 @@ function run(data: number[], limit: number, offset: number, steps: Step[]) {
 
 function createRunner(data: number[], count: number, offset: number) {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items", idShape, ids(...data));
+  const items = source(idShape, sqlite(db, "items"))();
+  items.create(...ids(...data));
 
   const tracer = TRACE ? instrumentPull(items) : undefined;
   const window = limit(count, offset);
@@ -1494,8 +1496,8 @@ function createRunner(data: number[], count: number, offset: number) {
     if (step.delta && step.delta.length > 0) {
       const sorted = [...step.delta].sort((a, b) => a[0] - b[0]);
       items.push([
-        sorted.map(([id]) => ({ id })),
-        sorted.map(([, m]) => m),
+        sorted.map(([id, meta]) => ({ id, value: meta === 0 ? 1 : 0 })),
+        sorted.map(([, meta]) => zsetMeta(meta)),
         idShape,
       ]);
 
@@ -1526,7 +1528,9 @@ function createRunner(data: number[], count: number, offset: number) {
     for (const delta of deltas) {
       for (let j = 0; j < delta[0].length; j++) {
         if (delta[1][j] >= 0) emittedUpdateIds.add(delta[0][j].id);
-        if (delta[1][j] === 0) emittedZeroUpdateIds.add(delta[0][j].id);
+        if (delta[1][j] === update(idShape, "value")) {
+          emittedZeroUpdateIds.add(delta[0][j].id);
+        }
       }
     }
 
@@ -1647,7 +1651,13 @@ function describeOp([id, meta]: [number, number]) {
 }
 
 function ids(...x: number[]): Item[] {
-  return x.map((id) => ({ id }));
+  return x.map((id) => ({ id, value: 0 }));
+}
+
+function zsetMeta(meta: number) {
+  if (meta > 0) return create(idShape);
+  if (meta < 0) return remove(idShape);
+  return update(idShape, "value");
 }
 
 function toIds(zset: ZSet<Item>): number[] {
@@ -1664,4 +1674,4 @@ type Step = {
   limit?: number;
 };
 
-type Item = { id: number };
+type Item = { id: number; value: number };

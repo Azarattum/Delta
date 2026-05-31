@@ -1,4 +1,5 @@
 import { expect, expectTypeOf, it, mock } from "bun:test";
+import type { CLSet } from "../../datastructure/clset";
 import { stream } from "../../stream";
 import { channel } from "./channel";
 
@@ -105,4 +106,38 @@ it("transmits bidirectionally", async () => {
 
   expect(await receiver2.pull()).toBe(0);
   expect(await receiver2.pull(42)).toBe(42);
+});
+
+it("types channel payloads", () => {
+  type Note = { id: number; text: string };
+
+  const [tx, rx] = channel<CLSet<Note>>(
+    new BroadcastChannel(crypto.randomUUID()),
+  );
+
+  const notes = stream({
+    push: (x: CLSet<Note>) => x,
+    pull: () => [[], []] as CLSet<Note>,
+  })(null);
+
+  const sender = tx(notes);
+  const receiver = rx();
+
+  expectTypeOf(sender.push).parameters.toEqualTypeOf<[CLSet<Note>]>();
+  expectTypeOf(receiver.pull).returns.toEqualTypeOf<Promise<CLSet<Note>>>();
+});
+
+it("allows narrower channel payloads", () => {
+  const [tx, rx] = channel<number>(new BroadcastChannel(crypto.randomUUID()));
+
+  const ones = stream({
+    push: (x: 1) => x,
+    pull: () => 1 as const,
+  })(null);
+
+  const sender = tx(ones);
+  const receiver = rx<1>();
+
+  expectTypeOf(sender.push).parameters.toEqualTypeOf<[1]>();
+  expectTypeOf(receiver.pull).returns.toEqualTypeOf<Promise<1>>();
 });

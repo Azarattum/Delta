@@ -47,10 +47,7 @@ function stream<
     const queue = [] as unknown as EntityQueue<TIn>;
 
     let scheduled = false;
-    const scheduler = Scheduler.join(
-      upstreams.map((x) => x?.[internal].scheduler).filter((x) => !!x),
-      2,
-    );
+    const scheduler = couple(...upstreams);
 
     let disposers: (void | (() => void))[] = [];
     function init() {
@@ -138,6 +135,15 @@ function stream<
   };
 }
 
+/** Makes streams share one scheduler, so queued work flushes in the same cycle. */
+function couple(...streams: (Stream<unknown> | null)[]) {
+  const schedulers = streams
+    .map((x) => x?.[internal].scheduler)
+    .filter((x) => !!x);
+
+  return Scheduler.join(schedulers, 2);
+}
+
 declare const defaultPull: unique symbol;
 type ActualPull<TPull> = Exclude<TPull, typeof defaultPull>;
 type DefaultPull<TPush> = MaybePromise<TPush> | typeof defaultPull;
@@ -219,12 +225,14 @@ type StreamOptions<
     ThisType<Stream<TOut, TIn, TOptions> & TExtensions>;
 };
 
-export { stream };
+export { stream, couple };
 export type {
   Stream,
   PullOf,
   PushOf,
   OptionsOf,
+  ActualPull,
+  DefaultPull,
   EntityQueue,
   StreamOptions,
   IsAsyncStream,
