@@ -119,6 +119,57 @@ it("collapses chained raw relation updates before materialization", () => {
   ]);
 });
 
+it("executes unsafe actions without store reconstruction", () => {
+  const db = new SQLite(":memory:");
+  const message = shape((t) => ({
+    id: t(t.INT, t.PRIMARY),
+    user: t(t.INT, t.RELATION(1)),
+    text: t.STRING,
+  }));
+  const messages = source(message, sqlite(db, "unsafe_actions"))();
+
+  const spy = mock();
+  messages.local.connect(spy);
+
+  messages
+    .createUnsafe({ id: 0, user: 0, text: "Hello" })
+    .updateUnsafe([
+      { id: 0, user: 0, text: "Hello" },
+      { id: 0, user: 0, text: "Hi" },
+    ])
+    .flush();
+
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 0, user: 0, text: "Hi" }],
+    [create(message)],
+    message,
+  ]);
+
+  messages
+    .updateUnsafe([
+      { id: 0, user: 0, text: "Hi" },
+      { id: 0, user: 1, text: "Moved" },
+    ])
+    .flush();
+
+  expect(spy).toHaveBeenLastCalledWith([
+    [
+      { id: 0, user: 0, text: "Hi" },
+      { id: 0, user: 1, text: "Moved" },
+    ],
+    [remove(message), create(message)],
+    message,
+  ]);
+
+  messages.deleteUnsafe({ id: 0, user: 1, text: "Moved" }).flush();
+
+  expect(spy).toHaveBeenLastCalledWith([
+    [{ id: 0, user: 1, text: "Moved" }],
+    [remove(message)],
+    message,
+  ]);
+});
+
 it("materializes partial updates for reordered sources", () => {
   const db = new SQLite(":memory:");
   const note = reorder(

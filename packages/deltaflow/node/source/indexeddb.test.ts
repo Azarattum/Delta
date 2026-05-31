@@ -168,7 +168,7 @@ it("works with indexed DB", async () => {
   ]);
 });
 
-it("pushes through indexeddb", async () => {
+it("pushes unsafe changes synchronously when possible", async () => {
   const user = shape((t) => ({
     id: t(t.INT, t.PRIMARY),
     name: t.STRING,
@@ -188,15 +188,13 @@ it("pushes through indexeddb", async () => {
     { id: 1, name: "Alice" },
   ]);
 
-  users.create({ id: 2, name: "Emily" });
-  await view.flush();
+  users.createUnsafe({ id: 2, name: "Emily" });
   expect(view.pull()[0]).toEqual([
     { id: 0, name: "Bob" },
     { id: 1, name: "Alice" },
     { id: 2, name: "Emily" },
   ]);
 
-  await users.flush();
   expect((await users.pull())[0]).toEqual([
     { id: 0, name: "Bob" },
     { id: 1, name: "Alice" },
@@ -206,11 +204,10 @@ it("pushes through indexeddb", async () => {
   const spy = mock();
   view.connect(spy);
   expect(spy).not.toHaveBeenCalled();
-  users.create({ id: 3, name: "John" });
+  users.createUnsafe({ id: 3, name: "John" });
   expect(spy).not.toHaveBeenCalled();
   const promise = view.flush();
   expect(promise).toBeInstanceOf(Promise);
-  await promise;
   expect(spy).toHaveBeenLastCalledWith([
     [
       { id: 0, name: "Bob" },
@@ -220,6 +217,40 @@ it("pushes through indexeddb", async () => {
     ],
     [create(user), create(user), create(user), create(user)],
     user,
+  ]);
+  await promise;
+
+  users.updateUnsafe([
+    { id: 3, name: "John" },
+    { id: 3, name: "Jonathan" },
+  ]);
+  const updatePromise = users.flush();
+  expect(view.pull()[0]).toEqual([
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+    { id: 2, name: "Emily" },
+    { id: 3, name: "Jonathan" },
+  ]);
+  await updatePromise;
+  expect((await users.pull())[0]).toEqual([
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+    { id: 2, name: "Emily" },
+    { id: 3, name: "Jonathan" },
+  ]);
+
+  users.deleteUnsafe({ id: 3, name: "Jonathan" });
+  const deletePromise = users.flush();
+  expect(view.pull()[0]).toEqual([
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+    { id: 2, name: "Emily" },
+  ]);
+  await deletePromise;
+  expect((await users.pull())[0]).toEqual([
+    { id: 0, name: "Bob" },
+    { id: 1, name: "Alice" },
+    { id: 2, name: "Emily" },
   ]);
 });
 

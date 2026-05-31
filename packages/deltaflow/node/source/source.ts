@@ -54,14 +54,21 @@ export function source<
       })(null);
 
       const source = zStream({
-        push(local?: ZSet<Partial<T>>, remote?: ZSet<Partial<T>>) {
+        push(
+          local?: ZSet<Partial<T>>,
+          remote?: ZSet<Partial<T>>,
+          unsafe?: ZSet<T>,
+        ) {
           return SyncPromise.all([
             local && reconstruct(local),
             remote && reconstruct(remote),
           ]).then(([local, remote]) => {
-            if (local && localNeeded) localSource.push(copy(local));
-            const set = local ?? remote ?? zero<T>();
-            if (local && remote) add(set, remote);
+            const localSet = local ?? unsafe;
+            if (local && unsafe) add(localSet!, unsafe);
+            if (localSet && localNeeded) localSource.push(copy(localSet));
+
+            const set = localSet ?? remote ?? zero<T>();
+            if (set !== remote && remote) add(set, remote);
             return set;
           });
         },
@@ -107,10 +114,20 @@ export function source<
             this.push([items, meta, shape] as ZSet<Partial<T>>);
             return this;
           },
+          createUnsafe(...items: T[]) {
+            const meta = Array(items.length).fill(created);
+            this.push(undefined, undefined, [items, meta, shape] as ZSet<T>);
+            return this;
+          },
           delete(...items: TShape["~id"][]) {
             items.sort((a, b) => compare(a as T, b as T, shape));
             const meta = Array(items.length).fill(removed);
             this.push([items, meta, shape] as ZSet<Partial<T>>);
+            return this;
+          },
+          deleteUnsafe(...items: T[]) {
+            const meta = Array(items.length).fill(removed);
+            this.push(undefined, undefined, [items, meta, shape] as ZSet<T>);
             return this;
           },
           update(...items: (Partial<T> & TShape["~id"])[]) {
@@ -119,11 +136,42 @@ export function source<
             this.push([items, meta, shape] as ZSet<Partial<T>>);
             return this;
           },
+          updateUnsafe(...items: readonly [old: T, next: T][]) {
+            const data: T[] = [];
+            const meta: number[] = [];
+
+            items.forEach(([old, next]) => {
+              let relation = false;
+              let mask = 0;
+              let bit = 1;
+
+              keys.forEach((key, i) => {
+                if (isPrimary(types[i])) return;
+                if (old[key] !== next[key]) {
+                  (mask += bit), (relation ||= isRelation(types[i]));
+                }
+                bit *= 2;
+              });
+
+              if (!mask) return;
+
+              if (relation || compare(old, next, shape) !== 0) {
+                data.push(old, next);
+                meta.push(removed, created);
+              } else {
+                data.push(next);
+                meta.push(mask);
+              }
+            });
+
+            this.push(undefined, undefined, [data, meta, shape] as ZSet<T>);
+            return this;
+          },
           get local(): Stream<Follows<Async, ZSet<T>>, [never], ZPullOptions> {
             return localSource as any;
           },
         },
-      })(null, upstream);
+      })(null, upstream, null);
 
       couple(source, localSource);
       return source;
