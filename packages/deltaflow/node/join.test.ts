@@ -241,8 +241,6 @@ it("moves multiple children between parents in one flush", () => {
 it("joins changes correctly", () => {
   const parent = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
   const child = shape((t) => ({ id: t(t.INT, t.PRIMARY), ref: t.INT }));
-  // TODO: pulls from sources should return correct order
-  // const both = nest(parent, "item", reorder(child, "ref"));
   const both = nest(parent, "item", child);
 
   const input1 = source(parent, memory())();
