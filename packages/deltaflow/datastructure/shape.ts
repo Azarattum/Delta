@@ -14,16 +14,17 @@ function shape<T extends Template>(template: T): Shape<FromTemplate<T>, ID<T>> {
   return { keys, types, order, hash, mask, children: {} } as any;
 }
 
-function reorder<TShape extends Shape<T> | undefined, T = any>(
-  shape: TShape,
-  ...order: Order<T>
-): TShape {
-  if (!shape) return shape;
+function reorder<
+  TShape extends Shape<any> | undefined,
+  const TOrder extends Order<NonNullable<TShape>["~type"]>,
+>(shape: TShape, ...order: TOrder) {
+  type TReorderedShape = ReorderedShape<TShape, TOrder>;
+  if (!shape) return shape as TReorderedShape;
 
   const primary = shape.types.map((x, i) => (x & TYPE.PRIMARY ? i << 1 : null));
   const encoded = order.map((entry) => {
     const [key, dir = "asc"] = Array.isArray(entry) ? entry : [entry];
-    const index = shape.keys.indexOf(key as keyof T);
+    const index = shape.keys.indexOf(key as keyof (typeof shape)["~type"]);
     primary[index] = null;
     return (index << 1) | (dir === "desc" ? 1 : 0);
   });
@@ -32,8 +33,8 @@ function reorder<TShape extends Shape<T> | undefined, T = any>(
   encoded.push(...primary.filter((x) => x !== null));
 
   const hash = checksum(shape.types, encoded);
-  if (hash === shape.hash) return shape;
-  return { ...shape, order: encoded, hash };
+  if (hash === shape.hash) return shape as TReorderedShape;
+  return { ...shape, order: encoded, hash } as unknown as TReorderedShape;
 }
 
 function nest<
@@ -203,6 +204,16 @@ type NestedShape<
     : (TChild & {})["~type"][];
   }
 >;
+
+type ReorderedShape<
+  TShape extends Shape<any> | undefined,
+  TOrder extends Order<any>,
+> =
+  TShape extends Shape<infer T, infer TId> ?
+    Shape<T, Pick<T, Extract<keyof TId | OrderKey<TOrder[number]>, keyof T>>>
+  : TShape;
+
+type OrderKey<T> = T extends readonly [infer K, ...unknown[]] ? K : T;
 
 type FromTemplate<T extends Template<unknown>> = {
   [K in keyof ReturnType<T>]: ToPrimitive<ReturnType<T>[K]>;

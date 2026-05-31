@@ -1,6 +1,6 @@
 import { create, remove, update, type ZSet } from "../../datastructure/zset";
+import { nest, reorder, shape } from "../../datastructure/shape";
 import { expect, expectTypeOf, it, mock } from "bun:test";
-import { nest, shape } from "../../datastructure/shape";
 import { source } from "./source";
 import { sqlite } from "./sqlite";
 import SQLite from "bun:sqlite";
@@ -117,6 +117,60 @@ it("collapses chained raw relation updates before materialization", () => {
     [remove(user), create(user)],
     user,
   ]);
+});
+
+it("materializes partial updates for reordered sources", () => {
+  const db = new SQLite(":memory:");
+  const note = reorder(
+    shape((t) => ({
+      id: t(t.INT, t.PRIMARY),
+      rank: t.INT,
+      text: t.STRING,
+    })),
+    "rank",
+    "id",
+  );
+  const notes = source(note, sqlite(db, "reordered_updates"))();
+
+  notes
+    .create({ id: 1, rank: 2, text: "two" }, { id: 2, rank: 1, text: "one" })
+    .flush();
+
+  const spy = mock();
+  notes.local.connect(spy);
+
+  notes
+    .update({ id: 1, rank: 2, text: "TWO" }, { id: 2, rank: 1, text: "ONE" })
+    .flush();
+
+  expect(spy).toHaveBeenLastCalledWith([
+    [
+      { id: 2, rank: 1, text: "ONE" },
+      { id: 1, rank: 2, text: "TWO" },
+    ],
+    [update(note, "text"), update(note, "text")],
+    note,
+  ]);
+  expect(notes.pull()[0]).toEqual([
+    { id: 2, rank: 1, text: "ONE" },
+    { id: 1, rank: 2, text: "TWO" },
+  ]);
+
+  notes
+    .create({ id: 3, rank: 0, text: "zero" })
+    .update({ id: 3, rank: 0, text: "ZERO" });
+  notes.flush();
+
+  expect(notes.pull()[0]).toEqual([
+    { id: 3, rank: 0, text: "ZERO" },
+    { id: 2, rank: 1, text: "ONE" },
+    { id: 1, rank: 2, text: "TWO" },
+  ]);
+
+  // @ts-expect-error reordered source updates require all order keys
+  notes.update({ id: 1, text: "missing rank" });
+  // @ts-expect-error reordered source deletes require all order keys
+  notes.delete({ id: 1 });
 });
 
 it("respects async and sync queries", () => {
