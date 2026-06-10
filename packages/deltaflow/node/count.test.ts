@@ -1,16 +1,20 @@
+import { create, remove, type ZSet } from "../datastructure/zset";
 import { it, expect, expectTypeOf } from "bun:test";
-import type { ZSet } from "../datastructure/zset";
 import { shape } from "../datastructure/shape";
 import { sqlite } from "./source/sqlite";
+import { source } from "./source/source";
 import { stream } from "../stream";
 import SQLite from "bun:sqlite";
 import { count } from "./count";
 
 const idShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
+const [add, del] = [create(idShape), remove(idShape)];
 
 it("pulls total count from upstream", async () => {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items", idShape, [{ id: 1 }, { id: 2 }, { id: 3 }]);
+  const items = source(idShape, sqlite(db, "items"))();
+  items.create({ id: 1 }, { id: 2 }, { id: 3 }).flush();
+
   const total = count(items);
 
   expect(total.pull()).toBe(3);
@@ -18,7 +22,7 @@ it("pulls total count from upstream", async () => {
 
 it("pulls total count from empty source", () => {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items_empty", idShape);
+  const items = source(idShape, sqlite(db, "items_empty"))();
 
   const total = count(items);
   expect(total.pull()).toBe(0);
@@ -26,47 +30,50 @@ it("pulls total count from empty source", () => {
 
 it("tracks count incrementally on push", () => {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items", idShape, [{ id: 1 }, { id: 2 }]);
+  const items = source(idShape, sqlite(db, "items"))();
+  items.create({ id: 1 }, { id: 2 }).flush();
 
   const total = count(items);
   const updates: number[] = [];
   total.subscribe((n) => updates.push(n));
 
   // Add items
-  items.push([[{ id: 3 }, { id: 4 }], [1, 1], idShape]);
+  items.push([[{ id: 3 }, { id: 4 }], [add, add], idShape]);
   items.flush();
   expect(updates).toEqual([2, 4]);
 
   // Remove an item
-  items.push([[{ id: 1 }], [-1]]);
+  items.push([[{ id: 1 }], [del]]);
   items.flush();
   expect(updates).toEqual([2, 4, 3]);
 });
 
 it("handles mixed adds and removes in a single delta", () => {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items", idShape, [{ id: 1 }, { id: 2 }, { id: 3 }]);
+  const items = source(idShape, sqlite(db, "items"))();
+  items.create({ id: 1 }, { id: 2 }, { id: 3 }).flush();
 
   const total = count(items);
   const updates: number[] = [];
   total.subscribe((n) => updates.push(n));
 
   // +4, +5, -1 => net +1
-  items.push([[{ id: 1 }, { id: 4 }, { id: 5 }], [-1, 1, 1], idShape]);
+  items.push([[{ id: 1 }, { id: 4 }, { id: 5 }], [del, add, add], idShape]);
   items.flush();
   expect(updates).toEqual([3, 4]);
 });
 
 it("tracks count without prior pull (lazy init)", () => {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items", idShape, [{ id: 1 }, { id: 2 }]);
+  const items = source(idShape, sqlite(db, "items"))();
+  items.create({ id: 1 }, { id: 2 }).flush();
 
   const total = count(items);
   const updates: number[] = [];
   total.connect((n) => updates.push(n));
 
   // Push without ever pulling — should auto-init
-  items.push([[{ id: 3 }], [1], idShape]);
+  items.push([[{ id: 3 }], [add], idShape]);
   items.flush();
   expect(updates).toEqual([3]);
 
@@ -76,30 +83,26 @@ it("tracks count without prior pull (lazy init)", () => {
 
 it("reaches zero and goes back up", () => {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items", idShape, [{ id: 1 }]);
+  const items = source(idShape, sqlite(db, "items"))();
+  items.create({ id: 1 }).flush();
 
   const total = count(items);
   const updates: number[] = [];
   total.subscribe((n) => updates.push(n));
 
-  items.push([[{ id: 1 }], [-1]]);
+  items.push([[{ id: 1 }], [del]]);
   items.flush();
   expect(updates).toEqual([1, 0]);
 
-  items.push([[{ id: 2 }, { id: 3 }], [1, 1], idShape]);
+  items.push([[{ id: 2 }, { id: 3 }], [add, add], idShape]);
   items.flush();
   expect(updates).toEqual([1, 0, 2]);
 });
 
 it("returns total count via pull option", () => {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items", idShape, [
-    { id: 1 },
-    { id: 2 },
-    { id: 3 },
-    { id: 4 },
-    { id: 5 },
-  ]);
+  const items = source(idShape, sqlite(db, "items"))();
+  items.create({ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }).flush();
 
   const total = { out: 0 };
   const [data] = items.pull({ cursor: { offset: 1, count: 2 }, total });
@@ -109,7 +112,8 @@ it("returns total count via pull option", () => {
 
 it("returns total count with empty result", () => {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items", idShape, [{ id: 1 }, { id: 2 }]);
+  const items = source(idShape, sqlite(db, "items"))();
+  items.create({ id: 1 }, { id: 2 }).flush();
 
   const total = { out: 0 };
   items.pull({ cursor: { offset: 10, count: 5 }, total });
@@ -118,7 +122,8 @@ it("returns total count with empty result", () => {
 
 it("returns total count without cursor", () => {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items", idShape, [{ id: 1 }, { id: 2 }, { id: 3 }]);
+  const items = source(idShape, sqlite(db, "items"))();
+  items.create({ id: 1 }, { id: 2 }, { id: 3 }).flush();
 
   const total = { out: 0 };
   items.pull({ total });
@@ -131,12 +136,15 @@ it("returns total count with filter", () => {
     id: t(t.INT, t.PRIMARY),
     x: t.INT,
   }));
-  const items = sqlite(db, "items", itemShape, [
-    { id: 1, x: 10 },
-    { id: 2, x: 20 },
-    { id: 3, x: 10 },
-    { id: 4, x: 30 },
-  ]);
+  const items = source(itemShape, sqlite(db, "items"))();
+  items
+    .create(
+      { id: 1, x: 10 },
+      { id: 2, x: 20 },
+      { id: 3, x: 10 },
+      { id: 4, x: 30 },
+    )
+    .flush();
 
   const total = { out: 0 };
   items.pull({
@@ -148,7 +156,7 @@ it("returns total count with filter", () => {
 
 it("returns zero for empty table", () => {
   const db = new SQLite(":memory:");
-  const items = sqlite(db, "items_empty", idShape);
+  const items = source(idShape, sqlite(db, "items_empty"))();
 
   const total = { out: 0 };
   items.pull({ total });

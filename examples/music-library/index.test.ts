@@ -1,11 +1,15 @@
 import { album, artist, attribution, track } from "./schema";
-import { join, memory, sink } from "deltaflow";
+import { join, memory, nest, sink, source } from "deltaflow";
 import { it, expect } from "bun:test";
 
+// TODO: migrate to public actions API
+import { create } from "deltaflow/datastructure/zset";
+
 it("joins tracks with albums", async () => {
-  const tracks = memory(track);
-  const albums = memory(album);
+  const tracks = source(track, memory())();
+  const albums = source(album, memory())();
   const library = join(tracks, "album", albums, "id", "albums");
+  const trackWithAlbums = nest(track, "albums", album);
 
   const watcher = new Promise<void>((resolve) => {
     const disconnect = library.connect((x) => {
@@ -15,29 +19,25 @@ it("joins tracks with albums", async () => {
     });
   });
 
-  tracks.push([
-    [
-      { id: 0, title: "A", duration: 1, album: 0 },
-      { id: 1, title: "B", duration: 2, album: 0 },
-    ],
-    [1, 1],
-    track,
-  ]);
+  tracks.create(
+    { id: 0, title: "A", duration: 1, album: 0 },
+    { id: 1, title: "B", duration: 2, album: 0 },
+  );
 
-  albums.push([
-    [
-      { id: 0, title: "Album A", year: 2000 },
-      { id: 1, title: "Album B", year: 2001 },
-    ],
-    [1, 1],
-    album,
-  ]);
+  albums.create(
+    { id: 0, title: "Album A", year: 2000 },
+    { id: 1, title: "Album B", year: 2001 },
+  );
 
   await watcher;
 
   const [data, meta] = library.pull();
   expect(data[0].albums).toBe(data[1].albums);
-  expect({ ...meta }).toEqual({ 0: 1, 1: 1, albums: [[1], [1]] } as any);
+  expect({ ...meta }).toEqual({
+    0: create(trackWithAlbums),
+    1: create(trackWithAlbums),
+    albums: [[create(album)], [create(album)]],
+  } as any);
   expect(data).toEqual([
     {
       id: 0,
@@ -57,10 +57,10 @@ it("joins tracks with albums", async () => {
 });
 
 it("represents library correctly", async () => {
-  const tracks = memory(track);
-  const artists = memory(artist);
-  const albums = memory(album);
-  const attributions = memory(attribution);
+  const tracks = source(track, memory())();
+  const artists = source(artist, memory())();
+  const albums = source(album, memory())();
+  const attributions = source(attribution, memory())();
 
   const library = sink(
     join(
@@ -79,44 +79,28 @@ it("represents library correctly", async () => {
     ),
   );
 
-  tracks.push([
-    [
-      { id: 0, title: "A", duration: 1, album: 0 },
-      { id: 1, title: "B", duration: 2, album: 1 },
-    ],
-    [1, 1],
-    track,
-  ]);
+  tracks.create(
+    { id: 0, title: "A", duration: 1, album: 0 },
+    { id: 1, title: "B", duration: 2, album: 1 },
+  );
 
-  albums.push([
-    [
-      { id: 0, title: "Album A", year: 2000 },
-      { id: 1, title: "Album B", year: 2001 },
-    ],
-    [1, 1],
-    album,
-  ]);
+  albums.create(
+    { id: 0, title: "Album A", year: 2000 },
+    { id: 1, title: "Album B", year: 2001 },
+  );
 
-  artists.push([
-    [
-      { id: 0, title: "Artist A", following: true },
-      { id: 1, title: "Artist B", following: false },
-    ],
-    [1, 1],
-    artist,
-  ]);
+  artists.create(
+    { id: 0, title: "Artist A", following: true },
+    { id: 1, title: "Artist B", following: false },
+  );
 
-  attributions.push([
-    [
-      { album: 0, artist: 0 },
-      { album: 0, artist: 1 },
-      { album: 1, artist: 1 },
-    ],
-    [1, 1, 1],
-    attribution,
-  ]);
+  attributions.create(
+    { album: 0, artist: 0 },
+    { album: 0, artist: 1 },
+    { album: 1, artist: 1 },
+  );
 
-  tracks.push([[{ id: 3, title: "C", duration: 2, album: 1 }], [1], track]);
+  tracks.create({ id: 3, title: "C", duration: 2, album: 1 });
 
   const [data, meta] = library.pull();
   expect(data).toEqual([
@@ -166,10 +150,29 @@ it("represents library correctly", async () => {
     },
   ]);
 
-  expect(meta).toEqual([1, 1, 1] as any);
-  expect(meta["album"]).toEqual([1, 1, 1]);
-  expect(meta.attributions).toEqual([[1, 1], [1], [1]]);
-  expect(meta.attributions[0]["artists"]).toEqual([1, 1]);
-  expect(meta.attributions[1]["artists"]).toEqual([1]);
-  expect(meta.attributions[2]["artists"]).toEqual([1]);
+  const attributionWithArtist = nest(attribution, "artists", artist, true);
+  const trackWithAttributions = nest(
+    track,
+    "attributions",
+    attributionWithArtist,
+  );
+  const libraryShape = nest(trackWithAttributions, "album", album, true);
+
+  expect(meta).toEqual([
+    create(libraryShape),
+    create(libraryShape),
+    create(libraryShape),
+  ] as any);
+  expect(meta["album"]).toEqual([create(album), create(album), create(album)]);
+  expect(meta.attributions).toEqual([
+    [create(attributionWithArtist), create(attributionWithArtist)],
+    [create(attributionWithArtist)],
+    [create(attributionWithArtist)],
+  ]);
+  expect(meta.attributions[0]["artists"]).toEqual([
+    create(artist),
+    create(artist),
+  ]);
+  expect(meta.attributions[1]["artists"]).toEqual([create(artist)]);
+  expect(meta.attributions[2]["artists"]).toEqual([create(artist)]);
 });

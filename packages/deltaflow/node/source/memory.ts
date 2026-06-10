@@ -1,85 +1,92 @@
-import {
-  children,
-  compare,
-  nonPrimary,
-  reorder,
-  type Shape,
-} from "../../datastructure/shape";
-import type { CLGlobal, CLMeta, CLSet } from "../../datastructure/clset";
-import { add, sort, distinct, type ZSet } from "../../datastructure/zset";
-import { zStream, clStream, type OfZStream, type ZStream } from "../stream";
-import { SyncPromise } from "../../stream";
+import type { Order } from "../../datastructure/shape";
+import type { Query, Store } from "./source";
 
-export function memory<T extends Record<string, unknown>>(
-  shape: Shape<T>,
-  initialData: T[] = [],
-  // TODO: allow memory to accept upstream (e.g. to allow pushes to it)
-) {
-  const data = [
-    initialData.sort((a, b) => compare(a, b, shape)),
-    Array(initialData.length).fill(1),
-    shape,
-  ] as ZSet<T>;
+export function memory<T extends Record<string, unknown>>() {
+  return ((pks) => {
+    const data: T[] = [];
 
-  children(shape).forEach(([key]) => {
-    (data[1] as Record<string, unknown>)[key] ??= [];
-    data[0].forEach(
-      (x, i) => (data[1][key][i] = Array((x[key] as unknown[]).length).fill(1)),
-    );
-  });
+    return {
+      query<TRow extends T = T>({ filter, order, cursor, total }: Query<TRow>) {
+        const reverse = cursor?.count != null && cursor.count < 0;
 
-  return zStream({
-    pull: ({ order, filter, weight = 1 } = {}) => {
-      const scan = structuredClone(
-        filter?.length ?
-          data[0].filter((x) =>
-            filter.every(({ items, keys, exclude }) => {
-              const refKeys = keys[1] ?? keys[0];
-              const contains = items.find((ref) =>
-                keys[0].every((k, i) => x[k] === ref[refKeys[i]]),
-              );
+        let scan = data.filter((row) => {
+          if (!filter) return true;
+          return filter?.every(({ items, keys, exclude }) => {
+            const rowKeys = keys[0];
+            const refKeys = keys[1] ?? rowKeys;
+            const contains = items.some((ref) => {
+              return rowKeys.every((key, i) => row[key] === ref[refKeys[i]]);
+            });
 
-              return !!contains !== !!exclude;
-            }),
-          )
-        : data[0],
-      );
+            return contains !== !!exclude;
+          });
+        });
 
-      const scanShape = order ? reorder(shape, ...order) : shape;
-      const scanMeta = Array(scan.length).fill(weight);
-      const scanSet = [scan, scanMeta, scanShape] as ZSet<T>;
+        if (total) total.out = scan.length;
 
-      if (order) sort(scanSet, (a, b) => compare(a, b, scanShape));
-      // TODO: support cursor
-      return scanSet;
-    },
-    flush: (changes) => changes.forEach(([x]) => distinct(add(data, x))),
-  })(null);
+        scan = scan.sort((a, b) => compareBy(a, b, order, reverse));
+
+        if (cursor?.anchor) {
+          scan = scan.filter((row) => {
+            const cmp = compareBy(row, cursor.anchor!, order, reverse);
+            return cursor.exclusive ? cmp > 0 : cmp >= 0;
+          });
+        }
+
+        if (cursor?.offset) scan = scan.slice(cursor.offset);
+        if (cursor?.count != null) scan = scan.slice(0, Math.abs(cursor.count));
+        if (reverse) scan.reverse();
+
+        return structuredClone(scan) as TRow[];
+      },
+      mutate({ creates, updates, removes }) {
+        removes?.forEach((row) => {
+          const existing = data.findIndex((item) => samePrimary(item, row));
+          if (existing >= 0) data.splice(existing, 1);
+        });
+
+        creates?.forEach((row) => {
+          const existing = data.findIndex((item) => samePrimary(item, row));
+          if (existing >= 0) data[existing] = structuredClone(row);
+          else data.push(structuredClone(row));
+        });
+
+        updates?.forEach((row) => {
+          const existing = data.find((item) => samePrimary(item, row));
+          if (existing) Object.assign(existing, structuredClone(row));
+        });
+      },
+    };
+
+    function samePrimary(a: Partial<T>, b: Partial<T>) {
+      return pks.every((key) => a[key] === b[key]);
+    }
+  }) satisfies Store<T>;
 }
 
-export function memoryReplication<
-  TStream extends ZStream<T>,
-  T extends Record<string, unknown> = OfZStream<TStream>,
->(dataStream: TStream, global: CLGlobal, initialData: [number, CLMeta][] = []) {
-  // TODO: use generic key, not a number
-  const stored = new Map<number, CLMeta>(initialData);
+function compareBy(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  order: Order<Record<string, unknown>>,
+  reverse = false,
+) {
+  for (const entry of order) {
+    const [key, direction = "asc"] = Array.isArray(entry) ? entry : [entry];
+    const sign = (direction === "asc" ? 1 : -1) * (reverse ? -1 : 1);
+    const x = a[key];
+    const y = b[key];
 
-  return clStream({
-    pull(options) {
-      return SyncPromise.one(dataStream.pull(options)).then((zset) => {
-        const [data, _, shape] = zset;
+    if (x === y) continue;
+    if (y == null) return sign;
+    if (x == null) return -sign;
 
-        const emptyCols = nonPrimary(shape).flatMap(() => [0, global.peer]);
+    const type = typeof x;
+    if (type !== typeof y || type === "object" || type === "function") {
+      throw new Error(`Unsupported compare types: ${type} ${typeof y}`);
+    }
 
-        // TODO: do not use the ID, but actual key!
-        const meta = data.map(
-          (x) =>
-            // TODO: I'm not sure if fallback here is a good idea...
-            stored.get((x as any).id) ?? [global.version, 0, ...emptyCols],
-        );
+    return (x < y ? -1 : 1) * sign;
+  }
 
-        return [data, meta, shape] as unknown as CLSet<T>;
-      });
-    },
-  })(null);
+  return 0;
 }

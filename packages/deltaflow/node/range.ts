@@ -1,9 +1,17 @@
-import { stream, SyncPromise, type MaybePromise, type Stream } from "../stream";
-import { add, distinct, len, transform, zero } from "../datastructure/zset";
-import type { ZStream, OfZStream, PullOptions } from "./stream";
+import {
+  cardinality,
+  transform,
+  distinct,
+  combine,
+  zero,
+  add,
+} from "../datastructure/zset";
+import type { Follows, MaybePromise, PullOf, Stream } from "../stream";
+import type { ZStream, OfZStream, ZPullOptions } from "./stream";
 import { compare, primary } from "../datastructure/shape";
-import { traverse } from "../datastructure/metaset";
+import { len, traverse } from "../datastructure/metaset";
 import type { ZSet } from "../datastructure/zset";
+import { stream, SyncPromise } from "../stream";
 
 export function range<
   TStream extends ZStream<T>,
@@ -45,27 +53,28 @@ export function range<
 
       if (set) {
         transform(set, (data, meta, shape) => {
+          const count = cardinality(meta, shape);
           const cmpLower = lower ? compare(data, lower, shape) : -1;
           const cmpUpper =
             cmpLower >= 0 && upper ? compare(data, upper, shape) : -1;
 
-          if (cmpLower < 0) shiftLower -= Math.sign(meta);
-          if (cmpUpper <= 0) shiftUpper -= Math.sign(meta);
-          quantity += Math.sign(meta);
+          if (cmpLower < 0) shiftLower -= count;
+          if (cmpUpper <= 0) shiftUpper -= count;
+          quantity += count;
 
           if (cmpLower < 0) {
-            if (meta) dirtyLower = true;
+            if (count) dirtyLower = true;
             if (shiftLower >= 0) return;
-            if (meta < 0) return void removed.push(data);
+            if (count < 0) return void removed.push(data);
             (nLower += 1), (nUpper += 1);
           } else if (upper && cmpUpper > 0) {
-            if (meta) dirtyUpper = true;
+            if (count) dirtyUpper = true;
             if (shiftUpper <= 0) return;
-            if (meta < 0) return void removed.push(data);
+            if (count < 0) return void removed.push(data);
           } else {
-            if (cmpLower === 0 && meta < 0) removedLower = true;
-            if (cmpUpper === 0 && meta < 0) removedUpper = true;
-            if (meta < 0) removed.push(data), untouched--;
+            if (cmpLower === 0 && count < 0) removedLower = true;
+            if (cmpUpper === 0 && count < 0) removedUpper = true;
+            if (count < 0) removed.push(data), untouched--;
             nUpper += 1;
           }
 
@@ -85,8 +94,8 @@ export function range<
         count: -shiftUpper - Math.min(missing, Math.max(0, -shiftUpper)),
         exclusive: shiftUpper > 0 && !!upper,
       };
-      const weightLower = -Math.sign(shiftLower);
-      const weightUpper = Math.sign(shiftUpper);
+      const signLower = -Math.sign(shiftLower);
+      const signUpper = Math.sign(shiftUpper);
 
       normalizeCursor(cursorLower, dirtyLower);
       normalizeCursor(cursorUpper, dirtyUpper);
@@ -99,11 +108,11 @@ export function range<
 
       if (extraUpper && untouched > 0) {
         cursorUpper.count -= 1;
-        untouched += weightUpper;
+        untouched += signUpper;
       }
-      if (extraLower && untouched > +(extraUpper && !weightUpper)) {
+      if (extraLower && untouched > +(extraUpper && !signUpper)) {
         cursorLower.count += 1;
-        untouched += weightLower;
+        untouched += signLower;
       }
 
       // Prevent out of bounds pull
@@ -111,13 +120,14 @@ export function range<
 
       const keys = set && ([primary(set[2])] as const);
       const filter = keys && [{ keys, items: removed, exclude: true }];
-      const optsLower = { cursor: cursorLower, filter, weight: weightLower };
-      const optsUpper = { cursor: cursorUpper, filter, weight: weightUpper };
+      const optsLower = { cursor: cursorLower, filter, cardinality: signLower };
+      const optsUpper = { cursor: cursorUpper, filter, cardinality: signUpper };
 
       return SyncPromise.all([
         cursorLower.count ? upstream.pull(optsLower) : zero<T>(),
         cursorUpper.count ? upstream.pull(optsUpper) : zero<T>(),
       ]).then(([pulledLower, pulledUpper]) => {
+        const shape = set?.[2] ?? pulledLower[2] ?? pulledUpper[2];
         const pulledLenLower = len(pulledLower);
         const effectiveGap = gap * (1 + Math.sign(moved));
         const growLower = shiftLower < 0 ? pulledLenLower + shiftLower : 0;
@@ -129,6 +139,7 @@ export function range<
 
         let newLower: T | undefined;
         const process = (data: T, meta: number, region: number) => {
+          const sign = Math.sign(cardinality(meta, shape));
           if (region < 0) {
             if (skip-- > 0) return;
             if (keep > 0 ? shiftLower < 0 : extraLower) newLower ??= data;
@@ -139,13 +150,13 @@ export function range<
             if (extraLower) newLower ??= data;
             if (shiftUpper >= 0 || slots > 0) upper = data;
             if (!shiftUpper || (shiftUpper < 0 && slots-- > 0)) return;
-          } else if (meta > 0) {
+          } else if (sign > 0) {
             if (shiftLower > 0 && keep-- > 0) return;
             if (shiftUpper < 0 && slots-- <= 0) return;
             if (extraLower) newLower ??= data;
             if (extraUpper) upper = data;
           }
-          missing -= Math.sign(meta);
+          missing -= sign;
           return [data, meta] as [T, number];
         };
 
@@ -161,8 +172,9 @@ export function range<
               process(data, meta, +(++i > pulledLenLower) - 0.5),
             combine: (aData, aMeta, _, bMeta) => {
               skip--, i++, j++;
+              const meta = combine(aMeta, bMeta, shape);
               return (
-                process(aData, aMeta + bMeta, +(i > pulledLenLower) - 0.5) ??
+                process(aData, meta, +(i > pulledLenLower) - 0.5) ??
                 (j > nLower && j <= nUpper ? [aData, aMeta] : undefined)
               );
             },
@@ -190,7 +202,7 @@ export function range<
         }
       }
     },
-    pull(options?: PullOptions) {
+    pull(options?: ZPullOptions) {
       const total = { out: 0 };
       return SyncPromise.one(limits ?? range.pull()).then(([count, offset]) =>
         SyncPromise.one(
@@ -202,10 +214,11 @@ export function range<
           bounds = [set[0][0], set[0][count - 1]];
           return set;
         }),
-      );
+      ) as Follows<[PullOf<TStream>, PullOf<typeof range>], ZSet<T>>;
     },
     compress([sets, ranges]) {
-      return [[sets?.reduce((acc, x) => add(acc, x, false)), ranges?.at(-1)]];
+      const opts = { identity: "relations" as const };
+      return [[sets?.reduce((acc, x) => add(acc, x, opts)), ranges?.at(-1)]];
     },
     extensions: {
       get bounds() {
@@ -216,15 +229,20 @@ export function range<
 }
 
 export function limit(limit: number, offset = 0) {
-  let current = [limit, offset] as const;
+  let current = [limit, offset] as [number, number];
   return stream({
-    flush: (next) => void (next.length && (current = next.at(-1)![0])),
     compress: ([updates]) => [[updates.at(-1)!]],
     pull: () => current,
     push: (next) => {
       const deltaStart = next[1] - current[1];
       const deltaEnd = next[0] + next[1] - (current[0] + current[1]);
       return [deltaStart, deltaEnd] as const;
+    },
+    flush: (next) => {
+      next.forEach(([deltaStart, deltaEnd]) => {
+        current[0] += deltaEnd - deltaStart;
+        current[1] += deltaStart;
+      });
     },
   })(null);
 }

@@ -1,88 +1,144 @@
-import {
-  TYPE,
-  primary,
-  type Order,
-  type Shape,
-} from "../../datastructure/shape";
-import type { ZSet } from "../../datastructure/zset";
-import { zStream, type PullOptions } from "../stream";
+import type { Order } from "../../datastructure/shape";
+import type { Query, Store } from "./source";
 
 /** TODO: this is just a prototype */
-export async function indexeddb<T extends Record<string, unknown>>(
-  db: IDBDatabase,
+export function indexeddb<T extends Record<string, unknown>>(
+  name: string,
   table: string,
-  shape: Shape<T>,
-  initialData: T[] = [],
 ) {
-  const store = db.transaction(table, "readwrite").objectStore(table);
-  // Autocreating for testing convenience (TODO: remove later)
-  initialData.forEach((x) => store.put(x));
-  await new Promise((resolve) => (store.transaction.oncomplete = resolve));
+  return (async (pks, _, __, idx) => {
+    await ensureDatabase(name, table, pks, idx);
 
-  const pks = primary(shape);
+    const primaryKey = (row: Partial<T>) =>
+      pks.map((key) => row[key] as IDBValidKey);
 
-  return zStream({
-    pull: async ({ filter, order, weight = 1 } = {}) => {
-      // TODO: support cursor
-      const store = db.transaction([table], "readonly").objectStore(table);
-      let scan: T[];
+    const objectStore = async (mode: IDBTransactionMode) => {
+      const db = await ensureDatabase(name, table, pks, idx);
+      return db.transaction(table, mode).objectStore(table);
+    };
 
-      // TODO: support cursor and composite options
-      if (filter) {
-        // TODO: support exclusion filtering
-        // TODO: support multiple filtering
-        scan = await queryWithFilter(store, filter[0]);
-      } else if (order) {
-        scan = await queryWithOrder<T>(store, order);
-      } else {
-        scan = await new Promise<T[]>(
-          (r) => (store.getAll().onsuccess = (e: any) => r(e.target.result)),
+    return {
+      query<TRow extends T = T>({
+        filter,
+        order,
+      }: Query<TRow>): Promise<TRow[]> {
+        // TODO: support cursor
+        return objectStore("readonly").then((store) => {
+          // TODO: support cursor and composite options
+          if (filter) {
+            // TODO: support exclusion filtering
+            // TODO: support multiple filtering
+            return queryWithFilter(store, filter[0]);
+          } else if (order) {
+            return queryWithOrder<TRow>(store, order);
+          } else {
+            return new Promise<TRow[]>((resolve) => {
+              store.getAll().onsuccess = function () {
+                resolve(this.result);
+              };
+            });
+          }
+        });
+      },
+      async mutate({ creates, updates, removes }) {
+        if (!creates?.length && !updates?.length && !removes?.length) return;
+
+        const store = await objectStore("readwrite");
+
+        removes?.forEach((row) => store.delete(primaryKey(row)));
+        creates?.forEach((row) => store.put(row));
+        updates?.forEach((row) => {
+          const request = store.get(primaryKey(row));
+          request.onsuccess = function () {
+            const current = this.result;
+            if (current) store.put({ ...current, ...row });
+          };
+        });
+
+        await new Promise(
+          (resolve) => (store.transaction.oncomplete = resolve),
         );
-      }
-
-      return [scan, Array(scan.length).fill(weight), shape] as ZSet<T>;
-    },
-    flush: async (changes: [ZSet<T>][]) => {
-      if (changes.length === 0) return;
-      const store = db.transaction(table, "readwrite").objectStore(table);
-      for (const [change] of changes) {
-        for (let i = 0; i < change[0].length; i++) {
-          const item = change[0][i];
-          const op = change[1][i];
-
-          if (op === 0) store.put(item);
-          else if (op > 0) store.add(item);
-          else store.delete(pks.map((key) => item[key] as IDBValidKey));
-        }
-      }
-
-      await new Promise((resolve) => (store.transaction.oncomplete = resolve));
-    },
-  })(null);
+      },
+    };
+  }) satisfies Store<T>;
 }
 
-// TODO: this is a temporary solution for testing purposes,
-//  we should use a proper schema and source create in the future
-export function createStore<T extends Record<string, unknown>>(
-  db: IDBDatabase,
-  name: string,
-  shape: Shape<T>,
-  indexed: (keyof T)[] = [],
-) {
-  const keyPath = primary(shape);
-  const store = db.createObjectStore(name, { keyPath });
-  const relations = shape.keys.filter(
-    (_, i) => shape.types[i] >> 16 && !(shape.types[i] & TYPE.PRIMARY),
-  );
+const cache = new Map<string, { ready: Promise<IDBDatabase | void> }>();
 
-  // TODO: support compound indexes somehow...
-  const indexes = new Set([...indexed, ...relations]);
-  indexes.forEach((x) => store.createIndex(x as string, [x as string]));
+async function ensureDatabase(
+  name: string,
+  table: string,
+  pks: readonly string[],
+  indexes: readonly (readonly string[])[],
+) {
+  const item = cache.get(name) ?? { ready: Promise.resolve() };
+  cache.set(name, item);
+
+  return (item.ready = item.ready.then(async (db) => {
+    db ??= await openDatabase(name);
+    if (hasSchema(db, table, pks, indexes)) return db;
+
+    db.close();
+    return (db = await openDatabase(name, db.version + 1, (db, transaction) =>
+      createStore(db, transaction, table, pks, indexes),
+    ));
+  })) as Promise<IDBDatabase>;
+}
+
+function openDatabase(
+  name: string,
+  version?: number,
+  upgrade?: (db: IDBDatabase, transaction: IDBTransaction) => void,
+) {
+  const request = indexedDB.open(name, version);
+  request.onupgradeneeded = () =>
+    upgrade?.(request.result, request.transaction!);
+
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+  });
+}
+
+function hasSchema(
+  db: IDBDatabase,
+  table: string,
+  pks: readonly string[],
+  indexes: readonly (readonly string[])[],
+) {
+  if (!db.objectStoreNames.contains(table)) return false;
+
+  const store = db.transaction(table, "readonly").objectStore(table);
+  if (store.keyPath?.toString() !== pks.toString()) return false;
+  return indexes.every((index) => store.indexNames.contains(index.toString()));
+}
+
+function createStore(
+  db: IDBDatabase,
+  transaction: IDBTransaction,
+  name: string,
+  pks: readonly string[],
+  indexes: readonly (readonly string[])[],
+) {
+  const store =
+    db.objectStoreNames.contains(name) ?
+      transaction.objectStore(name)
+    : db.createObjectStore(name, { keyPath: [...pks] });
+
+  indexes.forEach((index) => {
+    const name = index.toString();
+    if (store.indexNames.contains(name)) return;
+    store.createIndex(name, [...index]);
+  });
 }
 
 function queryWithFilter<T>(
   store: IDBObjectStore,
-  filter: NonNullable<PullOptions["filter"]>[number],
+  filter: NonNullable<Query<Record<string, unknown>>["filter"]>[number],
 ) {
   const [indexKeys, refKeys = indexKeys] = filter.keys;
   const { index, unique } = getIndex(store, indexKeys.toString());
@@ -131,8 +187,8 @@ async function queryWithOrder<T>(store: IDBObjectStore, order: Order<T>) {
   return new Promise<T[]>((resolve) => {
     const results: T[] = [];
     const request = index.openCursor(undefined, direction);
-    request.onsuccess = (event: any) => {
-      const cursor = event.target.result as IDBCursorWithValue | null;
+    request.onsuccess = function () {
+      const cursor = this.result;
       if (cursor) {
         results.push(cursor.value);
         cursor.continue();

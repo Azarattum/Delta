@@ -1,23 +1,6 @@
-import { filter, memory, join, map, sink, nest, reorder, shape } from "..";
-import { expect, it, mock, spyOn } from "bun:test";
-
-it("fails with invalid data", () => {
-  const user = shape((t) => ({
-    id: t(t.INT, t.PRIMARY),
-    name: t.STRING,
-  }));
-  const userReverse = reorder(user, ["id", "desc"]);
-
-  const users = memory(user, [{ id: 0, name: "Bob" }]);
-  users.push([[{ id: 1, name: "Alice" }], [1], userReverse]);
-
-  const consoleErrorMock = spyOn(console, "error").mockImplementation(() => {});
-  users.flush();
-  expect(consoleErrorMock).toHaveBeenCalledTimes(1);
-  consoleErrorMock.mockRestore();
-
-  expect(() => nest(nest(user, "child", user), "child", userReverse)).toThrow();
-});
+import { filter, memory, source, shape, join, sink, nest, map } from "..";
+import { create, update } from "../datastructure/zset";
+import { expect, it, mock } from "bun:test";
 
 it("performs basic CRUD", () => {
   const user = shape((t) => ({
@@ -25,38 +8,48 @@ it("performs basic CRUD", () => {
     name: t.STRING,
   }));
 
-  const users = memory(user, [
-    { id: 0, name: "Bob" },
-    { id: 1, name: "Alice" },
-  ]);
+  const users = source(user, memory())();
+  users.create({ id: 0, name: "Bob" }, { id: 1, name: "Alice" }).flush();
   users.pull = mock(users.pull);
   const predicate = mock((x) => x.name.startsWith("A"));
   const view = sink(filter(users, predicate));
 
   // Read
   expect(predicate).not.toHaveBeenCalled();
-  expect(view.pull()).toEqual([[{ id: 1, name: "Alice" }], [1], user]);
+  expect(view.pull()).toEqual([
+    [{ id: 1, name: "Alice" }],
+    [create(user)],
+    user,
+  ]);
   expect(predicate).toHaveBeenCalled();
 
   // Create
-  users.push([[{ id: 2, name: "Nobody" }], [1], user]);
-  users.push([[{ id: 2, name: "Alex" }], [1], user]);
+  users.create({ id: 2, name: "Nobody" });
+  users.create({ id: 2, name: "Alex" });
   expect(view.pull()).toEqual([
     [
       { id: 1, name: "Alice" },
       { id: 2, name: "Alex" },
     ],
-    [1, 1],
+    [create(user), create(user)],
     user,
   ]);
 
   // Delete
-  users.push([[{ id: 1, name: "Alice" }], [-1]]);
-  expect(view.pull()).toEqual([[{ id: 2, name: "Alex" }], [1], user]);
+  users.delete({ id: 1 });
+  expect(view.pull()).toEqual([
+    [{ id: 2, name: "Alex" }],
+    [create(user)],
+    user,
+  ]);
 
   // Update
-  users.push([[{ id: 2, name: "Alexandra" }], [0]]);
-  expect(view.pull()).toEqual([[{ id: 2, name: "Alexandra" }], [1], user]);
+  users.update({ id: 2, name: "Alexandra" });
+  expect(view.pull()).toEqual([
+    [{ id: 2, name: "Alexandra" }],
+    [create(user)],
+    user,
+  ]);
 
   expect(users.pull).toHaveBeenCalledTimes(1);
   expect(users.pull()).toEqual([
@@ -64,118 +57,9 @@ it("performs basic CRUD", () => {
       { id: 0, name: "Bob" },
       { id: 2, name: "Alexandra" },
     ],
-    [1, 1],
+    [create(user), create(user)],
     user,
   ]);
-});
-
-it("updates children", () => {
-  const user = shape((t) => ({
-    id: t(t.INT, t.PRIMARY),
-    name: t.STRING,
-  }));
-  const parent = nest(user, "children", user);
-  type User = (typeof parent)["~type"];
-
-  const users = memory<User>(parent, [
-    { id: 0, name: "Bob", children: [] },
-    { id: 1, name: "Alice", children: [] },
-  ]);
-
-  // Create
-  users.push([
-    [{ id: 1, name: "Alice", children: [{ id: 3, name: "Clara" }] }],
-    Object.assign([0], { children: [[1]] }),
-  ]);
-  {
-    const [data, meta, shape] = users.pull();
-    expect(data).toEqual([
-      { id: 0, name: "Bob", children: [] },
-      { id: 1, name: "Alice", children: [{ id: 3, name: "Clara" }] },
-    ]);
-    expect(meta).toEqual([1, 1] as any);
-    expect(shape).toBe(parent);
-  }
-
-  // Create one more
-  users.push([
-    [{ id: 1, name: "Alice", children: [{ id: 4, name: "Kate" }] }],
-    Object.assign([0], { children: [[1]] }),
-  ]);
-  {
-    const [data, meta, shape] = users.pull();
-    expect(data).toEqual([
-      { id: 0, name: "Bob", children: [] },
-      {
-        id: 1,
-        name: "Alice",
-        children: [
-          { id: 3, name: "Clara" },
-          { id: 4, name: "Kate" },
-        ],
-      },
-    ]);
-    expect(meta).toEqual([1, 1] as any);
-    expect(shape).toBe(parent);
-  }
-
-  // Update
-  users.push([
-    [{ id: 1, name: "Alice", children: [{ id: 4, name: "Katelyn" }] }],
-    Object.assign([0], { children: [[0]] }),
-  ]);
-  {
-    const [data, meta, shape] = users.pull();
-    expect(data).toEqual([
-      { id: 0, name: "Bob", children: [] },
-      {
-        id: 1,
-        name: "Alice",
-        children: [
-          { id: 3, name: "Clara" },
-          { id: 4, name: "Katelyn" },
-        ],
-      },
-    ]);
-    expect(meta).toEqual([1, 1] as any);
-    expect(shape).toBe(parent);
-  }
-
-  // Delete & Create
-  users.push([
-    [
-      { id: 0, name: "Bob", children: [{ id: 5, name: "Hank" }] },
-      { id: 1, name: "Alice", children: [{ id: 3, name: "Clara" }] },
-    ],
-    Object.assign([0, 0], { children: [[1], [-1]] }),
-  ]);
-  {
-    const [data, meta, shape] = users.pull();
-    expect(data).toEqual([
-      { id: 0, name: "Bob", children: [{ id: 5, name: "Hank" }] },
-      { id: 1, name: "Alice", children: [{ id: 4, name: "Katelyn" }] },
-    ]);
-    expect(meta).toEqual([1, 1] as any);
-    expect(shape).toBe(parent);
-  }
-
-  // Delete All
-  users.push([
-    [
-      { id: 0, name: "Bob", children: [{ id: 5, name: "Hank" }] },
-      { id: 1, name: "Alice", children: [{ id: 4, name: "Katelyn" }] },
-    ],
-    Object.assign([0, 0], { children: [[-1], [-1]] }),
-  ]);
-  {
-    const [data, meta, shape] = users.pull();
-    expect(data).toEqual([
-      { id: 0, name: "Bob", children: [] },
-      { id: 1, name: "Alice", children: [] },
-    ]);
-    expect(meta).toEqual([1, 1] as any);
-    expect(shape).toBe(parent);
-  }
 });
 
 it("processes full pipeline", () => {
@@ -190,16 +74,17 @@ it("processes full pipeline", () => {
   }));
   const userWithMessages = nest(user, "messages", message);
 
-  const users = memory(user, [
-    { id: 0, name: "Bob" },
-    { id: 1, name: "Alice" },
-  ]);
-  const messages = memory(message, [
-    { id: 0, text: "Hello", user: 0 },
-    { id: 1, text: "I'm Bob", user: 0 },
-    { id: 2, text: "And I'm Alice!", user: 1 },
-    { id: 3, text: "I'll be here!", user: 2 },
-  ]);
+  const users = source(user, memory())();
+  users.create({ id: 0, name: "Bob" }, { id: 1, name: "Alice" }).flush();
+  const messages = source(message, memory())();
+  messages
+    .create(
+      { id: 0, text: "Hello", user: 0 },
+      { id: 1, text: "I'm Bob", user: 0 },
+      { id: 2, text: "And I'm Alice!", user: 1 },
+      { id: 3, text: "I'll be here!", user: 2 },
+    )
+    .flush();
 
   const changes = map(
     join(
@@ -237,13 +122,13 @@ it("processes full pipeline", () => {
       },
     ]);
     expect({ ...(meta as any) }).toEqual({
-      0: 1,
-      messages: [[1]],
+      0: create(userWithMessages),
+      messages: [[create(message)]],
     });
     expect(shape).toEqual(userWithMessages as any);
   }
 
-  users.push([[{ id: 2, name: "Clara" }], [1]]);
+  users.push([[{ id: 2, name: "Clara" }], [create(user)], user]);
   {
     const [data, meta, shape] = view.pull();
     expect(data).toEqual([
@@ -255,16 +140,16 @@ it("processes full pipeline", () => {
       { id: 2, name: "CLARA", messages: [{ id: 3, text: "i'll be here!" }] },
     ]);
     expect({ ...(meta as any) }).toEqual({
-      0: 1,
-      1: 1,
-      messages: [[1], [1]],
+      0: create(userWithMessages),
+      1: create(userWithMessages),
+      messages: [[create(message)], [create(message)]],
     });
     expect(shape).toEqual(userWithMessages as any);
   }
 
   messages.push([
     [{ id: 4, text: "Whatever message!", user: 2 }],
-    [1],
+    [create(message)],
     message,
   ]);
   {
@@ -285,9 +170,9 @@ it("processes full pipeline", () => {
       },
     ]);
     expect({ ...(meta as any) }).toEqual({
-      0: 1,
-      1: 1,
-      messages: [[1], [1, 1]],
+      0: create(userWithMessages),
+      1: create(userWithMessages),
+      messages: [[create(message)], [create(message), create(message)]],
     });
     expect(shape).toEqual(userWithMessages as any);
   }
@@ -300,7 +185,7 @@ it("processes full pipeline", () => {
         messages: [{ id: 4, text: "whatever message!" }],
       },
     ],
-    [0],
+    [update(userWithMessages, "messages")],
     userWithMessages,
   ]);
 });

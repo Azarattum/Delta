@@ -6,6 +6,7 @@
     "module": "ESNext",
     "moduleDetection": "force",
     "allowJs": true,
+    "types": ["bun"],
 
     // Bundler mode
     "moduleResolution": "bundler",
@@ -17,6 +18,7 @@
     "strict": true,
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
 
     // Some stricter flags
     "noUnusedLocals": true,
