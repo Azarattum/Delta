@@ -304,6 +304,42 @@ it("pulls with constraints", async () => {
 
   {
     const result = await messages.pull({
+      cursor: { anchor: { id: 2 }, exclusive: true },
+    });
+    expect(result[0].map(({ id }) => id)).toEqual([3, 4]);
+  }
+
+  {
+    const result = await messages.pull({ cursor: { count: 0 } });
+    expect(result[0]).toEqual([]);
+  }
+
+  {
+    const result = await messages.pull({
+      filter: [{ keys: [["id"]], items: [] }],
+    });
+    expect(result[0]).toEqual([]);
+  }
+
+  {
+    const result = await messages.pull({ cursor: { offset: 1, count: 2 } });
+    expect(result[0].map(({ id }) => id)).toEqual([1, 2]);
+  }
+
+  {
+    const result = await messages.pull({
+      cursor: {
+        anchor: { id: 3 },
+        offset: 1,
+        count: -2,
+        exclusive: true,
+      },
+    });
+    expect(result[0].map(({ id }) => id)).toEqual([0, 1]);
+  }
+
+  {
+    const result = await messages.pull({
       filter: [{ keys: [["id"]], items: [{ id: 1 }, { id: 2 }] }],
     });
 

@@ -21,16 +21,16 @@ export function indexeddb<T extends Record<string, unknown>>(
       query<TRow extends T = T>({
         filter,
         order,
+        cursor,
       }: Query<TRow>): Promise<TRow[]> {
-        // TODO: support cursor
         return objectStore("readonly").then((store) => {
-          // TODO: support cursor and composite options
+          // TODO: combine query constraints
           if (filter) {
             // TODO: support exclusion filtering
             // TODO: support multiple filtering
             return queryWithFilter(store, filter[0]);
           } else if (order) {
-            return queryWithOrder<TRow>(store, order);
+            return queryWithOrder<TRow>(store, order, cursor);
           } else {
             return new Promise<TRow[]>((resolve) => {
               store.getAll().onsuccess = function () {
@@ -142,8 +142,9 @@ function queryWithFilter<T>(
 ) {
   const [indexKeys, refKeys = indexKeys] = filter.keys;
   const { index, unique } = getIndex(store, indexKeys.toString());
+  if (!filter.items.length) return Promise.resolve<T[]>([]);
 
-  // TODO: this cast is probably unsafe, also handle when `refs.length === 0`
+  // TODO: this cast is probably unsafe
   const refs = (filter.items as Record<string, IDBValidKey>[])
     .map((x) => refKeys.map((k) => x[k]))
     .sort((a, b) => {
@@ -176,25 +177,44 @@ function queryWithFilter<T>(
   });
 }
 
-async function queryWithOrder<T>(store: IDBObjectStore, order: Order<T>) {
+function queryWithOrder<T extends Record<string, unknown>>(
+  store: IDBObjectStore,
+  order: Order<T>,
+  options?: Query<T>["cursor"],
+) {
   const indexName = order.map((x) => (Array.isArray(x) ? x[0] : x)).toString();
-  // TODO: fully support compound indexes (currently order is inferred only from the first key)
-  const direction =
-    Array.isArray(order[0]) && order[0][1] === "desc" ? "prev" : "next";
+  // TODO: support mixed directions within compound orders
+  const descending = Array.isArray(order[0]) && order[0][1] === "desc";
+  const reverse = options?.count != null && options.count < 0;
+  const direction = descending !== reverse ? "prev" : "next";
 
   const { index } = getIndex(store, indexName);
+  const keys = order.map((x) => (Array.isArray(x) ? x[0] : x));
+  const anchor = options?.anchor;
+  const anchorKey = anchor && keys.map((key) => anchor[key]);
+  const range =
+    anchorKey == null ? undefined
+    : direction === "next" ?
+      IDBKeyRange.lowerBound(anchorKey as IDBValidKey, options?.exclusive)
+    : IDBKeyRange.upperBound(anchorKey as IDBValidKey, options?.exclusive);
+  const count = options?.count == null ? Infinity : Math.abs(options.count);
+  if (!count) return [];
 
   return new Promise<T[]>((resolve) => {
     const results: T[] = [];
-    const request = index.openCursor(undefined, direction);
+    let offset = options?.offset ?? 0;
+    const request = index.openCursor(range, direction);
     request.onsuccess = function () {
       const cursor = this.result;
-      if (cursor) {
-        results.push(cursor.value);
-        cursor.continue();
-      } else {
-        resolve(results);
+      if (!cursor) return resolve(reverse ? results.reverse() : results);
+      if (offset) {
+        cursor.advance(offset);
+        offset = 0;
+        return;
       }
+      results.push(cursor.value);
+      if (results.length < count) cursor.continue();
+      else resolve(reverse ? results.reverse() : results);
     };
   });
 }
