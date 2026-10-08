@@ -122,6 +122,18 @@ function add<T>(
   );
 }
 
+function integrate<T>(view: ZSet<T>, delta: ZSet<T>) {
+  return traverse(
+    {
+      insert: normalize,
+      combine: (aData, aMeta, bData, bMeta, shape) =>
+        normalize(...merge(aData, aMeta, bData, bMeta, shape), shape),
+    },
+    view,
+    delta,
+  );
+}
+
 function materialize<T>(set: ZSet<Partial<T>>, ref: T[]): ZSet<T> {
   const [data, meta, shape] = set;
   if (!shape) return set as ZSet<T>;
@@ -244,14 +256,13 @@ function multiply<A, B, K extends string, S extends boolean = false>(
   >;
 }
 
+function normalize<T>(data: T, meta: number, shape?: Shape) {
+  if (cardinality(meta, shape) <= 0) return;
+  return [data, create(shape)] as [T, number];
+}
+
 function distinct<T>(item: ZSet<T>) {
-  return traverse(
-    {
-      update: (data, meta, shape) =>
-        cardinality(meta, shape) > 0 ? [data, create(shape)] : undefined,
-    },
-    item,
-  );
+  return traverse({ update: normalize }, item);
 }
 
 function zero<T>(item?: ZSet<T>) {
@@ -262,7 +273,10 @@ function zero<T>(item?: ZSet<T>) {
 function copy<T>(item: ZSet<T>) {
   return traverse(
     {
-      update: (data, meta) => [{ ...data }, meta],
+      update: (data, meta) => [
+        data && typeof data === "object" ? { ...data } : data,
+        meta,
+      ],
       container: (container, deep): any =>
         deep ? Object.assign([], container) : container.slice(),
     },
@@ -326,6 +340,7 @@ const cutMeta = recurse(([meta1, meta2], key, at: number) => {
 export {
   cardinality,
   materialize,
+  integrate,
   transform,
   multiply,
   distinct,

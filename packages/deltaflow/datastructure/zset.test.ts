@@ -1,6 +1,7 @@
 import {
   cardinality,
   materialize,
+  integrate,
   distinct,
   multiply,
   changed,
@@ -13,8 +14,10 @@ import {
   add,
   cut,
 } from "./zset";
-import { nest, shape, type Shape } from "./shape";
+import { nest, shape, reorder, compare } from "./shape";
+import type { Meta } from "./metaset.types";
 import { expect, it } from "bun:test";
+import type { Shape } from "./shape";
 import type { ZSet } from "./zset";
 
 it("performs one-to-one multiplication", () => {
@@ -1329,4 +1332,117 @@ it("adds with different identity parameters", () => {
   );
 
   expect(primaryDelta).toEqual([[newRow], [0], message]);
+});
+
+const rowShape = shape((t) => ({
+  id: t(t.INT, t.PRIMARY),
+  text: t.STRING,
+  value: t.INT,
+}));
+
+type Row = { id: number; text: string; value: number };
+type Parent = Row & { kids: Row[] };
+
+const row = (id: number, value = id) => ({ id, text: String(value), value });
+
+function random(seed: number) {
+  return () => (seed = Math.imul(seed, 1664525) + 1013904223) >>> 0;
+}
+
+it("integrates field updates, deletions, and creations", () => {
+  const s = rowShape;
+  const view: ZSet<Row> = [
+    [row(1), row(2), row(3)],
+    Array(3).fill(create(s)),
+    s,
+  ];
+  const delta: ZSet<Row> = [
+    [row(1, 10), row(2), row(3, 30), row(4)],
+    [update(s, "value"), remove(s), update(s, "text"), create(s, 2)],
+    s,
+  ];
+
+  integrate(view, delta);
+
+  expect(view).toEqual([
+    [{ id: 1, text: "1", value: 10 }, { id: 3, text: "30", value: 3 }, row(4)],
+    Array(3).fill(create(s)),
+    s,
+  ]);
+});
+
+it("integrates mixed batches in ascending and descending order", () => {
+  const rand = random(43);
+
+  for (const s of [rowShape, reorder(rowShape, ["id", "desc"])]) {
+    const rows = Array.from({ length: 51 }, (_, id) => row(id * 2, id));
+    rows.sort((a, b) => compare(a, b, s));
+    let view: ZSet<Row> = [rows, rows.map(() => create(s)), s];
+    const upd = [update(s, "value"), update(s, "text"), create(s), remove(s)];
+
+    for (let round = 0; round < 400; round++) {
+      const rows = Array.from({ length: 1 + (rand() % 15) }, () =>
+        row((rand() % 110) * 2, round + 110),
+      ).sort((a, b) => compare(a, b, s));
+
+      const delta: ZSet<Row> = [rows, rows.map(() => upd[rand() % 4]), s];
+
+      const expected = distinct(add(copy(view), copy(delta)));
+      view = integrate(view, copy(delta));
+
+      expect(view).toEqual(expected);
+    }
+  }
+});
+
+it.each([0, 2, 4])("ignores absent parent deletions (%i)", (id) => {
+  const parent = nest(rowShape, "kids", rowShape);
+  const rows = [1, 3].map((id) => ({ ...row(id), kids: [row(1)] }));
+
+  const meta = rows.map(() => create(parent)) as Meta<Parent, number>;
+  meta.kids = rows.map(() => [create(rowShape)]);
+  const view: ZSet<Parent> = [rows, meta, parent];
+
+  const deltaMeta = [remove(parent)] as Meta<Parent, number>;
+  deltaMeta.kids = [[]];
+  const delta: ZSet<Parent> = [[{ ...row(id), kids: [] }], deltaMeta, parent];
+
+  const actual = integrate(copy(view), delta);
+
+  expect(actual).toEqual(view);
+  expect(actual[1].kids).toEqual(view[1].kids);
+});
+
+it("integrates mixed parent and child batches", () => {
+  const rand = random(91);
+  const parent = nest(rowShape, "kids", rowShape);
+  const data = Array.from({ length: 128 }, (_, id) => ({
+    ...row(id, 0),
+    kids: [row(1)],
+  }));
+
+  const meta = data.map(() => create(parent)) as Meta<Parent, number>;
+  meta.kids = data.map(() => [create(rowShape)]);
+  let view: ZSet<Parent> = [data, meta, parent];
+  const upd = [create(parent), remove(parent), update(parent)];
+
+  for (let round = 0; round < 200; round++) {
+    const ids = [
+      ...new Set(Array.from({ length: 8 }, () => rand() % 150)),
+    ].sort((a, b) => a - b);
+    const rows = ids.map((id) => ({
+      ...row(id, round),
+      kids: [{ ...row(1, round), text: String(rand()) }, row(3, round)],
+    }));
+
+    const meta = ids.map(() => upd[rand() % 3]) as Meta<Parent, number>;
+    meta.kids = ids.map(() => [update(rowShape), create(rowShape)]);
+
+    const delta: ZSet<Parent> = [rows, meta, parent];
+    const expected = distinct(add(copy(view), copy(delta)));
+    view = integrate(view, copy(delta));
+
+    expect(view).toEqual(expected);
+    expect(view[1].kids).toEqual(expected[1].kids);
+  }
 });

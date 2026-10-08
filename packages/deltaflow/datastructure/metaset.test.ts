@@ -741,3 +741,36 @@ it("keeps empty metas on inserts", () => {
   expect(setA[1].deep).toEqual([10, , 30] as any);
   expect(1 in setA[1].deep).toBe(false);
 });
+
+it("seeks sparse matches without changing untouched rows", () => {
+  const data = Array.from({ length: 2048 }, (_, i) => i * 2);
+  const set: MetaSet<number, number> = [data.slice(), Array(2048).fill(1)];
+
+  traverse({ combine: (a, am, _b, bm) => [a, am + bm] }, set, [
+    [400, 2400, 5000],
+    [2, 3, 4],
+  ]);
+
+  expect(set[0]).toEqual([...data, 5000]);
+  expect(set[1][200]).toBe(3);
+  expect(set[1][1200]).toBe(4);
+  expect(set[1][2048]).toBe(4);
+  expect(set[1][1100]).toBe(1);
+});
+
+it("visits every required target update for a sparse source", () => {
+  let visited = 0;
+  const set: MetaSet<number, number> = [
+    Array.from({ length: 2048 }, (_, i) => i),
+    Array(2048).fill(1),
+  ];
+
+  traverse({ update: (data, meta) => (visited++, [data, meta + 1]) }, set, [
+    [1000],
+    [3],
+  ]);
+
+  expect(visited).toBe(2047);
+  expect(set[1][999]).toBe(2);
+  expect(set[1][1000]).toBe(1);
+});

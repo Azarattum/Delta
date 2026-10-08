@@ -27,15 +27,28 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
   const [tData, tMeta] = target;
   const [sData, sMeta] = source ?? ([[], []] as unknown as T);
 
-  let deleted = 0;
-  let i = 0;
-  let j = 0;
+  const canSkip = !fns.update && !container && compare === defaultCompare;
+  const [tLen, sLen] = [tData.length, sData.length];
+  const seek = canSkip && tLen > sLen * Math.floor(Math.log2(tLen - 1));
+  let [i, j, deleted] = [0, 0, 0];
 
-  while (j < sData.length || i < tData.length) {
-    const cmp =
-      -(j >= sData.length) ||
+  while (j < sLen || i < tData.length) {
+    if (canSkip && !deleted && j >= sLen) break;
+    let cmp =
+      -(j >= sLen) ||
       +(i >= tData.length) ||
       compare(tData[i], sData[j], shape);
+
+    if (seek && !deleted && cmp < 0) {
+      let [from, to] = [i + 1, tData.length];
+      while (from < to) {
+        const mid = from + ((to - from) >>> 1);
+        if (compare(tData[mid], sData[j], shape) < 0) from = mid + 1;
+        else to = mid;
+      }
+      i = from;
+      cmp = i >= tData.length ? 1 : compare(tData[i], sData[j], shape);
+    }
 
     const ti = i - deleted;
     if (cmp > 0) insertMeta([tMeta, sMeta], childKeys, ti, j);
@@ -45,9 +58,12 @@ function traverse<T extends MetaSet>(fns: Visitors<T>, target: T, source?: T) {
       : cmp > 0 ? deep("insert", [sData[j]], [sMeta, tMeta], [j, i], deleted)
       : deep("combine", [tData[i], sData[j]], [tMeta, sMeta], [i, j], deleted);
 
-    if (!next) cmp <= 0 ? deleted++ : i--;
-    else if (cmp <= 0) [tData[ti], tMeta[ti]] = next;
-    else {
+    if (!next) {
+      if (cmp <= 0) deleted++;
+      else removeMeta([tMeta], childKeys, ti), i--;
+    } else if (cmp <= 0) {
+      [tData[ti], tMeta[ti]] = next;
+    } else {
       tData.splice(ti, 0, next[0]);
       tMeta.splice(ti, 0, next[1]);
     }
@@ -125,6 +141,7 @@ function len<T extends MetaSet>(item: T) {
 }
 
 const pruneMeta = recurse(([meta], key, n: number) => (meta[key].length -= n));
+const removeMeta = recurse(([meta], key, i: number) => meta[key].splice(i, 1));
 const insertMeta = recurse(([aMeta, bMeta], key, i: number, j: number) => {
   const nonExistent = !(j in bMeta[key]);
   aMeta[key].splice(i, 0, bMeta[key][j]);

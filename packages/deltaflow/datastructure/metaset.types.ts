@@ -117,6 +117,7 @@ type Recurse<TFn extends RecurseFn> = (
 ) => void;
 
 export type {
+  Meta,
   MetaSet,
   InferData,
   InferMeta,
