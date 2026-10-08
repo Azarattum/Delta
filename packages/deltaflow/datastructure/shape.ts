@@ -11,7 +11,7 @@ function shape<T extends Template>(template: T): Shape<FromTemplate<T>, ID<T>> {
   if (fields > 50) throw new Error(`Too many non-primary fields: ${fields}`);
   const mask = 2 ** fields - 1;
 
-  return { keys, types, order, hash, mask, children: {} } as any;
+  return { keys, types, order, hash, mask, fields, children: {} } as any;
 }
 
 function reorder<
@@ -164,6 +164,7 @@ type Shape<T = any, TId = {}> =
       "~id": TId;
       hash: number;
       mask: number;
+      fields: number;
       keys: readonly (keyof T)[];
       order: readonly number[];
       types: readonly number[];
