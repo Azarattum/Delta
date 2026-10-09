@@ -86,7 +86,8 @@ function visit<T extends MetaSet>(fns: Visitors<T>, shape: T[2]): Visit<T> {
   return (type, items, metas, idx, deleted) => {
     const result: InferItem<T> | undefined =
       type === "delete" ? undefined
-      : !fns[type] ? [items[0], metas[0][idx[0] - deleted]]
+      : !fns[type] ?
+        [items[0], metas[0][idx[0] - (type === "insert" ? 0 : deleted)]]
       : (fns[type] as any)(
           ...items.flatMap((x, i) => [x, metas[i][idx[i]]]),
           shape,

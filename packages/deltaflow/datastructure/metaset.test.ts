@@ -489,6 +489,16 @@ it("handles mid collection deletion", () => {
   });
 });
 
+it("preserves source metadata on default insertion after target deletion", () => {
+  const target: MetaSet<number, string> = [[1], ["target"]];
+  const source: MetaSet<number, string> = [[2], ["source"]];
+
+  traverse({ update: () => undefined }, target, source);
+
+  expect(target[0]).toEqual([2]);
+  expect(target[1]).toEqual(["source"]);
+});
+
 it("handles child metadata insertion after deletion", () => {
   const postShape = shape((t) => ({ id: t(t.INT, t.PRIMARY) }));
   const userShape = nest(idShape, "posts", postShape);
