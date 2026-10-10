@@ -9,6 +9,7 @@ export class Scheduler {
   #pending: Set<Promise<void>> = new Set();
   #flushing: MaybePromise<void> | undefined;
   #level: number | undefined;
+  #draining = false;
 
   constructor(levels: number) {
     this.#tasks = Array.from({ length: levels }, () => []);
@@ -21,8 +22,8 @@ export class Scheduler {
   }
 
   enqueue(task: () => MaybePromise<void>, level: number) {
-    if (this.#level === level) return this.#execute(task);
     this.#tasks[level].push(task);
+    if (this.#level === level) return this.#drain(level);
 
     if (Scheduler.#queue.has(this)) return;
     Scheduler.#queue.add(this);
@@ -41,11 +42,10 @@ export class Scheduler {
     Scheduler.#queue.delete(this);
     if (this.#level !== undefined) return this.#flushing;
     return (this.#flushing = this.#tasks
-      .reduce((promise, tasks, level) => {
+      .reduce((promise, _, level) => {
         return promise.then(() => {
           this.#level = level;
-          tasks.forEach((task) => this.#execute(task));
-          this.#tasks[level].length = 0;
+          this.#drain(level);
 
           const process = (): Promise<void> => {
             if (!this.#pending.size) return Promise.resolve();
@@ -60,6 +60,15 @@ export class Scheduler {
         this.#level = undefined;
         if (this.#tasks.some((x) => x.length)) return this.flush();
       }));
+  }
+
+  #drain(level: number) {
+    if (this.#draining) return;
+    this.#draining = true;
+    const tasks = this.#tasks[level];
+    for (let i = 0; i < tasks.length; i++) this.#execute(tasks[i]);
+    tasks.length = 0;
+    this.#draining = false;
   }
 
   #execute(task: () => void | Promise<void>) {

@@ -256,3 +256,19 @@ it("handles mixed recursive tasks", async () => {
   expect(task4).toHaveBeenCalledTimes(1);
   expect(order).toEqual([1, 2, 3, 4]);
 });
+
+it("runs queued tasks before newly enqueued tasks without yielding", () => {
+  const scheduler = new Scheduler(2);
+  const order: string[] = [];
+
+  scheduler.enqueue(() => {
+    order.push("a");
+    scheduler.enqueue(() => void order.push("c"), 0);
+    expect(order).toEqual(["a"]);
+  }, 0);
+  scheduler.enqueue(() => void order.push("b"), 0);
+  scheduler.enqueue(() => void order.push("effect"), 1);
+
+  expect(scheduler.flush()).toBe(undefined);
+  expect(order).toEqual(["a", "b", "c", "effect"]);
+});

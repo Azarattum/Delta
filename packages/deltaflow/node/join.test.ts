@@ -726,7 +726,7 @@ it("handles deeply nested joins", () => {
   expect(commentsWithLikesFn).toHaveBeenCalledTimes(1);
   expect(fullFn).toHaveBeenCalledTimes(1);
 
-  expect(calls[0][0]).toEqual([
+  expect(calls[1][0]).toEqual([
     {
       id: 0,
       text: "First!",
@@ -740,13 +740,13 @@ it("handles deeply nested joins", () => {
       likes: { id: 1, count: 1, comment: 1 },
     },
   ]);
-  expect(calls[0][1]).toEqual([
+  expect(calls[1][1]).toEqual([
     create(nest(comment, "likes", like, true)),
     create(nest(comment, "likes", like, true)),
   ]);
-  expect(calls[0][1].likes).toEqual([create(like), create(like)]);
+  expect(calls[1][1].likes).toEqual([create(like), create(like)]);
 
-  expect(calls[1][0]).toEqual([
+  expect(calls[0][0]).toEqual([
     {
       id: 0,
       name: "Bob",
@@ -761,11 +761,11 @@ it("handles deeply nested joins", () => {
       messages: [{ id: 2, text: "And I'm Alice!", user: 1 }],
     },
   ]);
-  expect(calls[1][1]).toEqual([
+  expect(calls[0][1]).toEqual([
     create(nest(user, "messages", message)),
     create(nest(user, "messages", message)),
   ]);
-  expect(calls[1][1].messages).toEqual([
+  expect(calls[0][1].messages).toEqual([
     [create(message), create(message)],
     [create(message)],
   ]);

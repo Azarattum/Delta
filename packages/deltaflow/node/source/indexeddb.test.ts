@@ -3,7 +3,7 @@ import { create } from "../../datastructure/zset";
 import { shape } from "../../datastructure/shape";
 import type { MaybePromise } from "../../stream";
 import { indexeddb } from "./indexeddb";
-import { join, order, sink } from "..";
+import { join, order, sink, map } from "..";
 import { source } from "./source";
 import { mock } from "bun:test";
 
@@ -270,8 +270,7 @@ it("subscribes and handles pushes", async () => {
   users.create({ id: 2, name: "John" });
 
   expect(spy).toHaveBeenLastCalledWith([[], []]);
-
-  await view.preload();
+  await users.flush();
 
   expect(spy).toHaveBeenLastCalledWith([
     [
@@ -427,4 +426,32 @@ it("writes to indexeddb", async () => {
 
     expect(stored).toEqual([]);
   }
+});
+
+it("retains write values across downstream mutation and asynchronous storage", async () => {
+  const file = shape((t) => ({
+    id: t(t.PRIMARY, t.INT),
+    name: t.STRING,
+  }));
+
+  const files = await source(file, indexeddb(crypto.randomUUID(), "files"))();
+  const view = sink(
+    map(files, (file) => {
+      file.name = file.name.toUpperCase();
+      return file;
+    }),
+  );
+
+  const preloaded = await view.preload();
+  expect(view.pull()).toBe(preloaded);
+  const [data] = preloaded;
+
+  await files.create({ id: 1, name: "Alice" }).flush();
+  expect(data[0].name).toBe("ALICE");
+  expect((await files.pull())[0][0].name).toBe("Alice");
+
+  await files.update({ id: 1, name: "Bob" }).flush();
+  expect(data[0].name).toBe("BOB");
+  expect(view.pull()).toBe(preloaded);
+  expect((await files.pull())[0][0].name).toBe("Bob");
 });

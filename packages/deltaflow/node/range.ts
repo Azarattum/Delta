@@ -231,18 +231,18 @@ export function range<
 export function limit(limit: number, offset = 0) {
   let current = [limit, offset] as [number, number];
   return stream({
-    compress: ([updates]) => [[updates.at(-1)!]],
     pull: () => current,
     push: (next) => {
       const deltaStart = next[1] - current[1];
       const deltaEnd = next[0] + next[1] - (current[0] + current[1]);
       return [deltaStart, deltaEnd] as const;
     },
-    flush: (next) => {
-      next.forEach(([deltaStart, deltaEnd]) => {
+    compress: ([updates]) => [[updates.at(-1)!]],
+    flush: ([[deltaStart, deltaEnd]]) => {
+      return () => {
         current[0] += deltaEnd - deltaStart;
         current[1] += deltaStart;
-      });
+      };
     },
   })(null);
 }

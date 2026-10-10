@@ -92,9 +92,12 @@ export function source<
           changes.forEach((set) => {
             set[0].forEach((x, i) => {
               const meta = set[1][i];
-              if (meta >= created) creates.push(x);
-              else if (meta <= removed) removes.push(x);
-              else {
+              if (meta >= created) creates.push({ ...x });
+              else if (meta <= removed) {
+                const delta: Partial<T> = {};
+                pks.forEach((key: keyof T) => (delta[key] = x[key]));
+                removes.push(delta);
+              } else {
                 const delta: Partial<T> = {};
                 keys.forEach((key: keyof T, i) => {
                   if (isPrimary(types[i])) delta[key] = x[key];
@@ -105,7 +108,7 @@ export function source<
             });
           });
 
-          return store.mutate({ removes, creates, updates });
+          return () => store.mutate({ removes, creates, updates });
         },
         extensions: {
           create(...items: T[]) {
@@ -174,7 +177,7 @@ export function source<
       })(null, upstream, null);
 
       couple(source, localSource);
-      return source;
+      return source.eager();
 
       function reconstruct(set: ZSet<Partial<T>>) {
         return SyncPromise.one(

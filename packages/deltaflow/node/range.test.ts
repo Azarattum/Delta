@@ -16,6 +16,24 @@ const [add, del, upd] = [
   update(idShape, "value"),
 ];
 
+it("initializes from the previous limit when its first change arrives", () => {
+  const db = new SQLite(":memory:");
+  const rows = source(idShape, sqlite(db, "rows"))();
+  rows.create(...ids(0, 1, 2)).flush();
+
+  const bounds = limit(1);
+  const window = range(rows, bounds);
+  const receive = mock();
+  window.connect(receive);
+
+  bounds.push([2, 0]);
+  expect(bounds.flush()).toBe(undefined);
+
+  expect(receive.mock.calls[0][0][0]).toEqual(ids(1));
+  expect(window.bounds).toEqual({ lower: ids(0)[0], upper: ids(1)[0] });
+  expect(bounds.pull()).toEqual([2, 0]);
+});
+
 it("limits simple queries", async () => {
   const user = shape((t) => ({ id: t(t.INT, t.PRIMARY), name: t.STRING }));
 

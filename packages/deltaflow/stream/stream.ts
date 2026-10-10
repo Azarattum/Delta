@@ -3,6 +3,7 @@ import { SyncPromise } from "./promise";
 import { Scheduler } from "./scheduler";
 
 const internal = Symbol();
+const noop = () => {};
 
 function stream<
   TPush,
@@ -42,8 +43,7 @@ function stream<
         ) as PartialEntities<TIn>[];
       });
 
-    const downstreams: Set<((entity: Awaited<TOut>) => void) | undefined> =
-      new Set();
+    const downstreams = new Set<(entity: Awaited<TOut>) => void>();
     const queue = [] as unknown as EntityQueue<TIn>;
 
     let scheduled = false;
@@ -64,15 +64,15 @@ function stream<
     function dispose() {
       disposers.forEach((dispose) => dispose?.());
       disposers = [];
+      downstreams.clear();
     }
 
-    function connect(fn?: (entity: Awaited<TOut>) => void) {
-      if (!downstreams.size && !options.flush) init();
+    function connect(fn: (entity: Awaited<TOut>) => void) {
+      if (!downstreams.size) init();
       downstreams.add(fn);
 
       return () => {
-        downstreams.delete(fn);
-        if (!downstreams.size && !options.flush) dispose();
+        if (downstreams.delete(fn) && !downstreams.size) dispose();
       };
     }
 
@@ -89,20 +89,23 @@ function stream<
     }
 
     function process(queue: TIn[number][][]) {
-      return SyncPromise.all(queue.map((x) => push(...x))).then((processed) => {
-        if (options.flush) {
-          const snapshot = structuredClone(processed);
-          scheduler.current.enqueue(() => options.flush!(snapshot), 1);
-        }
-
-        processed.forEach((x) =>
-          downstreams.forEach((fn) =>
-            SyncPromise.try(() => fn?.(x)).catch((error) =>
-              console.error("Unhandled error in downstream handler", error),
-            ),
-          ),
-        );
+      return SyncPromise.all(queue.map((x) => push(...x))).then((output) => {
+        let forward = true;
+        const commit = options.flush?.(output, {
+          preventDefault: () => void (forward = false),
+          emit: emit as (entity: Awaited<ActualPull<TPull>>) => void,
+        });
+        if (commit) scheduler.current.enqueue(commit, 1);
+        if (forward) scheduler.current.enqueue(() => output.forEach(emit), 0);
       });
+    }
+
+    function emit(entity: Awaited<TOut>) {
+      downstreams.forEach((fn) =>
+        SyncPromise.try(() => fn(entity)).catch((error) =>
+          console.error("Unhandled error in downstream handler", error),
+        ),
+      );
     }
 
     const stream: Stream<TOut, TIn, TOptions> = {
@@ -118,6 +121,10 @@ function stream<
         SyncPromise.one(pull(options)).then(fn);
         return dispose;
       },
+      eager() {
+        connect(noop);
+        return this;
+      },
       get isDirty() {
         return !!(scheduled || upstreams.some((x) => x?.isDirty));
       },
@@ -130,7 +137,6 @@ function stream<
       Object.defineProperties(stream, extensions);
     }
 
-    if (options.flush) init(); // Auto-init streams with side-effects
     return stream as Stream<TOut, TIn, TOptions> & TExtensions;
   };
 }
@@ -169,18 +175,17 @@ type PartialEntities<T extends any[]> =
 type EntityQueue<T extends any[]> =
   T extends [infer U] ? [U[]] : { [K in keyof T]?: T[K][] };
 
-type Stream<TOut, TIn extends any[] = unknown[], TPullOptions = undefined> = {
-  /** Subscribes to changes and immediately pulls the current state */
-  subscribe(
-    fn: (entity: Awaited<TOut>) => void,
-    options?: TPullOptions,
-  ): () => void;
-  /** Subscribes to changes. The first connection initializes the graph (even without a handler fn) */
-  connect(fn?: (entity: Awaited<TOut>) => void): () => void;
+interface Stream<TOut, TIn extends any[] = unknown[], TOpt = undefined> {
+  /** Listens to future pushes, pulls the current state, and returns a disconnect function. */
+  subscribe(fn: (entity: Awaited<TOut>) => void, options?: TOpt): () => void;
+  /** Listens to future pushes and returns a disconnect function. */
+  connect(fn: (entity: Awaited<TOut>) => void): () => void;
+  /** Consumes upstream until disposal. Idempotent. */
+  eager(): this;
   /** Pushes to the stream */
   push(...entities: PartialEntities<TIn>): void;
   /** Pulls from the stream */
-  pull(options?: TPullOptions): TOut;
+  pull(options?: TOpt): TOut;
   /** Immediately flushes all the pending stream pushes */
   flush(): MaybePromise<void>;
   /** Checks if the stream has pending changes */
@@ -188,7 +193,7 @@ type Stream<TOut, TIn extends any[] = unknown[], TPullOptions = undefined> = {
 
   [Symbol.dispose](): void;
   [internal]: any;
-};
+}
 
 type PullOf<TStream> =
   TStream extends Stream<infer TOut, any[], any> ? TOut : never;
@@ -203,6 +208,13 @@ type StreamExtensions = Record<string, unknown> & {
   [K in keyof Stream<unknown>]?: never;
 };
 
+type StreamOutput<T> = {
+  /** Cancels automatic forwarding for this batch (if call synchronously). */
+  preventDefault(): void;
+  /** Immediately sends an owned output downstream without processing it again. */
+  emit(entity: T): void;
+};
+
 type StreamOptions<
   TOut,
   TPull extends DefaultPull<NoInfer<TOut>> = DefaultPull<TOut>,
@@ -214,8 +226,11 @@ type StreamOptions<
   pull?: (options?: TOptions) => TPull;
   /** Describes the behavior when somebody pushes to the stream */
   push?: (...entities: PartialEntities<TIn>) => TOut;
-  /** Describes any additional flush behavior */
-  flush?: (entities: Awaited<ActualPull<TPull>>[]) => MaybePromise<void>;
+  /** Prepares owned effects before forwarding. The returned commit runs after propagation. */
+  flush?: (
+    entities: Awaited<ActualPull<TPull>>[],
+    output: StreamOutput<Awaited<ActualPull<TPull>>>,
+  ) => void | (() => MaybePromise<void>);
   /** Describes how to compress multiple pushes */
   compress?: (queue: EntityQueue<TIn>) => PartialEntities<TIn>[];
   /** Describes initialization that is called on the first subscriber and disposed on no subscribers */
@@ -234,6 +249,7 @@ export type {
   ActualPull,
   DefaultPull,
   EntityQueue,
+  StreamOutput,
   StreamOptions,
   IsAsyncStream,
   PartialEntities,

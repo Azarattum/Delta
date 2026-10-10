@@ -8,8 +8,7 @@ export function channel<TChannelData = unknown>(channel: Channel) {
     type TOpt = OptionsOf<TStream>;
     type TData = PullOf<TStream>;
 
-    return stream({
-      push: (x: TData) => x,
+    return stream<TChannelData, TData, [TChannelData], TOpt>({
       init() {
         const handle = (event: MessageEvent<Message<TData, TOpt>>) => {
           if (event.data.type === "pull") {
@@ -21,13 +20,12 @@ export function channel<TChannelData = unknown>(channel: Channel) {
         channel.addEventListener("message", handle);
         return () => channel.removeEventListener("message", handle);
       },
-      flush(messages) {
-        const id = crypto.randomUUID();
-        return SyncPromise.all(messages).then((data) =>
-          channel.postMessage({ id, type: "push", data }),
-        );
+      flush(data, output) {
+        output.preventDefault();
+        return () =>
+          channel.postMessage({ id: crypto.randomUUID(), type: "push", data });
       },
-    })(upstream as Stream<MaybePromise<TData>, any[], TOpt>);
+    })(upstream).eager();
   };
 
   const rx = <

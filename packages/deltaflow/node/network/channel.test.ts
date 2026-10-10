@@ -3,49 +3,30 @@ import type { CLSet } from "../../datastructure/clset";
 import { stream } from "../../stream";
 import { channel } from "./channel";
 
-it("transmits over BroadcastChannel", async () => {
-  const name = crypto.randomUUID();
-  const [tx] = channel(new BroadcastChannel(name));
-
+it.each([
+  {
+    name: "BroadcastChannel",
+    pair() {
+      const name = crypto.randomUUID();
+      return [new BroadcastChannel(name), new BroadcastChannel(name)];
+    },
+  },
+  {
+    name: "MessageChannel",
+    pair() {
+      const { port1, port2 } = new MessageChannel();
+      return [port1, port2];
+    },
+  },
+])("transmits over $name", async ({ pair }) => {
+  const [a, b] = pair();
+  const [tx] = channel<number>(a);
+  const [, rx] = channel<number>(b);
   const source = stream({
     push: (x: number) => x,
     pull: (x?: number) => x ?? 0,
   })(null);
   using sender = tx(source);
-
-  const [, rx] = channel(new BroadcastChannel(name));
-
-  using receiver = rx<number, number>();
-  const receive = mock();
-
-  expectTypeOf(sender.push).parameters.toEqualTypeOf<[number]>();
-  expectTypeOf(receiver.push).parameters.toEqualTypeOf<never>();
-  expectTypeOf(receiver.pull).returns.toEqualTypeOf<Promise<number>>();
-
-  receiver.connect(receive);
-
-  source.push(1);
-  sender.flush();
-
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(receive).toHaveBeenCalledWith(1);
-
-  expect(await receiver.pull()).toBe(0);
-  expect(await receiver.pull(42)).toBe(42);
-});
-
-it("transmits over MessageChannel", async () => {
-  const { port1, port2 } = new MessageChannel();
-  const [tx] = channel(port1);
-
-  const source = stream({
-    push: (x: number) => x,
-    pull: (x?: number) => x ?? 0,
-  })(null);
-  using sender = tx(source);
-
-  const [, rx] = channel(port2);
-
   using receiver = rx<number, number>();
   const receive = mock();
 
@@ -124,6 +105,7 @@ it("types channel payloads", () => {
   const receiver = rx();
 
   expectTypeOf(sender.push).parameters.toEqualTypeOf<[CLSet<Note>]>();
+  expectTypeOf(sender.pull).returns.toEqualTypeOf<CLSet<Note>>();
   expectTypeOf(receiver.pull).returns.toEqualTypeOf<Promise<CLSet<Note>>>();
 });
 
@@ -138,6 +120,65 @@ it("allows narrower channel payloads", () => {
   const sender = tx(ones);
   const receiver = rx<1>();
 
-  expectTypeOf(sender.push).parameters.toEqualTypeOf<[1]>();
+  expectTypeOf(sender.push).parameters.toEqualTypeOf<[number]>();
+  expectTypeOf(sender.pull).returns.toEqualTypeOf<1>();
   expectTypeOf(receiver.pull).returns.toEqualTypeOf<Promise<1>>();
+});
+
+it("consumes transmitted changes and accepts direct pushes", () => {
+  const postMessage = mock();
+  const addEventListener = mock();
+  const removeEventListener = mock();
+  const [tx] = channel({
+    postMessage,
+    addEventListener,
+    removeEventListener,
+  });
+  const dispose = mock();
+  const source = stream({
+    init: () => dispose,
+    push: (x: { id: number }) => x,
+    pull: () => ({ id: 0 }),
+  })(null);
+  using sender = tx(source);
+
+  const disconnect = sender.connect(mock());
+  disconnect();
+  expect(dispose).not.toHaveBeenCalled();
+
+  const forward = mock();
+  sender.connect(forward);
+  expect(sender.pull()).toEqual({ id: 0 });
+  expect(postMessage).not.toHaveBeenCalled();
+
+  const message = { id: 1 };
+  source.push(message);
+  expect(sender.flush()).toBe(undefined);
+
+  expect(forward).not.toHaveBeenCalled();
+  expect(postMessage).toHaveBeenCalledTimes(1);
+  expect(postMessage.mock.calls[0][0]).toMatchObject({
+    type: "push",
+    data: [message],
+  });
+  expect(postMessage.mock.calls[0][0].data[0]).toBe(message);
+
+  sender.pull();
+  sender.flush();
+  expect(postMessage).toHaveBeenCalledTimes(1);
+
+  const direct = { id: 2 };
+  sender.push(direct);
+  sender.flush();
+  expect(forward).not.toHaveBeenCalled();
+  expect(postMessage).toHaveBeenCalledTimes(2);
+  expect(postMessage.mock.calls[1][0].data).toEqual([direct]);
+
+  sender[Symbol.dispose]();
+  expect(dispose).toHaveBeenCalledTimes(1);
+  expect(removeEventListener.mock.calls).toEqual(addEventListener.mock.calls);
+
+  source.push({ id: 3 });
+  source.flush();
+  expect(postMessage).toHaveBeenCalledTimes(2);
 });

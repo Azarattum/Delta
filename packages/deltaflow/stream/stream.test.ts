@@ -1,6 +1,7 @@
 import { expect, expectTypeOf, it, mock, spyOn } from "bun:test";
-import { type Stream, stream } from "./stream";
+import type { Stream, StreamOutput } from "./stream";
 import type { MaybePromise } from "./promise";
+import { stream } from "./stream";
 
 it("streams lazily", () => {
   const spyPull = mock(() => 123);
@@ -203,8 +204,7 @@ it("batches changes to a microtask", async () => {
   const sink = stream({
     push: (x: number) => (count += x),
     pull: () => count,
-  })(source);
-  sink.connect();
+  })(source).eager();
 
   source.push(1);
   source.push(2);
@@ -231,8 +231,7 @@ it("merges batched changes", async () => {
 
   {
     const spy = mock((_1?: number, _2?: number) => 0 as const);
-    const joined = stream({ push: spy })(source1, source2);
-    joined.connect();
+    const joined = stream({ push: spy })(source1, source2).eager();
 
     expectTypeOf(joined.flush).returns.toEqualTypeOf<MaybePromise<void>>();
     expectTypeOf(joined.pull).returns.toEqualTypeOf<0>();
@@ -258,8 +257,7 @@ it("merges batched changes", async () => {
   }
   {
     const spy = mock(async (_1?: number, _2?: number) => 0 as const);
-    const joined = stream({ push: spy })(source1, source2);
-    joined.connect();
+    const joined = stream({ push: spy })(source1, source2).eager();
 
     expectTypeOf(joined.flush).returns.toEqualTypeOf<MaybePromise<void>>();
     expectTypeOf(joined.pull).returns.toEqualTypeOf<Promise<0>>();
@@ -296,8 +294,7 @@ it("handles async pushes", async () => {
   const view = stream({
     push: (x: number) => (count += x),
     pull: () => count,
-  })(source);
-  view.connect();
+  })(source).eager();
 
   expectTypeOf(view).toEqualTypeOf<Stream<number, [number]>>();
 
@@ -323,8 +320,7 @@ it("handles async pushes", async () => {
   const joined = stream({
     push: (a?: number, b?: number) => Promise.resolve().then(() => spy(a, b)),
     pull: () => count,
-  })(source1, source2);
-  joined.connect();
+  })(source1, source2).eager();
 
   expectTypeOf(joined.pull).returns.toEqualTypeOf<number>();
   expect(joined.pull()).toBe(0);
@@ -345,10 +341,10 @@ it("handles async pushes", async () => {
 
 it("calls external flush", async () => {
   let resolve = () => {};
-  const flush = mock(() => new Promise<void>((r) => (resolve = r)));
+  const flush = mock((_) => new Promise<void>((r) => (resolve = r)));
   const source = stream({
     push: (x: number) => x,
-    flush,
+    flush: (x) => () => flush(x),
   })(null);
 
   expectTypeOf(source).toEqualTypeOf<Stream<never, [number]>>(); // TODO: why is this never, though?..
@@ -365,8 +361,7 @@ it("calls external flush", async () => {
   resolve(), await result;
   expect(Promise.race([result, Promise.resolve(1)])).resolves.toBe(undefined);
 
-  const noop = stream({})(source);
-  noop.connect();
+  const noop = stream({})(source).eager();
   source.push(1);
 
   expectTypeOf(noop).toEqualTypeOf<Stream<never, [unknown]>>();
@@ -380,7 +375,7 @@ it("calls flush after all async pushes", async () => {
   let resolvePush = () => {};
   const push = mock(() => new Promise<void>((r) => (resolvePush = r)));
 
-  const source = stream({ push, flush })();
+  const source = stream({ push, flush: () => flush })();
 
   source.push();
   expect(flush).not.toHaveBeenCalled();
@@ -423,8 +418,8 @@ it("calls flush after all downstream pushes", async () => {
     (x) => new Promise<void>((r) => (resolvePush = () => r(x))),
   );
 
-  const source = stream({ flush })(null);
-  const sink = stream({ push, flush: () => {} })(source);
+  const source = stream({ flush: () => flush })(null);
+  const sink = stream({ push, flush: () => () => {} })(source).eager();
 
   source.push(42);
   expect(flush).not.toHaveBeenCalled();
@@ -455,7 +450,10 @@ it("calls flush after all downstream pushes", async () => {
 it("handles pulling with downstream flushes", () => {
   let count = 0;
   const source = stream({
-    flush: (x) => x.forEach((y) => (count += y)),
+    flush: (values) => {
+      const total = values.reduce((sum, x) => sum + x, 0);
+      return () => void (count += total);
+    },
     pull: () => count,
   })(null);
 
@@ -464,7 +462,7 @@ it("handles pulling with downstream flushes", () => {
   expect(source.pull()).toBe(3);
 
   // Add a downstream
-  stream({})(source).connect();
+  stream({})(source).eager();
 
   source.push(3);
   expect(source.pull()).toBe(6);
@@ -518,7 +516,8 @@ it("flushes async with async downstreams", async () => {
   source.push(42);
   expect(source.flush()).toBe(undefined);
 
-  const view = stream({ flush: spy })(source);
+  const view = stream({ flush: (x) => () => spy(x) })(source).eager();
+
   expectTypeOf(view.flush).returns.toEqualTypeOf<MaybePromise<void>>();
 
   expect(source.flush()).toBe(undefined);
@@ -570,4 +569,254 @@ it("extends streams with extra API", () => {
   count = 42;
   expect(source.count).toBe(42);
   expect(source.pull()).toBe(42);
+});
+
+it("emits committed state and respects disconnection during asynchronous commits", async () => {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  let value = 0;
+  const node = stream({
+    push: (x: number) => x,
+    pull: () => value,
+    flush(values, output) {
+      output.preventDefault();
+      return () =>
+        promise.then(() => {
+          value = values.at(-1)!;
+          output.emit(value);
+        });
+    },
+  })(null);
+
+  const state = mock();
+  node.connect(state);
+  const dropped = mock();
+  const disconnect = node.connect(dropped);
+
+  node.push(1);
+  const flushing = node.flush();
+  expect(state).not.toHaveBeenCalled();
+  expect(value).toBe(0);
+  disconnect();
+
+  resolve();
+  await flushing;
+  expect(state).toHaveBeenCalledTimes(1);
+  expect(state).toHaveBeenCalledWith(1);
+  expect(dropped).not.toHaveBeenCalled();
+});
+
+it.each([
+  [false, false],
+  [false, true],
+  [true, false],
+  [true, true],
+])(
+  "compresses downstream only (async upstream: %s, downstream: %s)",
+  async (asyncUpstream, asyncDownstream) => {
+    let total = 0;
+    const pull = mock(() => total);
+
+    const node = stream({
+      push: (x: number) => (asyncUpstream ? Promise.resolve(x) : x),
+      pull,
+      flush: (values) => {
+        const sum = values.reduce((sum, x) => sum + x, 0);
+        return () => void (total += sum);
+      },
+    })(null);
+
+    const delta = mock((x: number) => {
+      expect(total).toBe(0);
+      return asyncDownstream ? Promise.resolve(x) : x;
+    });
+
+    const middle = stream<number>({})(node);
+    stream({
+      push: delta,
+      compress: ([changes]) => [[changes.reduce((acc, x) => acc + x, 0)]],
+    })(middle).eager();
+    const state = mock();
+    node.subscribe(state);
+    expect(state.mock.calls).toEqual([[0]]);
+
+    node.push(1);
+    node.push(2);
+    expect(delta).not.toHaveBeenCalled();
+    expect(state.mock.calls).toEqual([[0]]);
+
+    const flushing = node.flush();
+    expect(flushing instanceof Promise).toBe(asyncUpstream || asyncDownstream);
+    await flushing;
+
+    expect(delta.mock.calls).toEqual([[3]]);
+    expect(state.mock.calls).toEqual([[0], [1], [2]]);
+    expect(pull).toHaveBeenCalledTimes(1);
+    expect(total).toBe(3);
+  },
+);
+
+it("propagates a ready branch while another branch is pending", async () => {
+  const blocked = Promise.withResolvers<number>();
+  const ready = Promise.withResolvers<number>();
+  const commit = mock();
+
+  using source = stream<number>({})(null);
+  using slow = stream({
+    push: (_x: number) => blocked.promise,
+    flush: () => commit,
+  })(source).eager();
+  using fast = stream({ push: async (x: number) => x })(source);
+  using downstream = stream<number>({})(fast);
+  downstream.connect(ready.resolve);
+
+  source.push(1);
+  const flushing = slow.flush();
+  expect(await ready.promise).toBe(1);
+  expect(commit).not.toHaveBeenCalled();
+
+  blocked.resolve(1);
+  await flushing;
+  expect(commit).toHaveBeenCalledTimes(1);
+});
+
+it("cancels forwarding for one batch without cancelling its commit", () => {
+  let total = 0;
+  using node = stream<number>({
+    flush([value], output) {
+      if (value < 0) output.preventDefault();
+      return () => void (total += value);
+    },
+  })(null);
+  const spy = mock();
+  node.connect(spy);
+
+  node.push(-2);
+  expect(node.flush()).toBe(undefined);
+  expect(spy).not.toHaveBeenCalled();
+  expect(total).toBe(-2);
+
+  node.push(3);
+  node.flush();
+  expect(spy.mock.calls).toEqual([[3]]);
+  expect(total).toBe(1);
+});
+
+it("replaces a batch with multiple outputs without processing them again", () => {
+  const push = mock((x: number) => x * 2);
+  const commit = mock();
+
+  using node = stream({
+    push,
+    flush([a, b], output) {
+      output.preventDefault();
+      output.emit(a + b);
+      output.emit((a + b) * 10);
+      return commit;
+    },
+  })(null);
+  const receive = mock();
+  node.connect(receive);
+
+  node.push(1);
+  node.push(2);
+  expect(node.flush()).toBe(undefined);
+  expect(push.mock.calls).toEqual([[1], [2]]);
+  expect(receive.mock.calls).toEqual([[6], [60]]);
+  expect(commit).toHaveBeenCalledTimes(1);
+});
+
+it("preserves default forwarding unless explicitly prevented", () => {
+  using node = stream<number>({
+    flush([value], output) {
+      expectTypeOf(output).toEqualTypeOf<StreamOutput<number>>();
+      output.emit(value * 10);
+    },
+  })(null);
+  const receive = mock();
+  node.connect(receive);
+
+  node.push(2);
+  node.flush();
+  expect(receive.mock.calls).toEqual([[20], [2]]);
+});
+
+it("waits for outputs emitted by an asynchronous commit", async () => {
+  const events: string[] = [];
+  using node = stream<number>({
+    flush([value], output) {
+      output.preventDefault();
+      return async () => {
+        await Promise.resolve();
+        events.push("commit");
+        output.emit(value);
+        events.push("emitted");
+      };
+    },
+  })(null);
+  node.connect(() => events.push("output"));
+
+  const commit = mock();
+  using downstream = stream({
+    push: async (x: number) => {
+      events.push("push");
+      await Promise.resolve();
+      return x;
+    },
+    flush: () => commit,
+  })(node);
+  const spy = mock();
+  downstream.connect(spy);
+
+  node.push(8);
+  const flushing = node.flush();
+  expect(flushing).toBeInstanceOf(Promise);
+  expect(spy).not.toHaveBeenCalled();
+
+  await flushing;
+  expect(events).toEqual(["commit", "output", "emitted", "push"]);
+  expect(spy.mock.calls).toEqual([[8]]);
+  expect(commit).toHaveBeenCalledTimes(1);
+});
+
+it("batches deferred outputs from multiple upstreams before joining", () => {
+  using source = stream<number>({})(null);
+  const defer = stream<number>({
+    flush(values, output) {
+      output.preventDefault();
+      return () => values.forEach(output.emit);
+    },
+  });
+
+  using joined = stream({
+    push: (a?: number, b?: number) => [a, b],
+  })(defer(source), defer(source));
+
+  const receive = mock();
+  joined.connect(receive);
+
+  source.push(1);
+  source.push(2);
+  expect(source.flush()).toBe(undefined);
+  expect(receive.mock.calls).toEqual([[[1, 1]], [[2, 2]]]);
+});
+
+it("disconnects retained outputs on disposal", () => {
+  let output: StreamOutput<number>;
+
+  const node = stream<number>({
+    flush: (_, controller) => {
+      output = controller;
+    },
+  })(null);
+
+  node.push(1);
+  node.flush();
+
+  const spy = mock();
+  node.connect(spy);
+
+  node[Symbol.dispose]();
+
+  output!.emit(2);
+  expect(spy).not.toHaveBeenCalled();
 });

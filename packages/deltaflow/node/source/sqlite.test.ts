@@ -1,5 +1,5 @@
 import { shape, type Order } from "../../datastructure/shape";
-import { join, limit, order, range, sink } from "..";
+import { join, limit, order, range, sink, map } from "..";
 import { update } from "../../datastructure/zset";
 import { expect, it } from "bun:test";
 import { source } from "./source";
@@ -296,5 +296,37 @@ it("updates only changed columns through datastore", () => {
   ).toEqual([
     { id: 0, name: "Ada", email: "a@example.com" },
     { id: 1, name: "Grace Hopper", email: "g@example.com" },
+  ]);
+});
+
+it("persists source values before downstream transformations", () => {
+  const db = new SQLite(":memory:");
+  const user = shape((t) => ({
+    id: t(t.PRIMARY, t.INT),
+    name: t.STRING,
+    bio: t.STRING,
+  }));
+  const users = source(user, sqlite(db, "users"))();
+  const view = sink(
+    map(users, (user) => {
+      user.name = user.name.toUpperCase();
+      user.bio = "For display";
+      return user;
+    }),
+  );
+
+  users.create({ id: 1, name: "Alice", bio: "Original" });
+  expect(users.flush()).toBe(undefined);
+  expect(view.pull()[0]).toEqual([
+    { id: 1, name: "ALICE", bio: "For display" },
+  ]);
+  expect(db.query("SELECT * FROM users").all()).toEqual([
+    { id: 1, name: "Alice", bio: "Original" },
+  ]);
+
+  expect(users.update({ id: 1, name: "Bob" }).flush()).toBe(undefined);
+  expect(view.pull()[0]).toEqual([{ id: 1, name: "BOB", bio: "For display" }]);
+  expect(db.query("SELECT * FROM users").all()).toEqual([
+    { id: 1, name: "Bob", bio: "Original" },
   ]);
 });

@@ -155,9 +155,10 @@ export function sync<
               );
               if (!replaces.length) return;
 
-              return SyncPromise.one(store.mutate({ creates: replaces })).then(
-                () => void (version = pendingVersion),
-              );
+              return () =>
+                SyncPromise.one(store.mutate({ creates: replaces })).then(
+                  () => void (version = pendingVersion),
+                );
             },
             extensions: {
               nextVersion,
@@ -165,7 +166,7 @@ export function sync<
                 return version;
               },
             },
-          })(upstream);
+          })(upstream).eager();
 
         const reconcile = <TStream extends CLStream<T>>(
           upstream: TStream | null = null,
