@@ -1,4 +1,4 @@
-import type { Children, Shape } from "./shape";
+import type { Bytes, Children, Shape } from "./shape";
 
 type Meta<TData, TMeta> = TMeta[] & {
   [K in ArrayKeys<TData>]: Meta<
@@ -26,7 +26,8 @@ type InferEntry<T> =
 type InferItem<T extends MetaSet> = [InferData<T>, InferMeta<T>];
 
 type TraverseEntries<T> =
-  T extends (infer U)[] ? TraverseEntries<U>
+  T extends Bytes ? never
+  : T extends (infer U)[] ? TraverseEntries<U>
   : T extends object ? T | { [K in keyof T]: TraverseEntries<T[K]> }[keyof T]
   : never;
 
@@ -57,7 +58,8 @@ type ArrayKeys<T> =
 type RecordKeys<T> =
   T extends Record<keyof any, any> ?
     {
-      [K in keyof T]: T[K] extends any[] ? never
+      [K in keyof T]: T[K] extends Bytes ? never
+      : T[K] extends any[] ? never
       : T[K] extends Record<keyof any, any> ? K
       : never;
     }[keyof T]

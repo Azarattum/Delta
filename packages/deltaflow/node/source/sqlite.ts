@@ -1,9 +1,9 @@
 import type { Database, Statement, SQLQueryBindings } from "bun:sqlite";
+import { datatype, isNullable, type Bytes } from "../..";
 import type { Query, Store } from "./source";
-import { datatype, isNullable } from "../..";
 
 // TODO: fix SQL-injection
-export function sqlite<T extends Record<string, SQLQueryBindings>>(
+export function sqlite<T extends Record<string, SQLQueryBindings | Bytes>>(
   db: Database,
   table: string,
 ) {
@@ -131,7 +131,7 @@ function compareBy<T extends Record<string, unknown>>(
   return `(${expressions.join(" OR ")})`;
 }
 
-function bindings<T extends Record<string, SQLQueryBindings>>(
+function bindings<T extends Record<string, SQLQueryBindings | Bytes>>(
   row: Partial<T>,
   columns: readonly string[],
 ) {

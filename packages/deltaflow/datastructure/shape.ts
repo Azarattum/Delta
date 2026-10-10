@@ -180,6 +180,7 @@ type Shape<T = any, TId = {}> =
 
 type IsObject<T, TTrue = true, TFalse = false> =
   [T] extends [never] ? TFalse
+  : T extends Bytes ? TFalse
   : T extends object ? TTrue
   : TFalse;
 
@@ -231,7 +232,7 @@ type ToPrimitive<T> =
     : T extends typeof TYPE.STRING ? string
     : T extends typeof TYPE.BOOLEAN ? boolean
     : T extends typeof TYPE.BIGINT ? BigInt
-    : T extends typeof TYPE.BYTES ? Uint8Array
+    : T extends typeof TYPE.BYTES ? Bytes
     : never)
   | (typeof TYPE.NULLABLE extends T ? null : never);
 
@@ -253,6 +254,12 @@ type Order<T> = (
   | readonly [NoInfer<keyof T & string>, ("asc" | "desc")?]
 )[];
 
+interface Bytes extends Iterable<number> {
+  readonly [index: number]: number;
+  readonly length: number;
+  readonly byteLength: number;
+}
+
 export {
   nonPrimary,
   isNullable,
@@ -268,4 +275,4 @@ export {
   nest,
   TYPE,
 };
-export type { Shape, Children, Order };
+export type { Shape, Children, Order, Bytes };
